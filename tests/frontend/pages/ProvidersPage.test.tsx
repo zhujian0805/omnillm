@@ -27,16 +27,16 @@ import {
 } from "../fixtures/api-responses"
 
 describe("ProvidersPage Component Tests", () => {
-  let _mockShowToast: ReturnType<typeof mock>
+  let mockShowToast: ReturnType<typeof mock>
 
   beforeEach(() => {
     setupTestEnvironment()
-    _mockShowToast = mock()
+    mockShowToast = mock()
   })
 
   afterEach(() => {
     resetTestEnvironment()
-    _mockShowToast.mockClear()
+    mockShowToast.mockClear()
   })
 
   describe("Provider Loading", () => {

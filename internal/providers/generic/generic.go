@@ -463,6 +463,9 @@ func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 		}
 		return a.executeOpenAI(a.alibabaURL(), a.provider.alibabaHeaders(false), request)
 	case "azure-openai":
+		if isAzureResponsesApiModel(a.RemapModel(request.Model)) {
+			return a.executeAzureResponses(request)
+		}
 		url, err := a.azureURL(a.RemapModel(request.Model))
 		if err != nil {
 			return nil, err
@@ -484,6 +487,9 @@ func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 		}
 		return a.streamOpenAI(a.alibabaURL(), a.provider.alibabaHeaders(true), request)
 	case "azure-openai":
+		if isAzureResponsesApiModel(a.RemapModel(request.Model)) {
+			return a.streamAzureResponses(request)
+		}
 		url, err := a.azureURL(a.RemapModel(request.Model))
 		if err != nil {
 			return nil, err
@@ -533,6 +539,349 @@ func (a *GenericAdapter) azureHeaders() map[string]string {
 	}
 }
 
+func (a *GenericAdapter) azureResponsesURL() (string, error) {
+	endpoint := a.provider.baseURL
+	if endpoint == "" {
+		return "", fmt.Errorf("azure-openai endpoint not configured; set it via the admin UI")
+	}
+	return endpoint + "/openai/v1/responses", nil
+}
+
+// isAzureResponsesApiModel mirrors the TypeScript isResponsesApiModel logic.
+// All GPT-5.x Azure models use /openai/v1/responses; chat/completions returns 400 for most.
+func isAzureResponsesApiModel(model string) bool {
+	modelLower := strings.ToLower(model)
+	patterns := []string{
+		"gpt-5.1-codex",
+		"gpt-5.2-codex",
+		"gpt-5.3-codex",
+		"gpt-5-codex",
+		"gpt-5.4",
+	}
+	for _, p := range patterns {
+		if strings.Contains(modelLower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// buildAzureResponsesPayload converts a CIF request to the Azure Responses API format.
+// This mirrors the TypeScript canonicalRequestToResponsesPayload in adapter.ts.
+func (a *GenericAdapter) buildAzureResponsesPayload(request *cif.CanonicalRequest) map[string]interface{} {
+	model := a.RemapModel(request.Model)
+
+	input := cifMessagesToResponsesInput(request.Messages)
+
+	maxOutputTokens := 4000
+	if request.MaxTokens != nil && *request.MaxTokens > 0 {
+		maxOutputTokens = *request.MaxTokens
+		if maxOutputTokens < 16 {
+			maxOutputTokens = 16
+		}
+	}
+
+	payload := map[string]interface{}{
+		"model":             model,
+		"input":             input,
+		"max_output_tokens": maxOutputTokens,
+		"generate":          true,
+		"store":             false,
+	}
+
+	if request.SystemPrompt != nil && *request.SystemPrompt != "" {
+		payload["instructions"] = *request.SystemPrompt
+	}
+
+	// gpt-5.4-pro and gpt-5.1-codex-max do not support the temperature parameter
+	modelLower := strings.ToLower(model)
+	supportsTemperature := !strings.Contains(modelLower, "gpt-5.4-pro") &&
+		!strings.Contains(modelLower, "gpt-5.1-codex-max")
+	if supportsTemperature {
+		if request.Temperature != nil {
+			payload["temperature"] = *request.Temperature
+		} else {
+			payload["temperature"] = 0.1
+		}
+	}
+
+	if len(request.Tools) > 0 {
+		tools := make([]map[string]interface{}, 0, len(request.Tools))
+		for _, tool := range request.Tools {
+			// Responses API uses flat format: {type, name, description, parameters}
+			// unlike Chat Completions: {type: "function", function: {name, description, parameters}}
+			t := map[string]interface{}{
+				"type":       "function",
+				"name":       tool.Name,
+				"parameters": tool.ParametersSchema,
+			}
+			if tool.Description != nil {
+				t["description"] = *tool.Description
+			}
+			tools = append(tools, t)
+		}
+		payload["tools"] = tools
+		payload["tool_choice"] = "auto"
+	}
+
+	return payload
+}
+
+// cifMessagesToResponsesInput converts CIF messages to the Responses API input array format.
+func cifMessagesToResponsesInput(messages []cif.CIFMessage) []map[string]interface{} {
+	var input []map[string]interface{}
+
+	for _, msg := range messages {
+		switch m := msg.(type) {
+		case cif.CIFSystemMessage:
+			input = append(input, map[string]interface{}{
+				"type": "message",
+				"role": "system",
+				"content": []map[string]interface{}{
+					{"type": "input_text", "text": m.Content},
+				},
+			})
+		case cif.CIFUserMessage:
+			var textBlocks []map[string]interface{}
+			for _, part := range m.Content {
+				switch p := part.(type) {
+				case cif.CIFTextPart:
+					textBlocks = append(textBlocks, map[string]interface{}{
+						"type": "input_text",
+						"text": p.Text,
+					})
+				case cif.CIFToolResultPart:
+					if len(textBlocks) > 0 {
+						input = append(input, map[string]interface{}{
+							"type":    "message",
+							"role":    "user",
+							"content": textBlocks,
+						})
+						textBlocks = nil
+					}
+					callID := azureToolCallID(p.ToolCallID)
+					input = append(input, map[string]interface{}{
+						"type":    "function_call_output",
+						"call_id": callID,
+						"output":  p.Content,
+					})
+				}
+			}
+			if len(textBlocks) > 0 {
+				input = append(input, map[string]interface{}{
+					"type":    "message",
+					"role":    "user",
+					"content": textBlocks,
+				})
+			}
+		case cif.CIFAssistantMessage:
+			var textBlocks []map[string]interface{}
+			for _, part := range m.Content {
+				switch p := part.(type) {
+				case cif.CIFTextPart:
+					textBlocks = append(textBlocks, map[string]interface{}{
+						"type": "output_text",
+						"text": p.Text,
+					})
+				case cif.CIFToolCallPart:
+					if len(textBlocks) > 0 {
+						input = append(input, map[string]interface{}{
+							"type":    "message",
+							"role":    "assistant",
+							"content": textBlocks,
+						})
+						textBlocks = nil
+					}
+					callID := azureToolCallID(p.ToolCallID)
+					argsBytes, _ := json.Marshal(p.ToolArguments)
+					input = append(input, map[string]interface{}{
+						"type":      "function_call",
+						"id":        callID,
+						"call_id":   callID,
+						"name":      p.ToolName,
+						"arguments": string(argsBytes),
+					})
+				}
+			}
+			if len(textBlocks) > 0 {
+				input = append(input, map[string]interface{}{
+					"type":    "message",
+					"role":    "assistant",
+					"content": textBlocks,
+				})
+			}
+		}
+	}
+
+	return input
+}
+
+// azureToolCallID ensures tool call IDs start with "fc" as required by Azure.
+func azureToolCallID(id string) string {
+	if strings.HasPrefix(id, "fc") {
+		return id
+	}
+	// Strip common prefixes like "call_" and replace with "fc_"
+	stripped := strings.TrimPrefix(id, "call_")
+	return "fc_" + stripped
+}
+
+// executeAzureResponses calls /openai/v1/responses and converts the response to CIF.
+func (a *GenericAdapter) executeAzureResponses(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	url, err := a.azureResponsesURL()
+	if err != nil {
+		return nil, err
+	}
+
+	payload := a.buildAzureResponsesPayload(request)
+	payload["stream"] = false
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	for k, v := range a.azureHeaders() {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(b))
+	}
+
+	var respMap map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&respMap); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return azureResponsesRespToCIF(respMap, request.Model), nil
+}
+
+// streamAzureResponses uses executeAzureResponses and wraps the result as stream events.
+// The Responses API SSE format is complex; non-streaming is simpler and sufficient.
+func (a *GenericAdapter) streamAzureResponses(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	cifResp, err := a.executeAzureResponses(request)
+	if err != nil {
+		return nil, err
+	}
+
+	eventCh := make(chan cif.CIFStreamEvent, 64)
+	go func() {
+		defer close(eventCh)
+		eventCh <- cif.CIFStreamStart{Type: "stream_start", ID: cifResp.ID, Model: cifResp.Model}
+		for i, part := range cifResp.Content {
+			switch p := part.(type) {
+			case cif.CIFTextPart:
+				eventCh <- cif.CIFContentDelta{
+					Type:         "content_delta",
+					Index:        i,
+					ContentBlock: cif.CIFTextPart{Type: "text", Text: ""},
+					Delta:        cif.TextDelta{Type: "text_delta", Text: p.Text},
+				}
+			case cif.CIFToolCallPart:
+				argsBytes, _ := json.Marshal(p.ToolArguments)
+				eventCh <- cif.CIFContentDelta{
+					Type:  "content_delta",
+					Index: i,
+					ContentBlock: cif.CIFToolCallPart{
+						Type:          "tool_call",
+						ToolCallID:    p.ToolCallID,
+						ToolName:      p.ToolName,
+						ToolArguments: map[string]interface{}{},
+					},
+					Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: string(argsBytes)},
+				}
+			}
+		}
+		eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: cifResp.StopReason, Usage: cifResp.Usage}
+	}()
+	return eventCh, nil
+}
+
+// azureResponsesRespToCIF converts an Azure Responses API response to CIF format.
+func azureResponsesRespToCIF(resp map[string]interface{}, originalModel string) *cif.CanonicalResponse {
+	id, _ := resp["id"].(string)
+	if id == "" {
+		id = fmt.Sprintf("resp_%d", time.Now().UnixMilli())
+	}
+
+	var content []cif.CIFContentPart
+	stopReason := cif.StopReasonEndTurn
+
+	output, _ := resp["output"].([]interface{})
+	for _, item := range output {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		itemType, _ := itemMap["type"].(string)
+		switch itemType {
+		case "message":
+			contentItems, _ := itemMap["content"].([]interface{})
+			for _, block := range contentItems {
+				blockMap, ok := block.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if blockType, _ := blockMap["type"].(string); blockType == "output_text" {
+					text, _ := blockMap["text"].(string)
+					content = append(content, cif.CIFTextPart{Type: "text", Text: text})
+				}
+			}
+		case "function_call":
+			callID, _ := itemMap["id"].(string)
+			if callID == "" {
+				callID, _ = itemMap["call_id"].(string)
+			}
+			name, _ := itemMap["name"].(string)
+			argsStr, _ := itemMap["arguments"].(string)
+			var args map[string]interface{}
+			json.Unmarshal([]byte(argsStr), &args) //nolint:errcheck
+			if args == nil {
+				args = map[string]interface{}{}
+			}
+			content = append(content, cif.CIFToolCallPart{
+				Type:          "tool_call",
+				ToolCallID:    callID,
+				ToolName:      name,
+				ToolArguments: args,
+			})
+			stopReason = cif.StopReasonToolUse
+		}
+	}
+
+	if status, _ := resp["status"].(string); status == "incomplete" {
+		stopReason = cif.StopReasonMaxTokens
+	}
+
+	var usage *cif.CIFUsage
+	if usageMap, ok := resp["usage"].(map[string]interface{}); ok {
+		inputTokens, _ := usageMap["input_tokens"].(float64)
+		outputTokens, _ := usageMap["output_tokens"].(float64)
+		usage = &cif.CIFUsage{InputTokens: int(inputTokens), OutputTokens: int(outputTokens)}
+	}
+
+	return &cif.CanonicalResponse{
+		ID:         id,
+		Model:      originalModel,
+		Content:    content,
+		StopReason: stopReason,
+		Usage:      usage,
+	}
+}
+
 // ─── OpenAI-compatible execution (Alibaba + Azure) ────────────────────────
 
 func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[string]interface{} {
@@ -549,7 +898,17 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 		payload["top_p"] = *request.TopP
 	}
 	if request.MaxTokens != nil {
-		payload["max_tokens"] = *request.MaxTokens
+		// Azure OpenAI: newer models (gpt-5.3+, gpt-5.4, gpt-6) require
+		// max_completion_tokens instead of max_tokens
+		modelLower := strings.ToLower(request.Model)
+		if a.provider.id == "azure-openai" &&
+			(strings.Contains(modelLower, "gpt-5.3") ||
+				strings.Contains(modelLower, "gpt-5.4") ||
+				strings.Contains(modelLower, "gpt-6")) {
+			payload["max_completion_tokens"] = *request.MaxTokens
+		} else {
+			payload["max_tokens"] = *request.MaxTokens
+		}
 	}
 	if len(request.Stop) > 0 {
 		payload["stop"] = request.Stop

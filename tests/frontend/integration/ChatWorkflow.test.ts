@@ -358,8 +358,8 @@ describe("Chat Workflow Integration Tests", () => {
       const result = await mockGetModels()
       expect(result.data).toHaveLength(0)
 
-      mockShowToast("No models available", "error")
-      expect(mockShowToast).toHaveBeenCalled()
+      _mockShowToast("No models available", "error")
+      expect(_mockShowToast).toHaveBeenCalled()
     })
 
     test("should handle no sessions", async () => {

@@ -4,7 +4,7 @@
  * Tests the API functions used by the ChatPage component
  */
 
-import { describe, test, expect, beforeEach, mock } from "bun:test"
+import { describe, test, expect, beforeEach, afterEach, afterAll, mock } from "bun:test"
 
 // We'll test the actual API functions by mocking fetch
 const originalFetch = globalThis.fetch
@@ -18,6 +18,14 @@ describe("Chat API Functions", () => {
         headers: { 'Content-Type': 'application/json' }
       }))
     ) as any
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  afterAll(() => {
+    globalThis.fetch = originalFetch
   })
 
   describe("getModels API", () => {

@@ -1009,4 +1009,268 @@ describe("AzureOpenAIAdapter", () => {
     expect(adapter.remapModel?.("gpt-3.5-turbo")).toBe("gpt-3.5-turbo")
     expect(adapter.remapModel?.("custom-model")).toBe("custom-model")
   })
+
+  test("should use Responses API for gpt-5.4-mini requests", async () => {
+    const canonicalRequest: CanonicalRequest = {
+      model: "gpt-5.4-mini",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Reply with exactly PONG." }],
+        },
+      ],
+      maxTokens: 32,
+      stream: false,
+    }
+
+    ;(mockProvider.createResponses as any).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "resp_mini_1",
+          model: "gpt-5.4-mini",
+          status: "completed",
+          output: [
+            {
+              id: "msg_1",
+              type: "message",
+              status: "completed",
+              content: [{ type: "output_text", text: "PONG" }],
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 1 },
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
+    )
+
+    const result = await adapter.execute(canonicalRequest)
+
+    expect(mockProvider.createResponses).toHaveBeenCalledTimes(1)
+    expect(mockProvider.createChatCompletions).not.toHaveBeenCalled()
+    expect(result.content).toEqual([{ type: "text", text: "PONG" }])
+    expect(result.model).toBe("gpt-5.4-mini")
+    expect(result.stopReason).toBe("end_turn")
+    expect(result.usage?.inputTokens).toBe(10)
+    expect(result.usage?.outputTokens).toBe(1)
+  })
+
+  test("should stream gpt-5.4-mini responses via Responses API", async () => {
+    const canonicalRequest: CanonicalRequest = {
+      model: "gpt-5.4-mini",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Say hello." }],
+        },
+      ],
+      stream: true,
+    }
+
+    const encoder = new TextEncoder()
+    const chunks = [
+      'data: {"id":"chatcmpl-mini-s","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5.4-mini","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}\n\n',
+      'data: {"id":"chatcmpl-mini-s","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5.4-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}\n\n',
+      "data: [DONE]\n\n",
+    ]
+
+    ;(mockProvider.createResponses as any).mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(encoder.encode(chunk))
+            }
+            controller.close()
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    )
+
+    const events = []
+    for await (const event of adapter.executeStream(canonicalRequest)) {
+      events.push(event)
+    }
+
+    expect(mockProvider.createResponses).toHaveBeenCalledTimes(1)
+    expect(mockProvider.createChatCompletions).not.toHaveBeenCalled()
+    expect(events[0]).toEqual({
+      type: "stream_start",
+      id: "chatcmpl-mini-s",
+      model: "gpt-5.4-mini",
+    })
+    expect(events[1]).toEqual({
+      type: "content_delta",
+      index: 0,
+      contentBlock: { type: "text", text: "" },
+      delta: { type: "text_delta", text: "Hello" },
+    })
+    expect(events.at(-1)?.type).toBe("stream_end")
+  })
+
+  test("should use chat completions for gpt-5-mini requests", async () => {
+    const canonicalRequest: CanonicalRequest = {
+      model: "gpt-5-mini",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Reply with pong" }],
+        },
+      ],
+      stream: false,
+    }
+
+    const mockResponse = {
+      id: "chatcmpl-gpt5mini",
+      object: "chat.completion",
+      created: 1_677_652_288,
+      model: "gpt-5-mini",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: "pong" },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 },
+    }
+
+    ;(mockProvider.createChatCompletions as any).mockResolvedValue(
+      new Response(JSON.stringify(mockResponse), {
+        headers: { "content-type": "application/json" },
+      }),
+    )
+
+    const result = await adapter.execute(canonicalRequest)
+
+    expect(mockProvider.createChatCompletions).toHaveBeenCalledTimes(1)
+    expect(mockProvider.createResponses).not.toHaveBeenCalled()
+    expect(result.model).toBe("gpt-5-mini")
+    expect(result.stopReason).toBe("end_turn")
+    expect(result.content).toEqual([{ type: "text", text: "pong" }])
+    expect(result.usage?.inputTokens).toBe(8)
+    expect(result.usage?.outputTokens).toBe(2)
+  })
+
+  test("should stream gpt-5-mini responses via chat completions", async () => {
+    const canonicalRequest: CanonicalRequest = {
+      model: "gpt-5-mini",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "ping" }],
+        },
+      ],
+      stream: true,
+    }
+
+    const encoder = new TextEncoder()
+    const chunks = [
+      'data: {"id":"chatcmpl-gpt5mini-s","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5-mini","choices":[{"index":0,"delta":{"content":"pong"},"finish_reason":null}]}\n\n',
+      'data: {"id":"chatcmpl-gpt5mini-s","object":"chat.completion.chunk","created":1677652288,"model":"gpt-5-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n',
+      "data: [DONE]\n\n",
+    ]
+
+    ;(mockProvider.createChatCompletions as any).mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(encoder.encode(chunk))
+            }
+            controller.close()
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+    )
+
+    const events = []
+    for await (const event of adapter.executeStream(canonicalRequest)) {
+      events.push(event)
+    }
+
+    expect(mockProvider.createChatCompletions).toHaveBeenCalledTimes(1)
+    expect(mockProvider.createResponses).not.toHaveBeenCalled()
+    expect(events[0]).toEqual({
+      type: "stream_start",
+      id: "chatcmpl-gpt5mini-s",
+      model: "gpt-5-mini",
+    })
+    expect(
+      events.some((e) => e.type === "content_delta" && e.delta?.text === "pong"),
+    ).toBe(true)
+    expect(events.at(-1)?.type).toBe("stream_end")
+  })
+
+  test("should handle tool calls for gpt-5-mini via chat completions", async () => {
+    const canonicalRequest: CanonicalRequest = {
+      model: "gpt-5-mini",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "What is the weather in Paris?" }],
+        },
+      ],
+      tools: [
+        {
+          name: "get_weather",
+          description: "Get current weather",
+          parametersSchema: {
+            type: "object",
+            properties: { location: { type: "string" } },
+            required: ["location"],
+          },
+        },
+      ],
+      stream: false,
+    }
+
+    const mockResponse = {
+      id: "chatcmpl-gpt5mini-tool",
+      object: "chat.completion",
+      created: 1_677_652_288,
+      model: "gpt-5-mini",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              {
+                id: "call_xyz",
+                type: "function",
+                function: {
+                  name: "get_weather",
+                  arguments: JSON.stringify({ location: "Paris" }),
+                },
+              },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+    }
+
+    ;(mockProvider.createChatCompletions as any).mockResolvedValue(
+      new Response(JSON.stringify(mockResponse), {
+        headers: { "content-type": "application/json" },
+      }),
+    )
+
+    const result = await adapter.execute(canonicalRequest)
+
+    expect(mockProvider.createChatCompletions).toHaveBeenCalledTimes(1)
+    expect(mockProvider.createResponses).not.toHaveBeenCalled()
+    expect(result.stopReason).toBe("tool_use")
+    expect(result.content).toEqual([
+      {
+        type: "tool_call",
+        toolCallId: "call_xyz",
+        toolName: "get_weather",
+        toolArguments: { location: "Paris" },
+      },
+    ])
+  })
 })

@@ -6,7 +6,7 @@
  * Run with: bun test tests/provider-management-ui.test.ts
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test"
+import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test"
 
 import { startUITestServer } from "./ui-test-server"
 
@@ -72,10 +72,36 @@ const TEST_ANTIGRAVITY_CONFIG = {
 describe("Provider Management UI Operations", () => {
   let createdProviders: Array<string> = []
 
-  beforeEach(async () => {
-    const server = await startUITestServer()
+  beforeAll(async () => {
+    const server = await startUITestServer(25_000)
     BASE = server.baseUrl
     stopServer = server.stop
+  }, 30_000)
+
+  afterAll(async () => {
+    if (stopServer) {
+      try {
+        await stopServer()
+      } catch {
+        // Ignore cleanup errors (e.g., Windows file lock on temp dir)
+      }
+      stopServer = null
+    }
+  })
+
+  beforeEach(async () => {
+    // Clean up all providers to ensure fresh state between tests
+    try {
+      const providers = await get("/api/admin/providers")
+      await Promise.allSettled(
+        providers.map((p: { id: string }) =>
+          del(`/api/admin/providers/${p.id}`).catch(() => {}),
+        ),
+      )
+    } catch {
+      // Ignore cleanup errors
+    }
+    createdProviders = []
   })
 
   afterEach(async () => {
@@ -89,10 +115,6 @@ describe("Provider Management UI Operations", () => {
       }),
     )
     createdProviders = []
-    if (stopServer) {
-      await stopServer()
-      stopServer = null
-    }
   })
 
   describe("Provider Listing", () => {
@@ -426,7 +448,12 @@ describe("Provider Management UI Operations", () => {
         })
         expect(true).toBe(false) // Should not reach here
       } catch (error) {
-        expect(error.message).toContain("400")
+        // 400 = malformed request; 409 = auth flow already in progress from prior test
+        const status = Number.parseInt(
+          error.message.match(/failed: (\d+) -/)?.[1] || "0",
+          10,
+        )
+        expect([400, 409]).toContain(status)
       }
     })
   })

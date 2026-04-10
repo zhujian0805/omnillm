@@ -1,14 +1,14 @@
 /**
- * Integration tests against a running proxy server at localhost:5005.
+ * Integration tests against a running proxy server at localhost:5000.
  *
  * Run with: bun test tests/integration.test.ts
  *
- * Requires the proxy to be running: ./omnimodel.exe start --port 5005
+ * Requires the proxy to be running: bun run omni:start -- --server-port 5000
  */
 
 import { describe, test, expect, beforeAll } from "bun:test"
 
-const BASE = "http://localhost:5005"
+const BASE = "http://localhost:5000"
 
 // Test-specific logging that provides clear output during test runs
 const testLog = {
@@ -1424,6 +1424,264 @@ describe("Enhanced Tool Use Cases", () => {
       console.log(`[TEST]✅ Proper validation error for malformed tools`)
     }
   })
+})
+
+// ---------------------------------------------------------------------------
+// Azure OpenAI gpt-5.4-pro — Responses API premium model
+// ---------------------------------------------------------------------------
+
+describe("Azure OpenAI - gpt-5.4-pro", () => {
+  test("basic message via responses API", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post(
+      "/v1/messages",
+      {
+        model: "gpt-5.4-pro",
+        max_tokens: 50,
+        messages: [{ role: "user", content: "Reply with just the word: pong" }],
+      },
+      { "anthropic-version": "2023-06-01" },
+    )
+    console.log(`[TEST]✅ Basic message test (GPT-5.4-pro) - Status: ${status}`)
+    expect(status).toBe(200)
+    const response = json as {
+      type: string
+      role: string
+      content: Array<{ type: string }>
+    }
+    expect(response.type).toBe("message")
+    expect(response.role).toBe("assistant")
+    expect(response.content[0].type).toBe("text")
+  }, 15000)
+
+  test("via chat completions endpoint", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post("/v1/chat/completions", {
+      model: "gpt-5.4-pro",
+      messages: [{ role: "user", content: "Reply with just the word: ping" }],
+      max_tokens: 10,
+    })
+    console.log(
+      `[TEST]💬 Chat completions test (GPT-5.4-pro) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    expect(json.choices).toBeDefined()
+    const choice = (json.choices as Array<{ message: { role: string } }>)[0]
+    expect(choice.message.role).toBe("assistant")
+  }, 15000)
+
+  test("weather tool call for Shanghai", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post(
+      "/v1/messages",
+      {
+        model: "gpt-5.4-pro",
+        max_tokens: 200,
+        tools: [ANTHROPIC_WEATHER_TOOL],
+        messages: [
+          {
+            role: "user",
+            content:
+              "What is the weather today in Shanghai? Use the weather tool to check.",
+          },
+        ],
+      },
+      { "anthropic-version": "2023-06-01" },
+    )
+    console.log(`[TEST]🌤️ Weather tool test (GPT-5.4-pro) - Status: ${status}`)
+    expect(status).toBe(200)
+    const response = json as {
+      type: string
+      stop_reason: string
+      content: Array<any>
+    }
+    expect(response.type).toBe("message")
+    if (response.stop_reason === "tool_use") {
+      const toolCall = response.content.find((item) => item.type === "tool_use")
+      expect(toolCall).toBeDefined()
+      expect(toolCall.name).toBe("get_weather")
+      expect(toolCall.input.location).toEqual("Shanghai")
+      console.log(
+        `[TEST]✅ Weather tool called successfully for Shanghai by GPT-5.4-pro`,
+      )
+    } else {
+      console.warn(
+        "⚠️ Tool was not used, stop_reason:",
+        response.stop_reason,
+      )
+    }
+  }, 60000)
+})
+
+// ---------------------------------------------------------------------------
+// Azure OpenAI gpt-5.3-codex — Responses API code-generation model
+// ---------------------------------------------------------------------------
+
+describe("Azure OpenAI - gpt-5.3-codex", () => {
+  test("basic message", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post(
+      "/v1/messages",
+      {
+        model: "gpt-5.3-codex",
+        max_tokens: 50,
+        messages: [{ role: "user", content: "Reply with just the word: pong" }],
+      },
+      { "anthropic-version": "2023-06-01" },
+    )
+    console.log(
+      `[TEST]✅ Basic message test (GPT-5.3-codex) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    const response = json as {
+      type: string
+      role: string
+      content: Array<{ type: string }>
+    }
+    expect(response.type).toBe("message")
+    expect(response.role).toBe("assistant")
+    expect(response.content[0].type).toBe("text")
+  })
+
+  test("via chat completions endpoint", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post("/v1/chat/completions", {
+      model: "gpt-5.3-codex",
+      messages: [{ role: "user", content: "Reply with just the word: ping" }],
+      max_tokens: 10,
+    })
+    console.log(
+      `[TEST]💬 Chat completions test (GPT-5.3-codex) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    expect(json.choices).toBeDefined()
+    const choice = (json.choices as Array<{ message: { role: string } }>)[0]
+    expect(choice.message.role).toBe("assistant")
+  })
+
+  test("TypeScript code generation tool", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post("/v1/chat/completions", {
+      model: "gpt-5.3-codex",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Write a simple TypeScript function to add two numbers. Use the code generation tool.",
+        },
+      ],
+      tools: [OPENAI_CODE_TOOL],
+      max_tokens: 300,
+    })
+    console.log(
+      `[TEST]💻 TypeScript code generation test (GPT-5.3-codex) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    expect(json.choices).toBeDefined()
+    const choice = (
+      json.choices as Array<{ message: { tool_calls?: Array<any> } }>
+    )[0]
+    if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+      const toolNames = choice.message.tool_calls.map(
+        (call) => call.function.name,
+      )
+      expect(toolNames).toContain("generate_typescript")
+      console.log(
+        `[TEST]✅ Code generation tool used by GPT-5.3-codex:`,
+        toolNames,
+      )
+    } else {
+      console.warn(
+        "⚠️ No tools used for TypeScript generation by GPT-5.3-codex",
+      )
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Azure OpenAI gpt-5.1-codex-max — Responses API extended context codex model
+// ---------------------------------------------------------------------------
+
+describe("Azure OpenAI - gpt-5.1-codex-max", () => {
+  test("basic message", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post(
+      "/v1/messages",
+      {
+        model: "gpt-5.1-codex-max",
+        // gpt-5.1-codex-max uses ~180+ tokens for internal reasoning even for short responses
+        max_tokens: 500,
+        messages: [{ role: "user", content: "Reply with just the word: pong" }],
+      },
+      { "anthropic-version": "2023-06-01" },
+    )
+    console.log(
+      `[TEST]✅ Basic message test (GPT-5.1-codex-max) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    const response = json as {
+      type: string
+      role: string
+      content: Array<{ type: string }>
+    }
+    expect(response.type).toBe("message")
+    expect(response.role).toBe("assistant")
+    expect(response.content[0].type).toBe("text")
+  }, 15000)
+
+  test("via chat completions endpoint", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post("/v1/chat/completions", {
+      model: "gpt-5.1-codex-max",
+      messages: [{ role: "user", content: "Reply with just the word: ping" }],
+      max_tokens: 500,
+    })
+    console.log(
+      `[TEST]💬 Chat completions test (GPT-5.1-codex-max) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    expect(json.choices).toBeDefined()
+    const choice = (json.choices as Array<{ message: { role: string } }>)[0]
+    expect(choice.message.role).toBe("assistant")
+  }, 15000)
+
+  test("TypeScript code generation tool", async () => {
+    await ensureProviderActive("azure-openai-jzhu-1677-resource")
+    const { status, json } = await post("/v1/chat/completions", {
+      model: "gpt-5.1-codex-max",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Write a TypeScript function to reverse a string. Use the code generation tool.",
+        },
+      ],
+      tools: [OPENAI_CODE_TOOL],
+      max_tokens: 300,
+    })
+    console.log(
+      `[TEST]💻 TypeScript code generation test (GPT-5.1-codex-max) - Status: ${status}`,
+    )
+    expect(status).toBe(200)
+    expect(json.choices).toBeDefined()
+    const choice = (
+      json.choices as Array<{ message: { tool_calls?: Array<any> } }>
+    )[0]
+    if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+      const toolNames = choice.message.tool_calls.map(
+        (call) => call.function.name,
+      )
+      expect(toolNames).toContain("generate_typescript")
+      console.log(
+        `[TEST]✅ Code generation tool used by GPT-5.1-codex-max:`,
+        toolNames,
+      )
+    } else {
+      console.warn(
+        "⚠️ No tools used for TypeScript generation by GPT-5.1-codex-max",
+      )
+    }
+  }, 15000)
 })
 
 // ---------------------------------------------------------------------------

@@ -33,19 +33,19 @@ import {
 } from "../fixtures/api-responses"
 
 describe("ChatPage Component Tests", () => {
-  let _mockShowToast: ReturnType<typeof mock>
+  let mockShowToast: ReturnType<typeof mock>
   let _mockFetch: ReturnType<typeof mock>
 
   beforeEach(() => {
     setupTestEnvironment()
-    _mockShowToast = mock()
+    mockShowToast = mock()
     _mockFetch = setupFetchMocks(globalThis, buildEndpointMap())
   })
 
   afterEach(() => {
     resetTestEnvironment()
     _mockFetch.mockClear()
-    _mockShowToast.mockClear()
+    mockShowToast.mockClear()
   })
 
   describe("Component Initialization", () => {

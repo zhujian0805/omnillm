@@ -71,13 +71,14 @@ export function buildAzureCompletionsUrl(
 }
 
 /**
- * Check if a model needs the Azure Responses API instead of Chat Completions
- * Based on LiteLLM configuration, GPT-5.x-codex models use mode: "responses"
+ * Check if a model needs the Azure Responses API instead of Chat Completions.
+ * All GPT-5.x models use the Responses API — gpt-5.4-pro, gpt-5.3-codex, and
+ * gpt-5.1-codex-max ONLY work with the Responses API (chat completions return 400).
  */
 export function isResponsesApiModel(model: string): boolean {
   const modelLower = model.toLowerCase()
 
-  // GPT-5.x-codex models and some GPT-5.x models use the responses API
+  // All GPT-5.x models use the responses API
   const responsesApiPatterns = [
     "gpt-5.1-codex",
     "gpt-5.2-codex",
