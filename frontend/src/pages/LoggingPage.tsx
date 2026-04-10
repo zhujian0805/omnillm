@@ -1,17 +1,69 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react"
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react"
 
-import { getLogLevel, subscribeToLogs, updateLogLevel } from "@/api"
+import {
+  getLogLevel,
+  subscribeToLogs,
+  updateLogLevel,
+  type LogLevel,
+} from "@/api"
+import { parseLogLine } from "@/lib/logs"
 
 const LOG_LEVELS = [
-  { value: 0, label: "Silent" },
-  { value: 1, label: "Fatal" },
-  { value: 2, label: "Warn" },
-  { value: 3, label: "Info" },
-  { value: 4, label: "Debug" },
-  { value: 5, label: "Trace" },
+  { value: "trace", label: "Trace" },
+  { value: "debug", label: "Debug" },
+  { value: "info", label: "Info" },
+  { value: "warn", label: "Warn" },
+  { value: "error", label: "Error" },
+  { value: "fatal", label: "Fatal" },
 ] as const
 
 const MAX_LINES = 500
+
+function getLogToneStyles(level: number): {
+  accent: string
+  background: string
+} {
+  switch (level) {
+    case 0:
+    case 1: {
+      return {
+        accent: "var(--color-red)",
+        background: "var(--color-red-fill)",
+      }
+    }
+    case 2: {
+      return {
+        accent: "var(--color-orange)",
+        background: "var(--color-orange-fill)",
+      }
+    }
+    case 3: {
+      return {
+        accent: "var(--color-blue)",
+        background: "var(--color-blue-fill)",
+      }
+    }
+    case 4: {
+      return {
+        accent: "var(--color-green)",
+        background: "var(--color-green-fill)",
+      }
+    }
+    default: {
+      return {
+        accent: "var(--color-text-secondary)",
+        background: "rgba(148, 163, 184, 0.08)",
+      }
+    }
+  }
+}
 
 function Spin() {
   return (
@@ -47,7 +99,7 @@ export function LoggingPage({
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(true)
   const [autoScroll, setAutoScroll] = useState(true)
-  const [logLevel, setLogLevelState] = useState<number | null>(null)
+  const [logLevel, setLogLevelState] = useState<LogLevel | null>(null)
   const logViewportRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -95,7 +147,7 @@ export function LoggingPage({
       }
     }
 
-    setupLogStream()
+    void setupLogStream()
 
     return () => {
       if (es) {
@@ -303,14 +355,14 @@ export function LoggingPage({
               Log Level
             </span>
             <select
-              value={logLevel ?? 3}
+              value={logLevel ?? "info"}
               onChange={async (e) => {
-                const newLevel = Number(e.target.value)
+                const newLevel = e.target.value as LogLevel
                 try {
                   await updateLogLevel(newLevel)
                   setLogLevelState(newLevel)
                   showToast(
-                    `Log level changed to ${LOG_LEVELS[newLevel]?.label}`,
+                    `Log level changed to ${LOG_LEVELS.find((level) => level.value === newLevel)?.label ?? newLevel}`,
                   )
                 } catch (error) {
                   showToast(
@@ -468,20 +520,122 @@ export function LoggingPage({
                 }}
               >
                 {lines.map((line, index) => (
-                  <div
-                    key={`${index}-${line}`}
-                    style={{
-                      padding: "8px 14px",
-                      borderBottom:
-                        index < lines.length - 1 ?
-                          "1px solid var(--color-separator)"
-                        : "none",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                    }}
-                  >
-                    {line}
-                  </div>
+                  (() => {
+                    const parsed = parseLogLine(line)
+                    const tone = getLogToneStyles(parsed.levelNumber)
+                    const segments: Array<ReactNode> = []
+
+                    if (parsed.timestamp) {
+                      segments.push(
+                        <span
+                          key="timestamp"
+                          style={{ color: "var(--color-text-tertiary)" }}
+                        >
+                          {parsed.timestamp}
+                        </span>,
+                      )
+                    }
+
+                    if (parsed.source) {
+                      segments.push(
+                        <span
+                          key="source"
+                          style={{ color: tone.accent, fontWeight: 700 }}
+                        >
+                          {parsed.source}
+                        </span>,
+                      )
+                    }
+
+                    segments.push(
+                      <span
+                        key="level"
+                        style={{ color: tone.accent, fontWeight: 700 }}
+                      >
+                        {parsed.level}
+                      </span>,
+                    )
+
+                    segments.push(
+                      <span
+                        key="message"
+                        style={{ color: "var(--color-text)", fontWeight: 600 }}
+                      >
+                        {parsed.message}
+                      </span>,
+                    )
+
+                    if (parsed.location) {
+                      segments.push(
+                        <span
+                          key="location"
+                          style={{ color: "var(--color-text-secondary)" }}
+                        >
+                          location={parsed.location}
+                        </span>,
+                      )
+                    }
+
+                    for (const field of parsed.fields) {
+                      segments.push(
+                        <span
+                          key={`${field.key}-${field.value}`}
+                          style={{ color: "var(--color-text-secondary)" }}
+                        >
+                          <span
+                            style={{ color: "var(--color-text-tertiary)" }}
+                          >
+                            {field.key}=
+                          </span>
+                          <span style={{ color: "var(--color-text)" }}>
+                            {field.value}
+                          </span>
+                        </span>,
+                      )
+                    }
+
+                    return (
+                      <div
+                        key={`${index}-${line}`}
+                        style={{
+                          padding: "8px 14px",
+                          borderBottom:
+                            index < lines.length - 1 ?
+                              "1px solid var(--color-separator)"
+                            : "none",
+                          borderLeft: `3px solid ${tone.accent}`,
+                          background: tone.background,
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          overflowX: "auto",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 6,
+                            alignItems: "center",
+                          }}
+                        >
+                          {segments.map((segment, segmentIndex) => (
+                            <Fragment key={`${index}-${segmentIndex}`}>
+                              {segmentIndex > 0 && (
+                                <span
+                                  style={{
+                                    color: "var(--color-text-tertiary)",
+                                  }}
+                                >
+                                  |
+                                </span>
+                              )}
+                              {segment}
+                            </Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()
                 ))}
               </div>
             }

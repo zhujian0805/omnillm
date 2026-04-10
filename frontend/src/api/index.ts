@@ -38,6 +38,49 @@ export interface ServerInfo {
   port: number
 }
 
+export type LogLevel =
+  | "fatal"
+  | "error"
+  | "warn"
+  | "info"
+  | "debug"
+  | "trace"
+
+const LOG_LEVEL_BY_SEVERITY = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+] as const
+
+function normalizeLogLevel(value: unknown): LogLevel {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (
+      (LOG_LEVEL_BY_SEVERITY as ReadonlyArray<string>).includes(normalized)
+    ) {
+      return normalized as LogLevel
+    }
+
+    if (normalized === "warning") {
+      return "warn"
+    }
+  }
+
+  if (
+    typeof value === "number"
+    && Number.isInteger(value)
+    && value >= 0
+    && value < LOG_LEVEL_BY_SEVERITY.length
+  ) {
+    return LOG_LEVEL_BY_SEVERITY[value] as LogLevel
+  }
+
+  return "info"
+}
+
 export interface Model {
   id: string
   name: string
@@ -377,17 +420,28 @@ export const getProviderUsage = (id: string) =>
 
 // ─── Log level ────────────────────────────────────────────────────────────────
 
-export const getLogLevel = () =>
-  apiFetch<{ level: number }>("/api/admin/settings/log-level")
+export const getLogLevel = async () => {
+  const result = await apiFetch<{ level: unknown }>(
+    "/api/admin/settings/log-level",
+  )
 
-export const updateLogLevel = (level: number) =>
-  apiFetch<{ success: boolean; level: number }>(
+  return { level: normalizeLogLevel(result.level) }
+}
+
+export const updateLogLevel = async (level: LogLevel) => {
+  const result = await apiFetch<{ success: boolean; level: unknown }>(
     "/api/admin/settings/log-level",
     {
       method: "PUT",
       body: JSON.stringify({ level }),
     },
   )
+
+  return {
+    ...result,
+    level: normalizeLogLevel(result.level),
+  }
+}
 
 export async function subscribeToLogs(
   onLine: (line: string) => void,

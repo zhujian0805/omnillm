@@ -12,18 +12,65 @@ import {
   getSubscriberCount,
 } from "~/lib/logging"
 
+const LOG_LEVEL_NAMES = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+] as const
+
+function serializeLogLevel(level: number): (typeof LOG_LEVEL_NAMES)[number] {
+  return LOG_LEVEL_NAMES[level] ?? "info"
+}
+
+function normalizeRequestedLogLevel(level: unknown): number | null {
+  if (
+    typeof level === "number"
+    && Number.isInteger(level)
+    && level >= 0
+    && level < LOG_LEVEL_NAMES.length
+  ) {
+    return level
+  }
+
+  if (typeof level === "string") {
+    const normalized = level.trim().toLowerCase()
+    const index = LOG_LEVEL_NAMES.indexOf(
+      normalized as (typeof LOG_LEVEL_NAMES)[number],
+    )
+
+    if (index !== -1) {
+      return index
+    }
+
+    if (normalized === "warning") {
+      return LOG_LEVEL_NAMES.indexOf("warn")
+    }
+  }
+
+  return null
+}
+
 export function handleGetLogLevel(c: Context) {
-  return c.json({ level: getLogLevel() })
+  return c.json({
+    level: serializeLogLevel(getLogLevel()),
+    levels: LOG_LEVEL_NAMES,
+  })
 }
 
 export async function handleSetLogLevel(c: Context) {
   const body = await c.req.json<{ level: unknown }>()
-  const level = Number(body.level)
-  if (!Number.isInteger(level) || level < 0 || level > 5) {
-    return c.json({ error: "level must be an integer 0–5" }, 400)
+  const level = normalizeRequestedLogLevel(body.level)
+  if (level === null) {
+    return c.json(
+      { error: "level must be one of fatal, error, warn, info, debug, trace" },
+      400,
+    )
   }
   setLogLevel(level)
-  return c.json({ success: true, level })
+  return c.json({ success: true, level: serializeLogLevel(level) })
 }
 
 export function handleTestLog(c: Context) {

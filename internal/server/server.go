@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -194,12 +195,21 @@ func generateRequestID() string {
 }
 
 func setupLogging(verbose bool) {
+	var consoleWriter io.Writer = os.Stderr
 	if verbose {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	} else {
 		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
+
+	if verbose {
+		consoleWriter = zerolog.ConsoleWriter{Out: os.Stderr}
+	}
+
+	log.Logger = log.Output(zerolog.MultiLevelWriter(
+		consoleWriter,
+		sseLogWriter{source: "backend"},
+	))
 
 	log.Info().Bool("verbose", verbose).Msg("Logging configured")
 }

@@ -157,6 +157,13 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		return fmt.Errorf("serialization failed: %w", err)
 	}
 
+	inputTokens := 0
+	outputTokens := 0
+	if response.Usage != nil {
+		inputTokens = response.Usage.InputTokens
+		outputTokens = response.Usage.OutputTokens
+	}
+
 	log.Info().
 		Str("request_id", requestID).
 		Str("api_shape", "responses").
@@ -165,8 +172,8 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		Str("provider", providerID).
 		Str("stop_reason", string(response.StopReason)).
 		Bool("stream", false).
-		Int("input_tokens", response.Usage.InputTokens).
-		Int("output_tokens", response.Usage.OutputTokens).
+		Int("input_tokens", inputTokens).
+		Int("output_tokens", outputTokens).
 		Int64("latency_ms", time.Since(startTime).Milliseconds()).
 		Msg("<-- RESPONSE")
 
@@ -196,23 +203,6 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			return false
 		}
 
-		// Log response on stream end
-		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
-			log.Info().
-				Str("request_id", requestID).
-				Str("api_shape", "responses").
-				Str("model_requested", originalModel).
-				Str("model_used", modelUsed).
-				Str("provider", providerID).
-				Str("stop_reason", string(endEvt.StopReason)).
-				Bool("stream", true).
-				Int("input_tokens", endEvt.Usage.InputTokens).
-				Int("output_tokens", endEvt.Usage.OutputTokens).
-				Int64("latency_ms", time.Since(startTime).Milliseconds()).
-				Msg("<-- RESPONSE stream")
-			return false
-		}
-
 		responsesEvents, err := serialization.ConvertCIFEventToResponsesSSE(event, state)
 		if err != nil {
 			log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Responses SSE")
@@ -230,6 +220,29 @@ func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 
 		if flusher != nil {
 			flusher.Flush()
+		}
+
+		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
+			inputTokens := 0
+			outputTokens := 0
+			if endEvt.Usage != nil {
+				inputTokens = endEvt.Usage.InputTokens
+				outputTokens = endEvt.Usage.OutputTokens
+			}
+
+			log.Info().
+				Str("request_id", requestID).
+				Str("api_shape", "responses").
+				Str("model_requested", originalModel).
+				Str("model_used", modelUsed).
+				Str("provider", providerID).
+				Str("stop_reason", string(endEvt.StopReason)).
+				Bool("stream", true).
+				Int("input_tokens", inputTokens).
+				Int("output_tokens", outputTokens).
+				Int64("latency_ms", time.Since(startTime).Milliseconds()).
+				Msg("<-- RESPONSE stream")
+			return false
 		}
 
 		if _, isErr := event.(cif.CIFStreamError); isErr {

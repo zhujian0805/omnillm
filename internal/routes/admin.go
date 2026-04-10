@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,17 +49,16 @@ type authFlowState struct {
 
 // BroadcastLog sends a log message to all SSE subscribers
 func BroadcastLog(level, message string) {
+	timestamp := time.Now().Format(time.RFC3339)
+	BroadcastLogLine(fmt.Sprintf("[%s] | backend | %s | %s", timestamp, strings.ToUpper(level), message))
+}
+
+// BroadcastLogLine sends a preformatted log line to all SSE subscribers.
+func BroadcastLogLine(line string) {
 	logSubscribersMu.RLock()
 	defer logSubscribersMu.RUnlock()
 
-	entry, _ := json.Marshal(map[string]interface{}{
-		"type":      "log",
-		"level":     level,
-		"message":   message,
-		"timestamp": time.Now().Format(time.RFC3339),
-	})
-
-	data := fmt.Sprintf("data: %s\n\n", string(entry))
+	data := formatSSEData(line)
 	for sub := range logSubscribers {
 		select {
 		case sub.ch <- data:
@@ -66,6 +66,17 @@ func BroadcastLog(level, message string) {
 			// subscriber too slow, skip
 		}
 	}
+}
+
+func formatSSEData(message string) string {
+	var builder strings.Builder
+	for _, line := range strings.Split(strings.TrimRight(message, "\n"), "\n") {
+		builder.WriteString("data: ")
+		builder.WriteString(line)
+		builder.WriteString("\n")
+	}
+	builder.WriteString("\n")
+	return builder.String()
 }
 
 func SetupAdminRoutes(router *gin.RouterGroup) {
@@ -1055,7 +1066,7 @@ func handleGetAuthStatus(c *gin.Context) {
 func handleGetLogLevel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"level":  currentLogLevel.String(),
-		"levels": []string{"debug", "info", "warn", "error"},
+		"levels": []string{"fatal", "error", "warn", "info", "debug", "trace"},
 	})
 }
 
@@ -1086,6 +1097,7 @@ func handleSetLogLevel(c *gin.Context) {
 }
 
 func handleTestLog(c *gin.Context) {
+	log.Trace().Msg("Test trace message")
 	log.Debug().Msg("Test debug message")
 	log.Info().Msg("Test info message")
 	log.Warn().Msg("Test warn message")
@@ -1334,6 +1346,7 @@ func handleLogsStream(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("Access-Control-Allow-Origin", "*")
+	c.Header("X-Accel-Buffering", "no")
 
 	sub := &logSubscriber{
 		ch:   make(chan string, 64),
@@ -1351,22 +1364,24 @@ func handleLogsStream(c *gin.Context) {
 		close(sub.done)
 	}()
 
-	// Send initial connection message
-	initial, _ := json.Marshal(map[string]interface{}{
-		"type":      "log",
-		"level":     "info",
-		"message":   "Connected to log stream",
-		"timestamp": time.Now().Format(time.RFC3339),
-	})
-	fmt.Fprintf(c.Writer, "data: %s\n\n", string(initial))
-	c.Writer.(http.Flusher).Flush()
-
 	flusher := c.Writer.(http.Flusher)
+	heartbeat := time.NewTicker(5 * time.Second)
+	defer heartbeat.Stop()
+
+	if _, err := io.WriteString(c.Writer, ": connected\n\n"); err != nil {
+		return
+	}
+	flusher.Flush()
 
 	for {
 		select {
 		case data := <-sub.ch:
 			if _, err := io.WriteString(c.Writer, data); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-heartbeat.C:
+			if _, err := io.WriteString(c.Writer, ": heartbeat\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()

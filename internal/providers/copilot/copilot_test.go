@@ -722,6 +722,101 @@ func TestCopilotAdapterExecute_AliasesLongToolNamesForResponsesAPI(t *testing.T)
 	}
 }
 
+func TestCopilotAdapterExecute_NormalizesResponsesToolCallIDs(t *testing.T) {
+	var capturedPayload map[string]interface{}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			http.NotFound(w, r)
+			return
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&capturedPayload); err != nil {
+			t.Fatalf("failed to decode request payload: %v", err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "resp_norm_ids",
+			"model":  "gpt-5.4-mini-2026-03-17",
+			"status": "completed",
+			"output": []map[string]interface{}{
+				{
+					"type": "message",
+					"id":   "msg_norm_ids",
+					"content": []map[string]interface{}{
+						{"type": "output_text", "text": "done"},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	_, err := adapter.Execute(&cif.CanonicalRequest{
+		Model: "gpt-5.4-mini",
+		Messages: []cif.CIFMessage{
+			cif.CIFAssistantMessage{
+				Role: "assistant",
+				Content: []cif.CIFContentPart{
+					cif.CIFToolCallPart{
+						Type:          "tool_call",
+						ToolCallID:    "tooluse_abc123",
+						ToolName:      "shell_command",
+						ToolArguments: map[string]interface{}{"command": "pwd"},
+					},
+				},
+			},
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFToolResultPart{
+						Type:       "tool_result",
+						ToolCallID: "tooluse_abc123",
+						ToolName:   "shell_command",
+						Content:    "C:/repo",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	input, ok := capturedPayload["input"].([]interface{})
+	if !ok || len(input) != 2 {
+		t.Fatalf("unexpected responses input payload: %#v", capturedPayload["input"])
+	}
+
+	functionCall, ok := input[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected function_call payload: %#v", input[0])
+	}
+	if functionCall["type"] != "function_call" {
+		t.Fatalf("expected first input item to be function_call, got %#v", functionCall)
+	}
+	if functionCall["id"] != "fc_abc123" || functionCall["call_id"] != "fc_abc123" {
+		t.Fatalf("expected normalized responses tool call IDs, got %#v", functionCall)
+	}
+
+	functionCallOutput, ok := input[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected function_call_output payload: %#v", input[1])
+	}
+	if functionCallOutput["type"] != "function_call_output" {
+		t.Fatalf("expected second input item to be function_call_output, got %#v", functionCallOutput)
+	}
+	if functionCallOutput["call_id"] != "fc_abc123" {
+		t.Fatalf("expected normalized tool result call_id, got %#v", functionCallOutput)
+	}
+}
+
 func TestCopilotAdapterExecuteStream_RestoresAliasedToolNamesForChatCompletions(t *testing.T) {
 	originalToolName := "mcp__extremely_long_server_name_that_keeps_going__tool_name_that_is_also_long"
 	var upstreamToolName string

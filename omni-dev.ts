@@ -4,7 +4,13 @@
 
 import { parseArgs } from "node:util"
 import consola from "consola"
-import { existsSync, writeFileSync, readFileSync, unlinkSync } from "node:fs"
+import {
+  appendFileSync,
+  existsSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import { homedir } from "node:os"
 
@@ -19,6 +25,44 @@ interface ServicePids {
 type ProcessInfo = {
   pid: number
   cmd: string
+}
+
+type StructuredLogPayload = Record<string, unknown>
+
+const ANSI_PATTERN = /\u001b\[[0-9;]*m/g
+const STRUCTURED_FIELD_ORDER = [
+  "request_id",
+  "api_shape",
+  "model_requested",
+  "model_used",
+  "model",
+  "provider",
+  "messages",
+  "tools",
+  "stream",
+  "stop_reason",
+  "input_tokens",
+  "output_tokens",
+  "method",
+  "path",
+  "status",
+  "latency_ms",
+  "url",
+  "admin",
+  "count",
+  "verbose",
+] as const
+const SOURCE_COLORS: Record<string, string> = {
+  backend: "31",
+  frontend: "32",
+}
+const LEVEL_COLORS: Record<string, string> = {
+  FATAL: "31",
+  ERROR: "31",
+  WARN: "33",
+  INFO: "36",
+  DEBUG: "35",
+  TRACE: "90",
 }
 
 const { values, positionals } = parseArgs({
@@ -227,6 +271,206 @@ async function checkPortAvailable(port: number): Promise<boolean> {
   }
 }
 
+function stripAnsi(value: string): string {
+  return value.replaceAll(ANSI_PATTERN, "")
+}
+
+function normalizeSourceLabel(label: string): string {
+  if (label === "go-backend" || label === "ts-backend") {
+    return "backend"
+  }
+
+  return label
+}
+
+function stringifyLogValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim()
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value)
+  }
+
+  if (value === null || value === undefined) {
+    return ""
+  }
+
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return Object.prototype.toString.call(value)
+  }
+}
+
+function formatStructuredField(key: string, value: unknown): string | null {
+  const formattedValue = stringifyLogValue(value)
+  if (!formattedValue) {
+    return null
+  }
+
+  switch (key) {
+    case "request_id": {
+      return `request=${formattedValue}`
+    }
+    case "api_shape": {
+      return `api=${formattedValue}`
+    }
+    case "model_requested": {
+      return `requested=${formattedValue}`
+    }
+    case "model_used": {
+      return `used=${formattedValue}`
+    }
+    case "latency_ms": {
+      return `latency=${formattedValue}ms`
+    }
+    case "input_tokens": {
+      return `input=${formattedValue}`
+    }
+    case "output_tokens": {
+      return `output=${formattedValue}`
+    }
+    case "level":
+    case "message":
+    case "time": {
+      return null
+    }
+    default: {
+      return `${key}=${formattedValue}`
+    }
+  }
+}
+
+function formatStructuredLogLine(
+  source: string,
+  payload: StructuredLogPayload,
+  fallbackTimestamp: string,
+  fallbackLevel: string,
+): string {
+  const timestamp =
+    typeof payload.time === "string" && payload.time.trim() ?
+      payload.time.trim()
+    : fallbackTimestamp
+  const level =
+    typeof payload.level === "string" && payload.level.trim() ?
+      payload.level.trim().toUpperCase()
+    : fallbackLevel
+  const message =
+    typeof payload.message === "string" && payload.message.trim() ?
+      payload.message.trim()
+    : JSON.stringify(payload)
+
+  const segments = [`[${timestamp}]`, source, level, message]
+  const seen = new Set<string>()
+
+  for (const key of STRUCTURED_FIELD_ORDER) {
+    const formatted = formatStructuredField(key, payload[key])
+    if (formatted) {
+      segments.push(formatted)
+      seen.add(key)
+    }
+  }
+
+  const remaining: string[] = []
+  for (const [key, value] of Object.entries(payload)) {
+    if (seen.has(key)) {
+      continue
+    }
+
+    const formatted = formatStructuredField(key, value)
+    if (formatted) {
+      remaining.push(formatted)
+    }
+  }
+
+  remaining.sort((left, right) => left.localeCompare(right))
+  return segments.concat(remaining).join(" | ")
+}
+
+function inferTextLogLevel(line: string, isError: boolean): string {
+  const lower = line.toLowerCase()
+
+  if (isError || lower.includes("error") || lower.includes("failed")) {
+    return "ERROR"
+  }
+
+  if (lower.includes("warn")) {
+    return "WARN"
+  }
+
+  if (lower.includes("trace")) {
+    return "TRACE"
+  }
+
+  if (lower.includes("debug")) {
+    return "DEBUG"
+  }
+
+  return "INFO"
+}
+
+function colorizeSegment(value: string, color: string | undefined): string {
+  if (!color) {
+    return value
+  }
+
+  return `\x1b[${color}m${value}\x1b[0m`
+}
+
+function colorizeLogLine(line: string, source: string, level: string): string {
+  const segments = line.split(" | ")
+  if (segments.length < 4) {
+    return line
+  }
+
+  const [timestamp, sourceSegment, levelSegment, ...rest] = segments
+  return [
+    timestamp,
+    colorizeSegment(sourceSegment ?? source, SOURCE_COLORS[source]),
+    colorizeSegment(levelSegment ?? level, LEVEL_COLORS[level]),
+    ...rest,
+  ].join(" | ")
+}
+
+function formatProcessLogLine(
+  label: string,
+  rawLine: string,
+  receivedAt: string,
+  isError: boolean,
+): { fileEntry: string; consoleEntry: string } {
+  const source = normalizeSourceLabel(label)
+  const cleanLine = stripAnsi(rawLine).trim()
+
+  let fileEntry: string
+  try {
+    const parsed = JSON.parse(cleanLine) as unknown
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      fileEntry = formatStructuredLogLine(
+        source,
+        parsed as StructuredLogPayload,
+        receivedAt,
+        inferTextLogLevel(cleanLine, isError),
+      )
+
+      const levelSegment = fileEntry.split(" | ")[2] ?? "INFO"
+      return {
+        fileEntry,
+        consoleEntry: colorizeLogLine(fileEntry, source, levelSegment),
+      }
+    }
+  } catch {
+    // Plain text process output is formatted below.
+  }
+
+  const level = inferTextLogLevel(cleanLine, isError)
+  fileEntry = [`[${receivedAt}]`, source, level, cleanLine].join(" | ")
+  return {
+    fileEntry,
+    consoleEntry: colorizeLogLine(fileEntry, source, level),
+  }
+}
+
 function createLoggedProcess(
   label: string,
   options: { color: string; cmd: string; args: Array<string> },
@@ -244,9 +488,6 @@ function createLoggedProcess(
     stderr: "pipe",
     detached: true,
   })
-
-  const labelColor = `\x1b[${options.color}m`
-  const resetColor = `\x1b[0m`
 
   function logOutput(stream: ReadableStream<Uint8Array>, isError = false) {
     void (async () => {
@@ -271,23 +512,23 @@ function createLoggedProcess(
           }
 
           const timestamp = new Date().toISOString()
-          const logEntry = `[${timestamp}] ${labelColor}[${label}]${resetColor} ${line}\n`
+          const { fileEntry, consoleEntry } = formatProcessLogLine(
+            label,
+            line,
+            timestamp,
+            isError,
+          )
 
           // Write to log file
           try {
-            if (existsSync(LOG_FILE)) {
-              const content = readFileSync(LOG_FILE, "utf8")
-              writeFileSync(LOG_FILE, content + logEntry)
-            } else {
-              writeFileSync(LOG_FILE, logEntry)
-            }
+            appendFileSync(LOG_FILE, `${fileEntry}\n`)
           } catch {
             // ignore log file write errors
           }
 
           // Print to console if verbose or if it's startup info
           if (verbose || line.includes("running at") || line.includes("ready in")) {
-            process[isError ? "stderr" : "stdout"].write(logEntry)
+            process[isError ? "stderr" : "stdout"].write(`${consoleEntry}\n`)
           }
         }
       }

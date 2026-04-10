@@ -14,7 +14,6 @@ import {
   Typography,
   Button,
   Grid,
-  Chip,
   Stack,
   Skeleton,
   IconButton,
@@ -28,54 +27,64 @@ import {
   FormControlLabel,
 } from "@mui/material"
 import { alpha, type Theme } from "@mui/material/styles"
-import { useEffect, useRef, useState } from "react"
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 
-import { getLogLevel, subscribeToLogs, updateLogLevel } from "@/api"
+import {
+  getLogLevel,
+  subscribeToLogs,
+  updateLogLevel,
+  type LogLevel,
+} from "@/api"
+import { parseLogLine } from "@/lib/logs"
 
 interface MaterialLoggingPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
 }
 
 const LOG_LEVELS = [
-  { value: 0, label: "Silent" },
-  { value: 1, label: "Fatal" },
-  { value: 2, label: "Warn" },
-  { value: 3, label: "Info" },
-  { value: 4, label: "Debug" },
-  { value: 5, label: "Trace" },
+  { value: "trace", label: "Trace" },
+  { value: "debug", label: "Debug" },
+  { value: "info", label: "Info" },
+  { value: "warn", label: "Warn" },
+  { value: "error", label: "Error" },
+  { value: "fatal", label: "Fatal" },
 ] as const
 
 const MAX_LINES = 500
 
-type LogChipColor = "default" | "error" | "warning" | "primary"
-
 function getLogTone(level: number): {
-  chipColor: LogChipColor
   resolveAccent: (theme: Theme) => string
 } {
   switch (level) {
     case 0:
     case 1: {
       return {
-        chipColor: "error",
         resolveAccent: (theme) => theme.palette.error.main,
       }
     }
     case 2: {
       return {
-        chipColor: "warning",
         resolveAccent: (theme) => theme.palette.warning.main,
       }
     }
     case 3: {
       return {
-        chipColor: "primary",
         resolveAccent: (theme) => theme.palette.primary.main,
+      }
+    }
+    case 4: {
+      return {
+        resolveAccent: (theme) => theme.palette.success.main,
       }
     }
     default: {
       return {
-        chipColor: "default",
         resolveAccent: (theme) => theme.palette.text.secondary,
       }
     }
@@ -117,33 +126,104 @@ function MaterialConnectionStatus({
 }
 
 function MaterialLogLine({ line }: { line: string }) {
-  // Parse log line format: [timestamp] [LOG-level] TYPE [file:line in function()]: message
-  const logPattern =
-    /^\[([^\]]+)\] \[LOG-(\d+)\] ([A-Z]+)(\s+\[[^\]]+\])?: (.+)$/
-  const match = line.match(logPattern)
+  const parsed = parseLogLine(line)
+  const logTone = getLogTone(parsed.levelNumber)
 
-  if (!match) {
-    return (
-      <Box
-        sx={{
-          p: 1.5,
-          borderLeft: 3,
-          borderColor: "divider",
-          bgcolor: "background.paper",
-          fontFamily: "monospace",
-          fontSize: "0.75rem",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
+  const segments: Array<ReactNode> = []
+
+  if (parsed.timestamp) {
+    segments.push(
+      <Typography
+        key="timestamp"
+        variant="caption"
+        color="text.secondary"
+        fontFamily="monospace"
+        sx={{ fontSize: "0.68rem" }}
       >
-        {line}
-      </Box>
+        {parsed.timestamp}
+      </Typography>,
     )
   }
 
-  const [, timestamp, level, type, location, message] = match
-  const logLevel = Number.parseInt(level, 10)
-  const logTone = getLogTone(logLevel)
+  if (parsed.source) {
+    segments.push(
+      <Typography
+        key="source"
+        variant="caption"
+        fontFamily="monospace"
+        sx={(theme) => ({
+          fontSize: "0.68rem",
+          fontWeight: 700,
+          color: logTone.resolveAccent(theme),
+        })}
+      >
+        {parsed.source}
+      </Typography>,
+    )
+  }
+
+  segments.push(
+    <Typography
+      key="level"
+      variant="caption"
+      fontFamily="monospace"
+      sx={(theme) => ({
+        fontSize: "0.68rem",
+        fontWeight: 700,
+        color: logTone.resolveAccent(theme),
+      })}
+    >
+      {parsed.level}
+    </Typography>,
+  )
+
+  segments.push(
+    <Typography
+      key="message"
+      variant="body2"
+      fontFamily="monospace"
+      sx={{
+        fontSize: "0.76rem",
+        fontWeight: 600,
+        lineHeight: 1.45,
+        color: "text.primary",
+      }}
+    >
+      {parsed.message}
+    </Typography>,
+  )
+
+  if (parsed.location) {
+    segments.push(
+      <Typography
+        key="location"
+        variant="caption"
+        color="text.secondary"
+        fontFamily="monospace"
+        sx={{ fontSize: "0.68rem" }}
+      >
+        location={parsed.location}
+      </Typography>,
+    )
+  }
+
+  for (const field of parsed.fields) {
+    segments.push(
+      <Typography
+        key={`${field.key}-${field.value}`}
+        variant="caption"
+        fontFamily="monospace"
+        sx={{ fontSize: "0.68rem", color: "text.secondary" }}
+      >
+        <Box component="span" sx={{ color: "text.disabled" }}>
+          {field.key}=
+        </Box>
+        <Box component="span" sx={{ color: "text.primary" }}>
+          {field.value}
+        </Box>
+      </Typography>,
+    )
+  }
 
   return (
     <Box
@@ -156,6 +236,7 @@ function MaterialLogLine({ line }: { line: string }) {
           borderColor: accentColor,
           bgcolor: alpha(accentColor, 0.02),
           transition: "all 0.2s ease",
+          overflowX: "auto",
           "&:hover": {
             bgcolor: alpha(accentColor, 0.05),
           },
@@ -164,48 +245,27 @@ function MaterialLogLine({ line }: { line: string }) {
     >
       <Stack
         direction="row"
-        spacing={1}
-        alignItems="flex-start"
-        sx={{ mb: 0.5 }}
+        spacing={0.75}
+        alignItems="center"
+        useFlexGap
+        flexWrap="wrap"
       >
-        <Chip
-          label={type}
-          size="small"
-          color={logTone.chipColor}
-          variant="outlined"
-          sx={{
-            height: 20,
-            fontSize: "0.6rem",
-            fontWeight: 600,
-            "& .MuiChip-label": { px: 0.5 },
-          }}
-        />
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          fontFamily="monospace"
-          sx={{ fontSize: "0.65rem" }}
-        >
-          {timestamp}
-        </Typography>
-        {location && (
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            fontFamily="monospace"
-            sx={{ fontSize: "0.65rem" }}
-          >
-            {location.trim()}
-          </Typography>
-        )}
+        {segments.map((segment, index) => (
+          <Fragment key={`${parsed.raw}-${index}`}>
+            {index > 0 && (
+              <Typography
+                variant="caption"
+                color="text.disabled"
+                fontFamily="monospace"
+                sx={{ fontSize: "0.68rem" }}
+              >
+                |
+              </Typography>
+            )}
+            {segment}
+          </Fragment>
+        ))}
       </Stack>
-      <Typography
-        variant="body2"
-        fontFamily="monospace"
-        sx={{ fontSize: "0.75rem", lineHeight: 1.4 }}
-      >
-        {message}
-      </Typography>
     </Box>
   )
 }
@@ -217,7 +277,7 @@ export function MaterialLoggingPageComplete({
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(true)
   const [autoScroll, setAutoScroll] = useState(true)
-  const [logLevel, setLogLevelState] = useState<number | null>(null)
+  const [logLevel, setLogLevelState] = useState<LogLevel | null>(null)
   const logViewportRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -314,7 +374,7 @@ export function MaterialLoggingPageComplete({
     }
   }
 
-  const handleLogLevelChange = async (newLevel: number) => {
+  const handleLogLevelChange = async (newLevel: LogLevel) => {
     try {
       await updateLogLevel(newLevel)
       setLogLevelState(newLevel)
@@ -450,9 +510,9 @@ export function MaterialLoggingPageComplete({
               <FormControl size="small" sx={{ minWidth: 120 }}>
                 <InputLabel>Log Level</InputLabel>
                 <Select
-                  value={logLevel ?? 3}
+                  value={logLevel ?? "info"}
                   label="Log Level"
-                  onChange={(e) => handleLogLevelChange(e.target.value)}
+                  onChange={(e) => handleLogLevelChange(e.target.value as LogLevel)}
                 >
                   {LOG_LEVELS.map((level) => (
                     <MenuItem key={level.value} value={level.value}>

@@ -1051,7 +1051,8 @@ func (a *GenericAdapter) streamOpenAI(url string, headers map[string]string, req
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("streaming request failed: %w", err)
@@ -1207,7 +1208,8 @@ func (a *GenericAdapter) streamAntigravity(request *cif.CanonicalRequest) (<-cha
 	req.Header.Set("X-Goog-Api-Client", "google-cloud-sdk vscode_cloudshelleditor/0.1")
 	req.Header.Set("Client-Metadata", `{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`)
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("antigravity request failed: %w", err)
@@ -1408,7 +1410,7 @@ func parseAntigravitySSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 				}
 			} else if fcMap, ok := part["functionCall"].(map[string]interface{}); ok {
 				name, _ := fcMap["name"].(string)
-				args, _ := fcMap["args"].(map[string]interface{})
+				args := normalizeToolArguments(fcMap["args"])
 				argsJSON, _ := json.Marshal(args)
 				eventCh <- cif.CIFContentDelta{
 					Type:  "content_delta",
@@ -1453,6 +1455,34 @@ func parseAntigravitySSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	// End of stream without explicit finish reason
 	if streamStartSent {
 		eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: cif.StopReasonEndTurn}
+	}
+}
+
+func normalizeToolArguments(raw interface{}) map[string]interface{} {
+	switch value := raw.(type) {
+	case nil:
+		return map[string]interface{}{}
+	case map[string]interface{}:
+		if value == nil {
+			return map[string]interface{}{}
+		}
+		return value
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return map[string]interface{}{}
+		}
+
+		var parsed map[string]interface{}
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil && parsed != nil {
+			return parsed
+		}
+
+		return map[string]interface{}{"value": value}
+	case []interface{}:
+		return map[string]interface{}{"items": value}
+	default:
+		return map[string]interface{}{"value": value}
 	}
 }
 
