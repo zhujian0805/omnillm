@@ -1,0 +1,274 @@
+package routes
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog/log"
+
+	"omnimodel/internal/cif"
+	"omnimodel/internal/ingestion"
+	"omnimodel/internal/lib/modelrouting"
+	"omnimodel/internal/providers/types"
+	"omnimodel/internal/serialization"
+)
+
+func SetupMessageRoutes(router *gin.RouterGroup) {
+	router.POST("/messages", handleMessages)
+	router.POST("/messages/count_tokens", handleCountTokens)
+}
+
+func handleMessages(c *gin.Context) {
+	// Parse request as generic map for ingestion
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Invalid request format",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	// Convert Anthropic format to CIF
+	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to parse Anthropic request")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	// Resolve providers
+	normalizedModel := modelrouting.NormalizeModelName(canonicalRequest.Model)
+	modelRoute, err := modelrouting.ResolveProvidersForModel(
+		canonicalRequest.Model,
+		normalizedModel,
+		modelCache,
+	)
+	if err != nil {
+		log.Error().Err(err).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{
+				"message": fmt.Sprintf("Failed to resolve providers: %v", err),
+				"type":    "api_error",
+			},
+		})
+		return
+	}
+
+	if len(modelRoute.CandidateProviders) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": fmt.Sprintf("Model '%s' not found or no providers available", canonicalRequest.Model),
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	if normalizedModel != canonicalRequest.Model {
+		log.Debug().
+			Str("from", canonicalRequest.Model).
+			Str("to", normalizedModel).
+			Msg("Normalized Anthropic request model")
+		canonicalRequest.Model = normalizedModel
+	}
+
+	// Try candidate providers in priority order
+	var lastErr error
+	for _, provider := range modelRoute.CandidateProviders {
+		adapter := provider.GetAdapter()
+		if adapter == nil {
+			continue
+		}
+
+		log.Debug().
+			Str("model", canonicalRequest.Model).
+			Str("provider", provider.GetInstanceID()).
+			Msg("Trying provider for Anthropic request")
+
+		remappedModel := adapter.RemapModel(canonicalRequest.Model)
+		if remappedModel != canonicalRequest.Model {
+			canonicalRequest.Model = remappedModel
+		}
+
+		if canonicalRequest.Stream {
+			lastErr = handleAnthropicStreamingResponse(c, adapter, canonicalRequest)
+		} else {
+			lastErr = handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest)
+		}
+
+		if lastErr == nil {
+			return
+		}
+
+		log.Warn().Err(lastErr).
+			Str("provider", provider.GetInstanceID()).
+			Msg("Provider failed for Anthropic request, trying next")
+	}
+
+	errMsg := "All providers failed"
+	if lastErr != nil {
+		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
+	}
+	c.JSON(http.StatusBadGateway, gin.H{
+		"error": gin.H{
+			"message": errMsg,
+			"type":    "api_error",
+		},
+	})
+}
+
+func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest) error {
+	response, err := adapter.Execute(canonicalRequest)
+	if err != nil {
+		return fmt.Errorf("adapter execute failed: %w", err)
+	}
+
+	anthropicResp, err := serialization.SerializeToAnthropic(response)
+	if err != nil {
+		return fmt.Errorf("serialization failed: %w", err)
+	}
+
+	log.Info().
+		Str("model", response.Model).
+		Str("id", response.ID).
+		Msg("Anthropic messages request completed")
+
+	c.JSON(http.StatusOK, anthropicResp)
+	return nil
+}
+
+func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest) error {
+	eventCh, err := adapter.ExecuteStream(canonicalRequest)
+	if err != nil {
+		log.Warn().Err(err).Msg("Streaming not supported, falling back to non-streaming")
+		canonicalRequest.Stream = false
+		return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest)
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	state := serialization.CreateAnthropicStreamState()
+	flusher, _ := c.Writer.(http.Flusher)
+
+	c.Stream(func(w io.Writer) bool {
+		event, ok := <-eventCh
+		if !ok {
+			return false
+		}
+
+		anthropicEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to convert CIF event to Anthropic SSE")
+			return false
+		}
+
+		for _, evt := range anthropicEvents {
+			eventType, _ := evt["type"].(string)
+			sseData, err := serialization.FormatAnthropicSSEData(eventType, evt)
+			if err != nil {
+				continue
+			}
+			fmt.Fprint(w, sseData)
+		}
+
+		if flusher != nil {
+			flusher.Flush()
+		}
+
+		if _, isEnd := event.(cif.CIFStreamEnd); isEnd {
+			return false
+		}
+		if _, isErr := event.(cif.CIFStreamError); isErr {
+			return false
+		}
+
+		return true
+	})
+
+	return nil
+}
+
+func handleCountTokens(c *gin.Context) {
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": "Invalid request format",
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	// Parse the Anthropic request to count tokens
+	canonicalRequest, err := ingestion.ParseAnthropicMessages(payload)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"type":    "invalid_request_error",
+			},
+		})
+		return
+	}
+
+	// Estimate token count from messages
+	totalTokens := 0
+	for _, msg := range canonicalRequest.Messages {
+		switch m := msg.(type) {
+		case cif.CIFSystemMessage:
+			totalTokens += estimateStringTokens(m.Content)
+		case cif.CIFUserMessage:
+			for _, part := range m.Content {
+				if tp, ok := part.(cif.CIFTextPart); ok {
+					totalTokens += estimateStringTokens(tp.Text)
+				}
+			}
+		case cif.CIFAssistantMessage:
+			for _, part := range m.Content {
+				if tp, ok := part.(cif.CIFTextPart); ok {
+					totalTokens += estimateStringTokens(tp.Text)
+				}
+			}
+		}
+	}
+
+	// Add tool tokens if present
+	for _, tool := range canonicalRequest.Tools {
+		totalTokens += estimateStringTokens(tool.Name)
+		if tool.Description != nil {
+			totalTokens += estimateStringTokens(*tool.Description)
+		}
+		if tool.ParametersSchema != nil {
+			schemaBytes, _ := json.Marshal(tool.ParametersSchema)
+			totalTokens += estimateStringTokens(string(schemaBytes))
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"input_tokens": totalTokens,
+	})
+}
+
+// estimateStringTokens provides a rough character-based token estimate
+func estimateStringTokens(s string) int {
+	// ~4 characters per token is a reasonable average for English
+	tokens := len(s) / 4
+	if tokens == 0 && len(s) > 0 {
+		tokens = 1
+	}
+	return tokens
+}

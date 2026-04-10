@@ -1,0 +1,236 @@
+package serialization
+
+import (
+	"testing"
+
+	"omnimodel/internal/cif"
+)
+
+func TestSerializeToAnthropic_PreservesThinkingBlocks(t *testing.T) {
+	signature := "thinking_sig_123"
+	resp := &cif.CanonicalResponse{
+		ID:    "msg_thinking",
+		Model: "claude-3-5-sonnet-20241022",
+		Content: []cif.CIFContentPart{
+			cif.CIFThinkingPart{
+				Type:      "thinking",
+				Thinking:  "Let me calculate this carefully.",
+				Signature: &signature,
+			},
+			cif.CIFTextPart{
+				Type: "text",
+				Text: "The answer is 345.",
+			},
+		},
+		StopReason: cif.StopReasonEndTurn,
+	}
+
+	out, err := SerializeToAnthropic(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.Content) != 2 {
+		t.Fatalf("expected 2 content blocks, got %d", len(out.Content))
+	}
+	if out.Content[0].Type != "thinking" {
+		t.Fatalf("expected thinking block, got %q", out.Content[0].Type)
+	}
+	if out.Content[0].Thinking != "Let me calculate this carefully." {
+		t.Fatalf("unexpected thinking payload: %#v", out.Content[0])
+	}
+	if out.Content[0].Signature == nil || *out.Content[0].Signature != signature {
+		t.Fatalf("unexpected thinking signature: %#v", out.Content[0].Signature)
+	}
+	if out.Content[1].Type != "text" || out.Content[1].Text != "The answer is 345." {
+		t.Fatalf("unexpected text block: %#v", out.Content[1])
+	}
+}
+
+func TestSerializeToResponses_SerializesMessageAndFunctionCallOutput(t *testing.T) {
+	resp := &cif.CanonicalResponse{
+		ID:    "resp_123",
+		Model: "gpt-5.4-mini",
+		Content: []cif.CIFContentPart{
+			cif.CIFThinkingPart{Type: "thinking", Thinking: "Thinking through it."},
+			cif.CIFTextPart{Type: "text", Text: "Done."},
+			cif.CIFToolCallPart{
+				Type:          "tool_call",
+				ToolCallID:    "call_123",
+				ToolName:      "get_weather",
+				ToolArguments: map[string]interface{}{"location": "Boston"},
+			},
+		},
+		StopReason: cif.StopReasonToolUse,
+		Usage:      &cif.CIFUsage{InputTokens: 9, OutputTokens: 12},
+	}
+
+	out, err := SerializeToResponses(resp)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if out.Object != "realtime.response" {
+		t.Fatalf("unexpected object: %q", out.Object)
+	}
+	if len(out.Output) != 2 {
+		t.Fatalf("expected message + function call output items, got %d", len(out.Output))
+	}
+	if out.Output[0].Type != "message" || len(out.Output[0].Content) != 2 {
+		t.Fatalf("unexpected message output item: %#v", out.Output[0])
+	}
+	if out.Output[0].Content[0].Text != "<thinking>\nThinking through it.\n</thinking>" {
+		t.Fatalf("unexpected thinking text wrapper: %#v", out.Output[0].Content[0])
+	}
+	if out.Output[1].Type != "function_call" || out.Output[1].Name != "get_weather" {
+		t.Fatalf("unexpected function_call output item: %#v", out.Output[1])
+	}
+	if out.Output[1].Arguments != `{"location":"Boston"}` {
+		t.Fatalf("unexpected function call arguments: %q", out.Output[1].Arguments)
+	}
+	if out.Usage == nil || out.Usage.InputTokens != 9 || out.Usage.OutputTokens != 12 {
+		t.Fatalf("unexpected usage payload: %#v", out.Usage)
+	}
+}
+
+func TestConvertCIFEventToAnthropicSSE_ToolUseLifecycle(t *testing.T) {
+	cacheRead := 3
+	cacheWrite := 7
+	state := CreateAnthropicStreamState()
+
+	startEvents, err := ConvertCIFEventToAnthropicSSE(cif.CIFStreamStart{
+		Type:  "stream_start",
+		ID:    "stream_123",
+		Model: "claude-3-5-sonnet-20241022",
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	deltaEvents, err := ConvertCIFEventToAnthropicSSE(cif.CIFContentDelta{
+		Type:  "content_delta",
+		Index: 1,
+		ContentBlock: cif.CIFToolCallPart{
+			Type:       "tool_call",
+			ToolCallID: "call_123",
+			ToolName:   "shell_command",
+		},
+		Delta: cif.ToolArgumentsDelta{
+			Type:        "tool_arguments_delta",
+			PartialJSON: `{"command":"rg --files"}`,
+		},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	endEvents, err := ConvertCIFEventToAnthropicSSE(cif.CIFStreamEnd{
+		Type:       "stream_end",
+		StopReason: cif.StopReasonToolUse,
+		Usage: &cif.CIFUsage{
+			OutputTokens:          5,
+			CacheReadInputTokens:  &cacheRead,
+			CacheWriteInputTokens: &cacheWrite,
+		},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	events := append(append(startEvents, deltaEvents...), endEvents...)
+	if len(events) != 6 {
+		t.Fatalf("expected 6 anthropic SSE events, got %d", len(events))
+	}
+	if events[0]["type"] != "message_start" {
+		t.Fatalf("unexpected first event: %#v", events[0])
+	}
+	if events[1]["type"] != "content_block_start" {
+		t.Fatalf("unexpected content block start: %#v", events[1])
+	}
+	contentBlock := events[1]["content_block"].(map[string]interface{})
+	if contentBlock["type"] != "tool_use" || contentBlock["id"] != "call_123" {
+		t.Fatalf("unexpected anthropic tool block: %#v", contentBlock)
+	}
+
+	delta := events[2]["delta"].(map[string]interface{})
+	if delta["type"] != "input_json_delta" || delta["partial_json"] != `{"command":"rg --files"}` {
+		t.Fatalf("unexpected anthropic delta: %#v", delta)
+	}
+
+	messageDelta := events[4]["delta"].(map[string]interface{})
+	stopReason, ok := messageDelta["stop_reason"].(*string)
+	if !ok || stopReason == nil || *stopReason != "tool_use" {
+		t.Fatalf("unexpected stop reason payload: %#v", messageDelta["stop_reason"])
+	}
+	usage := events[4]["usage"].(map[string]interface{})
+	if usage["output_tokens"] != 5 || usage["cache_creation_input_tokens"] != 7 || usage["cache_read_input_tokens"] != 3 {
+		t.Fatalf("unexpected anthropic usage payload: %#v", usage)
+	}
+	if events[5]["type"] != "message_stop" {
+		t.Fatalf("unexpected final event: %#v", events[5])
+	}
+}
+
+func TestConvertCIFEventToResponsesSSE_TextLifecycle(t *testing.T) {
+	state := CreateResponsesStreamState()
+
+	startEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFStreamStart{
+		Type:  "stream_start",
+		ID:    "resp_456",
+		Model: "gpt-5.4-mini",
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	deltaEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFContentDelta{
+		Type:  "content_delta",
+		Index: 0,
+		ContentBlock: cif.CIFTextPart{
+			Type: "text",
+			Text: "",
+		},
+		Delta: cif.TextDelta{
+			Type: "text_delta",
+			Text: "Hello there",
+		},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	endEvents, err := ConvertCIFEventToResponsesSSE(cif.CIFStreamEnd{
+		Type:       "stream_end",
+		StopReason: cif.StopReasonEndTurn,
+		Usage:      &cif.CIFUsage{InputTokens: 4, OutputTokens: 2},
+	}, state)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	events := append(append(startEvents, deltaEvents...), endEvents...)
+	if len(events) != 7 {
+		t.Fatalf("expected 7 responses SSE events, got %d", len(events))
+	}
+	if events[0]["type"] != "response.created" {
+		t.Fatalf("unexpected first event: %#v", events[0])
+	}
+	if events[1]["type"] != "response.output_item.added" {
+		t.Fatalf("unexpected item.added event: %#v", events[1])
+	}
+	if events[2]["type"] != "response.content_block.added" {
+		t.Fatalf("unexpected content_block.added event: %#v", events[2])
+	}
+	if events[3]["type"] != "response.output_text.delta" || events[3]["delta"] != "Hello there" {
+		t.Fatalf("unexpected output_text.delta event: %#v", events[3])
+	}
+	if events[4]["type"] != "response.output_text.done" || events[4]["text"] != "Hello there" {
+		t.Fatalf("unexpected output_text.done event: %#v", events[4])
+	}
+	if events[5]["type"] != "response.output_item.done" {
+		t.Fatalf("unexpected output_item.done event: %#v", events[5])
+	}
+	completed := events[6]["response"].(map[string]interface{})
+	if events[6]["type"] != "response.completed" {
+		t.Fatalf("unexpected response.completed event: %#v", events[6])
+	}
+	usage := completed["usage"].(map[string]interface{})
+	if usage["input_tokens"] != 4 || usage["output_tokens"] != 2 {
+		t.Fatalf("unexpected responses usage payload: %#v", usage)
+	}
+}

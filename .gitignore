@@ -1,0 +1,30 @@
+# deps
+node_modules/
+
+# local env
+*.local
+
+# aider
+.aider*
+
+# claude
+.claude/
+
+# eslint cache
+.eslintcache
+
+# build output
+dist/
+pages/index.html
+pages/admin/
+
+# Go binaries
+omnimodel
+omnimodel.exe
+
+# OmniModel dev manager files
+.omni-dev.pid
+.omni-dev.log
+
+# local tool artifacts
+.playwright-mcp/

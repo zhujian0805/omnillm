@@ -1,0 +1,202 @@
+// Package modelrouting provides sophisticated model routing and provider selection
+package modelrouting
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"omnimodel/internal/database"
+	"omnimodel/internal/providers/types"
+	"omnimodel/internal/registry"
+
+	"github.com/rs/zerolog/log"
+)
+
+type ResolvedModelRoute struct {
+	SelectedModel      *types.Model     `json:"selectedModel"`
+	CandidateProviders []types.Provider `json:"candidateProviders"`
+	AvailableModels    []types.Model    `json:"availableModels"`
+}
+
+type ModelCache map[string]*types.ModelsResponse
+
+func GetCachedOrFetchModels(provider types.Provider, cache ModelCache) (*types.ModelsResponse, error) {
+	instanceID := provider.GetInstanceID()
+
+	// Check cache first
+	if cached, exists := cache[instanceID]; exists {
+		return cached, nil
+	}
+
+	// Fetch from provider
+	models, err := provider.GetModels()
+	if err != nil {
+		log.Warn().
+			Str("provider", provider.GetName()).
+			Err(err).
+			Msg("Failed to get models from provider")
+		return nil, err
+	}
+
+	// Cache the result
+	cache[instanceID] = models
+	return models, nil
+}
+
+func GetEnabledModelsByProvider(providers []types.Provider, cache ModelCache) (map[string][]types.Model, error) {
+	modelsByProvider := make(map[string][]types.Model)
+	modelStateStore := database.NewModelStateStore()
+
+	for _, provider := range providers {
+		providerModels, err := GetCachedOrFetchModels(provider, cache)
+		if err != nil {
+			continue // Skip this provider if we can't get models
+		}
+
+		instanceID := provider.GetInstanceID()
+
+		// Build set of disabled model IDs from DB
+		disabledModels := make(map[string]bool)
+		if states, err := modelStateStore.GetAllByInstance(instanceID); err == nil {
+			for _, state := range states {
+				if !state.Enabled {
+					disabledModels[state.ModelID] = true
+				}
+			}
+		}
+
+		enabledModels := make([]types.Model, 0, len(providerModels.Data))
+		for _, m := range providerModels.Data {
+			if !disabledModels[m.ID] {
+				enabledModels = append(enabledModels, m)
+			}
+		}
+		modelsByProvider[instanceID] = enabledModels
+	}
+
+	return modelsByProvider, nil
+}
+
+func SortProvidersByPriority(providers []types.Provider) []types.Provider {
+	sorted := make([]types.Provider, len(providers))
+	copy(sorted, providers)
+
+	// Load priorities from database
+	instanceStore := database.NewProviderInstanceStore()
+	priorityMap := make(map[string]int)
+
+	instances, err := instanceStore.GetAll()
+	if err == nil {
+		for _, inst := range instances {
+			priorityMap[inst.InstanceID] = inst.Priority
+		}
+	}
+
+	sort.Slice(sorted, func(i, j int) bool {
+		pi := priorityMap[sorted[i].GetInstanceID()]
+		pj := priorityMap[sorted[j].GetInstanceID()]
+		if pi != pj {
+			return pi < pj
+		}
+		// Fall back to alphabetical if same priority
+		return sorted[i].GetInstanceID() < sorted[j].GetInstanceID()
+	})
+
+	return sorted
+}
+
+func ResolveProvidersForModel(requestedModel string, normalizedModel string, cache ModelCache) (*ResolvedModelRoute, error) {
+	registry := registry.GetProviderRegistry()
+	activeProviders := registry.GetActiveProviders()
+
+	if len(activeProviders) == 0 {
+		return nil, fmt.Errorf("no active providers available")
+	}
+
+	modelsByProvider, err := GetEnabledModelsByProvider(activeProviders, cache)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get models by provider: %w", err)
+	}
+
+	// Collect all available models
+	var availableModels []types.Model
+	for _, models := range modelsByProvider {
+		availableModels = append(availableModels, models...)
+	}
+
+	// Find the selected model
+	var selectedModel *types.Model
+	for _, model := range availableModels {
+		if model.ID == requestedModel || model.ID == normalizedModel {
+			selectedModel = &model
+			break
+		}
+	}
+
+	if selectedModel == nil {
+		return &ResolvedModelRoute{
+			SelectedModel:      nil,
+			CandidateProviders: []types.Provider{},
+			AvailableModels:    availableModels,
+		}, nil
+	}
+
+	// Find candidate providers that have this model
+	var candidateProviders []types.Provider
+	for _, provider := range activeProviders {
+		providerModels := modelsByProvider[provider.GetInstanceID()]
+		for _, model := range providerModels {
+			if model.ID == requestedModel || model.ID == normalizedModel {
+				candidateProviders = append(candidateProviders, provider)
+				break
+			}
+		}
+	}
+
+	// Sort providers by priority
+	candidateProviders = SortProvidersByPriority(candidateProviders)
+
+	return &ResolvedModelRoute{
+		SelectedModel:      selectedModel,
+		CandidateProviders: candidateProviders,
+		AvailableModels:    availableModels,
+	}, nil
+}
+
+func NormalizeModelName(modelName string) string {
+	normalizedModel := strings.TrimSpace(strings.ToLower(modelName))
+
+	// Model name normalization - maps aliases and dated versions to canonical names
+	switch normalizedModel {
+	case "gpt-4":
+		return "gpt-4o"
+	case "gpt-3.5-turbo":
+		return "gpt-4o-mini"
+	case "claude-3-sonnet":
+		return "claude-3-5-sonnet-20241022"
+	case "haiku", "haiku-4.5", "claude-haiku", "claude-haiku-4.5", "claude-haiku-4-5":
+		return "claude-haiku-4.5"
+	case "sonnet", "sonnet-4", "claude-sonnet", "claude-sonnet-4":
+		return "claude-sonnet-4"
+	case "sonnet-4.5", "sonnet-4-5", "claude-sonnet-4.5", "claude-sonnet-4-5":
+		return "claude-sonnet-4.5"
+	case "sonnet-4.6", "sonnet-4-6", "claude-sonnet-4.6", "claude-sonnet-4-6":
+		return "claude-sonnet-4.6"
+	case "opus", "opus-4.6", "opus-4-6", "claude-opus", "claude-opus-4.6", "claude-opus-4-6":
+		return "claude-opus-4.6"
+	default:
+		switch {
+		case strings.HasPrefix(normalizedModel, "claude-haiku-4-5"):
+			return "claude-haiku-4.5"
+		case strings.HasPrefix(normalizedModel, "claude-sonnet-4-5"):
+			return "claude-sonnet-4.5"
+		case strings.HasPrefix(normalizedModel, "claude-sonnet-4-6"):
+			return "claude-sonnet-4.6"
+		case strings.HasPrefix(normalizedModel, "claude-opus-4-6"):
+			return "claude-opus-4.6"
+		default:
+			return modelName
+		}
+	}
+}

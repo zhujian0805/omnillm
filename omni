@@ -1,0 +1,9 @@
+#!/bin/bash
+# OmniModel Development Manager - Simple wrapper script
+# Usage: ./omni [command] [options]
+
+if [ "$1" = "" ] || [ "$1" = "help" ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    bun run omni-dev.ts help
+else
+    bun run omni-dev.ts "$@"
+fi
