@@ -93,6 +93,7 @@ export interface ModelInfo {
   display_name?: string
   name?: string
   owned_by?: string
+  api_shape?: string
 }
 
 export interface QuotaSnapshot {
@@ -664,6 +665,7 @@ export type LbStrategy = "round-robin" | "random" | "priority" | "weighted"
 export interface VirtualModelUpstream {
   id?: number
   virtual_model_id?: string
+  provider_id?: string
   model_id: string
   weight: number
   priority: number
@@ -688,7 +690,7 @@ export interface VirtualModelPayload {
   api_shape?: string
   lb_strategy: LbStrategy
   enabled?: boolean
-  upstreams: Array<{ model_id: string; weight?: number; priority?: number }>
+  upstreams: Array<{ provider_id?: string; model_id: string; weight?: number; priority?: number }>
 }
 
 export const listVirtualModels = () =>

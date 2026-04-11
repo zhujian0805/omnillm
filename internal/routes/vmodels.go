@@ -20,9 +20,10 @@ func SetupVirtualModelRoutes(router *gin.RouterGroup) {
 // ─── request / response types ─────────────────────────────────────────────────
 
 type upstreamInput struct {
-	ModelID  string `json:"model_id"  binding:"required"`
-	Weight   int    `json:"weight"`
-	Priority int    `json:"priority"`
+	ProviderID string `json:"provider_id"`
+	ModelID    string `json:"model_id"  binding:"required"`
+	Weight     int    `json:"weight"`
+	Priority   int    `json:"priority"`
 }
 
 type vmodelPayload struct {
@@ -64,6 +65,7 @@ func saveUpstreams(virtualModelID string, inputs []upstreamInput) error {
 		}
 		records = append(records, database.VirtualModelUpstreamRecord{
 			VirtualModelID: virtualModelID,
+			ProviderID:     u.ProviderID,
 			ModelID:        u.ModelID,
 			Weight:         w,
 			Priority:       u.Priority,

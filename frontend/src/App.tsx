@@ -277,7 +277,7 @@ export default function AppComponent() {
               {t === "providers" && "Providers"}
               {t === "chat" && "Chat"}
               {t === "logging" && "Logging"}
-              {t === "vmodel" && "Vmodel"}
+              {t === "vmodel" && "VirtualModels"}
               {t === "about" && "About"}
             </button>
           ))}

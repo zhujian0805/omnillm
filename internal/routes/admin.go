@@ -257,6 +257,9 @@ func loadProviderModels(provider types.Provider) ([]providerModelView, error) {
 	seen := make(map[string]struct{}, len(modelsResp.Data))
 
 	for _, model := range modelsResp.Data {
+		if _, exists := seen[model.ID]; exists {
+			continue
+		}
 		enabled := true
 		if state, ok := stateByID[model.ID]; ok {
 			enabled = state.Enabled

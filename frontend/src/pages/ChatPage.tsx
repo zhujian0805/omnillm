@@ -65,7 +65,9 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const [sessions, setSessions] = useState<Array<ChatSessionSummary>>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(true)
+  const unavailableModelToastRef = useRef<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const availableModels = models.filter((model) => !model.api_shape || model.api_shape === apiShape)
 
   // Load sessions and models on component mount
   useEffect(() => {
@@ -75,9 +77,11 @@ export function ChatPage({ showToast }: ChatPageProps) {
           getModels(),
           listChatSessions()
         ])
-        setModels(modelsRes.data || [])
-        if (modelsRes.data.length > 0) {
-          setSelectedModel(modelsRes.data[0].id)
+        const loadedModels = modelsRes.data || []
+        setModels(loadedModels)
+        const initialModels = loadedModels.filter((model) => !model.api_shape || model.api_shape === apiShape)
+        if (initialModels.length > 0) {
+          setSelectedModel(initialModels[0].id)
         }
         setSessions(sessionsRes)
       } catch (error) {
@@ -94,7 +98,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
   useEffect(() => {
     if (modelsLoading) return
 
-    if (models.length === 0) {
+    if (availableModels.length === 0) {
       if (selectedModel) {
         setSelectedModel("")
       }
@@ -102,19 +106,25 @@ export function ChatPage({ showToast }: ChatPageProps) {
     }
 
     if (!selectedModel) {
-      setSelectedModel(models[0].id)
+      setSelectedModel(availableModels[0].id)
       return
     }
 
-    if (!models.some((model) => model.id === selectedModel)) {
-      const fallbackModel = models[0]
+    if (!availableModels.some((model) => model.id === selectedModel)) {
+      const fallbackModel = availableModels[0]
       setSelectedModel(fallbackModel.id)
-      showToast(
-        `Model "${selectedModel}" is unavailable for the current provider; switched to ${fallbackModel.display_name || fallbackModel.id}`,
-        "error"
-      )
+      if (unavailableModelToastRef.current !== selectedModel) {
+        unavailableModelToastRef.current = selectedModel
+        showToast(
+          `Model "${selectedModel}" is unavailable for the current provider list; switched to ${fallbackModel.display_name || fallbackModel.id}`,
+          "error"
+        )
+      }
+      return
     }
-  }, [models, modelsLoading, selectedModel, showToast])
+
+    unavailableModelToastRef.current = null
+  }, [availableModels, modelsLoading, selectedModel, showToast])
 
   // Load chat session when selected
   useEffect(() => {
@@ -336,7 +346,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
               className="sys-select"
               style={{ background: "var(--color-surface-2)", fontSize: "13px" }}
             >
-              {models.map((model) => (
+              {availableModels.map((model) => (
                 <option key={`${model.owned_by ?? ""}-${model.id}`} value={model.id}>
                   {model.display_name || model.id}
                 </option>

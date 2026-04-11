@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+
 import {
   listVirtualModels,
   listProviders,
@@ -12,6 +13,11 @@ import {
   type Provider,
   type Model,
 } from "@/api"
+import {
+  detectModelFamily,
+  formatVirtualModelUpstreamSummary,
+  resolveUpstreamProvider,
+} from "@/lib/vmodels"
 
 interface Props {
   showToast: (msg: string, type?: "success" | "error") => void
@@ -35,7 +41,6 @@ const emptyForm = (): Partial<VirtualModel> => ({
 })
 
 interface UpstreamRow extends VirtualModelUpstream {
-  // the provider instance ID selected in the first dropdown
   selectedProviderId: string
 }
 
@@ -46,7 +51,6 @@ const emptyUpstreamRow = (): UpstreamRow => ({
   selectedProviderId: "",
 })
 
-// eslint-disable-next-line max-lines-per-function
 export function VmodelPage({ showToast }: Props) {
   const [vmodels, setVmodels] = useState<Array<VirtualModel>>([])
   const [loading, setLoading] = useState(true)
@@ -56,7 +60,6 @@ export function VmodelPage({ showToast }: Props) {
   const [saving, setSaving] = useState(false)
   const [isNew, setIsNew] = useState(false)
 
-  // Provider + model catalogue
   const [providers, setProviders] = useState<Array<Provider>>([])
   const [providerModels, setProviderModels] = useState<Record<string, Array<Model>>>({})
   const [catalogueLoading, setCatalogueLoading] = useState(false)
@@ -73,13 +76,11 @@ export function VmodelPage({ showToast }: Props) {
     }
   }, [showToast])
 
-  // Load provider catalogue once
   const loadCatalogue = useCallback(async () => {
     setCatalogueLoading(true)
     try {
       const provList = await listProviders()
       setProviders(provList)
-      // Fetch models for all active/authenticated providers in parallel
       const entries = await Promise.all(
         provList.map(async (p) => {
           try {
@@ -103,7 +104,6 @@ export function VmodelPage({ showToast }: Props) {
     loadCatalogue()
   }, [load, loadCatalogue])
 
-  // When a provider is selected for a row, auto-clear the model_id
   const setRowProvider = (i: number, providerId: string) => {
     setUpstreamRows((prev) =>
       prev.map((r, idx) =>
@@ -139,12 +139,13 @@ export function VmodelPage({ showToast }: Props) {
     setSelected(vm)
     setIsNew(false)
     setForm({ ...vm })
-    // Reconstruct rows; try to find the provider that owns each model
-    const rows: Array<UpstreamRow> = (vm.upstreams.length ? vm.upstreams : [{ model_id: "", weight: 1, priority: 0 }]).map((u) => {
-      const owningProvider = providers.find((p) =>
-        (providerModels[p.id] ?? []).some((m) => m.id === u.model_id),
-      )
-      return { ...u, selectedProviderId: owningProvider?.id ?? "" }
+    const rows: Array<UpstreamRow> = (
+      vm.upstreams.length ? vm.upstreams : [{ model_id: "", weight: 1, priority: 0 }]
+    ).map((u) => {
+      const selectedProviderId = u.provider_id
+        ?? providers.find((p) => (providerModels[p.id] ?? []).some((m) => m.id === u.model_id))?.id
+        ?? ""
+      return { ...u, selectedProviderId }
     })
     setUpstreamRows(rows)
   }
@@ -157,32 +158,46 @@ export function VmodelPage({ showToast }: Props) {
   }
 
   const handleSave = async () => {
-    if (!form.virtual_model_id?.trim()) { showToast("Model ID is required", "error"); return }
-    if (!form.name?.trim()) { showToast("Display name is required", "error"); return }
-    if (!form.lb_strategy) { showToast("LB strategy is required", "error"); return }
+    if (!form.virtual_model_id?.trim()) {
+      showToast("Model ID is required", "error")
+      return
+    }
+    if (!form.name?.trim()) {
+      showToast("Display name is required", "error")
+      return
+    }
+    if (!form.lb_strategy) {
+      showToast("LB strategy is required", "error")
+      return
+    }
+
     const filledRows = upstreamRows.filter((r) => r.model_id.trim())
-    if (filledRows.length === 0) { showToast("At least one upstream model is required", "error"); return }
+    if (filledRows.length === 0) {
+      showToast("At least one upstream model is required", "error")
+      return
+    }
 
     setSaving(true)
     try {
       const payload = {
-        virtual_model_id: form.virtual_model_id!,
-        name: form.name!,
+        virtual_model_id: form.virtual_model_id,
+        name: form.name,
         description: form.description ?? "",
         api_shape: form.api_shape ?? "openai",
-        lb_strategy: form.lb_strategy!,
+        lb_strategy: form.lb_strategy,
         enabled: form.enabled ?? true,
         upstreams: filledRows.map((r) => ({
+          provider_id: r.selectedProviderId || undefined,
           model_id: r.model_id,
           weight: r.weight ?? 1,
           priority: r.priority ?? 0,
         })),
       }
       if (isNew) {
-        await createVirtualModel(payload)
+        await createVirtualModel(payload as VirtualModel)
         showToast("Virtual model created", "success")
       } else {
-        await updateVirtualModel(form.virtual_model_id!, payload)
+        await updateVirtualModel(form.virtual_model_id!, payload as VirtualModel)
         showToast("Virtual model updated", "success")
       }
       closeForm()
@@ -210,290 +225,546 @@ export function VmodelPage({ showToast }: Props) {
   const showPriority = form.lb_strategy === "priority"
   const isEditing = isNew || selected !== null
 
-  return (
-    <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-      {/* ── List panel ── */}
-      <div style={{ flex: "0 0 380px", minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--color-text)" }}>
-            Virtual Models
-          </h2>
-          <button onClick={openNew} style={primaryBtnStyle}>+ New</button>
-        </div>
+  const providerNameById = Object.fromEntries(
+    providers.map((provider) => [provider.id, provider.name || provider.id]),
+  )
+  const upstreamResolutionContext = {
+    providers,
+    providerModels,
+    providerNameById,
+  }
 
-        {loading ? (
-          <div style={{ color: "var(--color-text-secondary)", fontSize: 13 }}>Loading…</div>
-        ) : vmodels.length === 0 ? (
-          <div style={{
-            padding: 24, borderRadius: "var(--radius-lg)",
-            border: "1px dashed var(--color-separator)", textAlign: "center",
-            color: "var(--color-text-tertiary)", fontSize: 13,
-          }}>
-            No virtual models yet. Click <strong>+ New</strong> to create one.
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {vmodels.map((vm) => (
-              <div
-                key={vm.virtual_model_id}
-                onClick={() => openEdit(vm)}
-                style={{
-                  padding: "12px 16px", borderRadius: "var(--radius-lg)", cursor: "pointer",
-                  border: `1px solid ${selected?.virtual_model_id === vm.virtual_model_id ? "var(--color-blue)" : "var(--color-separator)"}`,
-                  background: selected?.virtual_model_id === vm.virtual_model_id ? "rgba(10,132,255,0.08)" : "var(--color-surface)",
-                  transition: "border-color 0.15s",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-text)", fontFamily: "var(--font-mono)" }}>
-                      {vm.virtual_model_id}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                      {vm.name} · {vm.lb_strategy} · {vm.upstreams.length} upstream{vm.upstreams.length !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{
-                      fontSize: 11, padding: "2px 8px", borderRadius: 999, fontWeight: 600,
-                      background: vm.enabled ? "rgba(52,199,89,0.15)" : "rgba(142,142,147,0.15)",
-                      color: vm.enabled ? "var(--color-green)" : "var(--color-text-tertiary)",
-                    }}>
-                      {vm.enabled ? "enabled" : "disabled"}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(vm.virtual_model_id) }}
-                      style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", padding: "2px 4px", fontSize: 14 }}
-                    >✕</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+  return (
+    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-display)",
+              fontSize: 28,
+              fontWeight: 700,
+              color: "var(--color-text)",
+              letterSpacing: "-0.03em",
+            }}
+          >
+            Virtual Models
+          </h1>
+          <p
+            style={{
+              margin: "8px 0 0",
+              color: "var(--color-text-secondary)",
+              fontSize: 14,
+              lineHeight: 1.5,
+              maxWidth: 720,
+            }}
+          >
+            Create stable model aliases and route requests across multiple upstream providers.
+          </p>
+        </div>
+        <button className="btn btn-primary" onClick={openNew}>
+          + New Virtual Model
+        </button>
       </div>
 
-      {/* ── Edit / Create panel ── */}
-      {isEditing && (
-        <div style={{
-          flex: 1, minWidth: 0, padding: 24, borderRadius: "var(--radius-lg)",
-          border: "1px solid var(--color-separator)", background: "var(--color-surface)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--color-text)" }}>
-              {isNew ? "New Virtual Model" : `Edit: ${selected?.virtual_model_id}`}
-            </h3>
-            <button onClick={closeForm} style={{ background: "none", border: "none", color: "var(--color-text-tertiary)", cursor: "pointer", fontSize: 18 }}>✕</button>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Model ID */}
-            <Field label="Model ID" hint="Unique identifier exposed via /v1/models">
-              <input
-                value={form.virtual_model_id ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, virtual_model_id: e.target.value }))}
-                disabled={!isNew}
-                placeholder="e.g. claude-mythos-5.0"
-                style={inputStyle(!isNew)}
-              />
-            </Field>
-
-            {/* Display name */}
-            <Field label="Display name">
-              <input
-                value={form.name ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="My Virtual Model"
-                style={inputStyle()}
-              />
-            </Field>
-
-            {/* Description */}
-            <Field label="Description" hint="Optional">
-              <input
-                value={form.description ?? ""}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                placeholder="What this virtual model does"
-                style={inputStyle()}
-              />
-            </Field>
-
-            {/* LB strategy */}
-            <Field label="Load-balancing strategy">
-              <select
-                value={form.lb_strategy ?? "round-robin"}
-                onChange={(e) => setForm((f) => ({ ...f, lb_strategy: e.target.value as LbStrategy }))}
-                style={inputStyle()}
-              >
-                {LB_STRATEGIES.map((s) => (
-                  <option key={s.value} value={s.value}>{s.label} — {s.hint}</option>
-                ))}
-              </select>
-            </Field>
-
-            {/* Enabled */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <label style={{ fontSize: 13, color: "var(--color-text-secondary)", fontWeight: 500 }}>Enabled</label>
-              <input
-                type="checkbox"
-                checked={form.enabled ?? true}
-                onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-                style={{ width: 16, height: 16, cursor: "pointer" }}
-              />
-            </div>
-
-            {/* Upstreams */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isEditing ? "minmax(320px, 380px) minmax(0, 1fr)" : "1fr",
+          gap: 24,
+          alignItems: "start",
+        }}
+      >
+        <section className="panel" style={{ padding: 20 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 16,
+              gap: 12,
+            }}
+          >
             <div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)" }}>Upstream models</span>
-                <button onClick={addRow} style={addBtnStyle}>+ Add upstream</button>
-              </div>
-
-              {/* Column headers */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" + (showWeight || showPriority ? " 90px" : "") + " 28px", gap: 6, marginBottom: 4, padding: "0 2px" }}>
-                <div style={colHeaderStyle}>Provider</div>
-                <div style={colHeaderStyle}>Model</div>
-                {showWeight && <div style={colHeaderStyle}>Weight</div>}
-                {showPriority && <div style={colHeaderStyle}>Priority</div>}
-                <div />
-              </div>
-
-              {catalogueLoading && (
-                <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 8 }}>
-                  Loading providers…
-                </div>
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {upstreamRows.map((row, i) => {
-                  const availableModels = row.selectedProviderId
-                    ? (providerModels[row.selectedProviderId] ?? [])
-                    : []
-
-                  return (
-                    <div
-                      key={i}
-                      style={{ display: "grid", gridTemplateColumns: "1fr 1fr" + (showWeight || showPriority ? " 90px" : "") + " 28px", gap: 6, alignItems: "center" }}
-                    >
-                      {/* Provider dropdown */}
-                      <select
-                        value={row.selectedProviderId}
-                        onChange={(e) => setRowProvider(i, e.target.value)}
-                        style={inputStyle()}
-                      >
-                        <option value="">— provider —</option>
-                        {providers.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name || p.id}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Model dropdown */}
-                      <select
-                        value={row.model_id}
-                        onChange={(e) => setRowModel(i, e.target.value)}
-                        disabled={!row.selectedProviderId}
-                        style={inputStyle(!row.selectedProviderId)}
-                      >
-                        <option value="">— model —</option>
-                        {availableModels.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name || m.id}
-                          </option>
-                        ))}
-                      </select>
-
-                      {showWeight && (
-                        <input
-                          type="number"
-                          min={1}
-                          value={row.weight}
-                          onChange={(e) => setRowNum(i, "weight", Number(e.target.value))}
-                          title="Weight"
-                          style={inputStyle()}
-                        />
-                      )}
-                      {showPriority && (
-                        <input
-                          type="number"
-                          min={0}
-                          value={row.priority}
-                          onChange={(e) => setRowNum(i, "priority", Number(e.target.value))}
-                          title="Priority (lower = higher priority)"
-                          style={inputStyle()}
-                        />
-                      )}
-
-                      <button
-                        onClick={() => removeRow(i)}
-                        disabled={upstreamRows.length === 1}
-                        style={{
-                          background: "none", border: "none", padding: "0 4px", fontSize: 16,
-                          color: upstreamRows.length === 1 ? "var(--color-separator)" : "var(--color-red, #ff453a)",
-                          cursor: upstreamRows.length === 1 ? "default" : "pointer",
-                        }}
-                      >✕</button>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {(showWeight || showPriority) && (
-                <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
-                  {showWeight && "Weight: higher value = more traffic.  "}
-                  {showPriority && "Priority: lower number = higher priority (0 = first choice)."}
-                </div>
-              )}
-            </div>
-
-            {/* Actions */}
-            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-              <button onClick={handleSave} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1, cursor: saving ? "default" : "pointer" }}>
-                {saving ? "Saving…" : isNew ? "Create" : "Save"}
-              </button>
-              {!isNew && selected && (
-                <button
-                  onClick={() => handleDelete(selected.virtual_model_id)}
-                  style={{
-                    padding: "8px 20px", borderRadius: "var(--radius-md)", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                    background: "rgba(255,69,58,0.12)", color: "var(--color-red, #ff453a)",
-                    border: "1px solid rgba(255,69,58,0.2)",
-                  }}
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={closeForm}
+              <div
                 style={{
-                  padding: "8px 16px", borderRadius: "var(--radius-md)", fontSize: 13, cursor: "pointer",
-                  background: "transparent", color: "var(--color-text-secondary)",
-                  border: "1px solid var(--color-separator)",
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: "var(--color-text)",
                 }}
               >
-                Cancel
-              </button>
+                Configured models
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--color-text-tertiary)",
+                  marginTop: 4,
+                }}
+              >
+                {vmodels.length} virtual model{vmodels.length !== 1 ? "s" : ""}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+
+          {loading ? (
+            <div style={emptyStateStyle}>Loading virtual models…</div>
+          ) : vmodels.length === 0 ? (
+            <div style={emptyStateStyle}>
+              No virtual models yet. Click <strong>+ New Virtual Model</strong> to create one.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {vmodels.map((vm) => {
+                const isSelected = selected?.virtual_model_id === vm.virtual_model_id
+                const virtualFamily = detectModelFamily(vm.virtual_model_id)
+                const primaryUpstreamFamily = vm.upstreams.length > 0 ? detectModelFamily(vm.upstreams[0].model_id) : null
+                const hasFamilyMismatch = Boolean(
+                  virtualFamily && primaryUpstreamFamily && virtualFamily !== primaryUpstreamFamily,
+                )
+                const upstreamSummary = formatVirtualModelUpstreamSummary(vm, upstreamResolutionContext)
+                const showVmWeight = vm.lb_strategy === "weighted"
+                const showVmPriority = vm.lb_strategy === "priority"
+                return (
+                  <div
+                    key={vm.virtual_model_id}
+                    onClick={() => openEdit(vm)}
+                    className={`panel${isSelected ? " panel-active" : ""}`}
+                    title={upstreamSummary || undefined}
+                    style={{
+                      textAlign: "left",
+                      padding: 16,
+                      background: "var(--color-bg-elevated)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: "var(--color-text)",
+                            marginBottom: 6,
+                          }}
+                        >
+                          {vm.virtual_model_id}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            color: "var(--color-text-secondary)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          {vm.name}
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 6,
+                            fontSize: 10,
+                            color: "var(--color-text-tertiary)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Badge>{vm.lb_strategy}</Badge>
+                          <Badge>{vm.api_shape}</Badge>
+                          <Badge>{vm.upstreams.length} upstream{vm.upstreams.length !== 1 ? "s" : ""}</Badge>
+                          <Badge tone={vm.enabled ? "green" : "neutral"}>
+                            {vm.enabled ? "enabled" : "disabled"}
+                          </Badge>
+                          {hasFamilyMismatch && <Badge tone="amber">family mismatch</Badge>}
+                        </div>
+                        {hasFamilyMismatch && (
+                          <div style={warningBoxStyle}>
+                            Virtual model looks like <strong>{virtualFamily}</strong> but primary upstream routes to <strong>{primaryUpstreamFamily}</strong>.
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            fontSize: 11,
+                            color: "var(--color-text-secondary)",
+                            marginBottom: 8,
+                          }}
+                        >
+                          {vm.upstreams.map((upstream, index) => {
+                            const { providerLabel, isLegacy } = resolveUpstreamProvider(upstream, upstreamResolutionContext)
+                            return (
+                              <div key={`${vm.virtual_model_id}-${index}`} style={{ display: "flex", gap: 6, minWidth: 0 }}>
+                                <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{index + 1}.</span>
+                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${providerLabel} · ${upstream.model_id}${showVmWeight ? ` · weight ${upstream.weight ?? 1}` : ""}${showVmPriority ? ` · priority ${upstream.priority ?? 0}` : ""}`}>
+                                  {providerLabel}
+                                  {" · "}
+                                  <span style={{ fontFamily: "var(--font-mono)" }}>{upstream.model_id}</span>
+                                  {showVmWeight && <span style={{ color: "var(--color-text-tertiary)" }}>{` · w${upstream.weight ?? 1}`}</span>}
+                                  {showVmPriority && <span style={{ color: "var(--color-text-tertiary)" }}>{` · p${upstream.priority ?? 0}`}</span>}
+                                  {isLegacy && <span style={{ marginLeft: 6 }}><Badge tone="amber">legacy</Badge></span>}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                            gap: 6,
+                          }}
+                        >
+                          <MetaItem label="Updated" value={formatTimestamp(vm.updated_at)} compact />
+                          <MetaItem label="Description" value={vm.description || "—"} compact />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDelete(vm.virtual_model_id)
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+
+        {isEditing && (
+          <section className="panel" style={{ padding: 20 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 20,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 600,
+                    color: "var(--color-text)",
+                  }}
+                >
+                  {isNew ? "New Virtual Model" : selected?.name || selected?.virtual_model_id}
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-tertiary)",
+                    marginTop: 4,
+                  }}
+                >
+                  {isNew ? "Create a new routed model alias" : `Editing ${selected?.virtual_model_id}`}
+                </div>
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={closeForm}>
+                Close
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={sectionStyle}>
+                <div style={sectionTitleStyle}>Basics</div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <MetaItem label="Virtual model ID" value={form.virtual_model_id || "—"} mono />
+                  <MetaItem label="API shape" value={form.api_shape || "openai"} />
+                  <MetaItem label="Strategy" value={form.lb_strategy || "round-robin"} />
+                  <MetaItem label="Upstreams" value={String(upstreamRows.filter((row) => row.model_id.trim()).length)} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={sectionTitleStyle}>Current routing</div>
+                  <div style={sectionHintStyle}>This virtual model currently routes to these exact upstream model ids.</div>
+                  {(() => {
+                    const summaryVirtualFamily = detectModelFamily(form.virtual_model_id)
+                    const summaryPrimaryFamily = upstreamRows[0]?.model_id ? detectModelFamily(upstreamRows[0].model_id) : null
+                    const summaryMismatch = Boolean(
+                      summaryVirtualFamily && summaryPrimaryFamily && summaryVirtualFamily !== summaryPrimaryFamily,
+                    )
+                    return summaryMismatch ? (
+                      <div style={warningBoxStyle}>
+                        Virtual model looks like <strong>{summaryVirtualFamily}</strong> but primary upstream routes to <strong>{summaryPrimaryFamily}</strong>.
+                      </div>
+                    ) : null
+                  })()}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {upstreamRows.filter((row) => row.model_id.trim()).map((row, index) => {
+                      const providerLabel = row.selectedProviderId
+                        ? (providerNameById[row.selectedProviderId] ?? row.selectedProviderId)
+                        : row.provider_id
+                          ? (providerNameById[row.provider_id] ?? row.provider_id)
+                          : "Legacy provider not resolved"
+                      const routeLabel =
+                        form.lb_strategy === "priority"
+                          ? index === 0
+                            ? "Primary"
+                            : `Fallback ${index}`
+                          : form.lb_strategy === "weighted"
+                            ? `Weight ${row.weight ?? 1}`
+                            : form.lb_strategy === "round-robin"
+                              ? `Round-robin ${index + 1}`
+                              : `Random ${index + 1}`
+                      return (
+                        <div key={`summary-${index}`} style={routingRowStyle}>
+                          <span style={routingLabelStyle}>{routeLabel}</span>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {providerLabel}
+                            {" · "}
+                            <span style={{ fontFamily: "var(--font-mono)" }}>{row.model_id}</span>
+                            {form.lb_strategy === "priority" && <span style={{ color: "var(--color-text-tertiary)" }}>{` · p${row.priority ?? 0}`}</span>}
+                            {form.lb_strategy === "weighted" && <span style={{ color: "var(--color-text-tertiary)" }}>{` · w${row.weight ?? 1}`}</span>}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div style={formGridStyle}>
+                  <Field label="Model ID" hint="Unique identifier exposed via /v1/models">
+                    <input
+                      className="sys-input"
+                      value={form.virtual_model_id ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, virtual_model_id: e.target.value }))}
+                      disabled={!isNew}
+                      placeholder="e.g. claude-mythos-5.0"
+                    />
+                  </Field>
+
+                  <Field label="Display name">
+                    <input
+                      className="sys-input"
+                      value={form.name ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                      placeholder="My Virtual Model"
+                    />
+                  </Field>
+
+                  <Field label="Description" hint="Optional">
+                    <input
+                      className="sys-input"
+                      value={form.description ?? ""}
+                      onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                      placeholder="What this virtual model does"
+                    />
+                  </Field>
+
+                  <Field label="Load-balancing strategy">
+                    <select
+                      className="sys-select"
+                      value={form.lb_strategy ?? "round-robin"}
+                      onChange={(e) => setForm((f) => ({ ...f, lb_strategy: e.target.value as LbStrategy }))}
+                    >
+                      {LB_STRATEGIES.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label} — {s.hint}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <label className="sys-label" style={{ marginBottom: 0 }}>
+                    Enabled
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={form.enabled ?? true}
+                    onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                    style={{ width: 16, height: 16, cursor: "pointer" }}
+                  />
+                </div>
+              </div>
+
+              <div style={sectionStyle}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    marginBottom: 14,
+                  }}
+                >
+                  <div>
+                    <div style={sectionTitleStyle}>Upstream models</div>
+                    <div style={sectionHintStyle}>
+                      Choose provider/model pairs that this virtual model can route to.
+                    </div>
+                  </div>
+                  <button className="btn btn-ghost btn-sm" onClick={addRow}>
+                    + Add upstream
+                  </button>
+                </div>
+
+                {catalogueLoading && (
+                  <div style={{ ...emptyStateStyle, padding: 12, marginBottom: 12 }}>
+                    Loading providers…
+                  </div>
+                )}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {upstreamRows.map((row, i) => {
+                    const availableModels = row.selectedProviderId
+                      ? (providerModels[row.selectedProviderId] ?? [])
+                      : []
+
+                    return (
+                      <div key={i} style={upstreamCardStyle}>
+                        <div style={upstreamGridStyle(showWeight, showPriority)}>
+                          <Field label="Provider">
+                            <select
+                              className="sys-select"
+                              value={row.selectedProviderId}
+                              onChange={(e) => setRowProvider(i, e.target.value)}
+                            >
+                              <option value="">— provider —</option>
+                              {providers.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name || p.id}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+
+                          <Field label="Model">
+                            <select
+                              className="sys-select"
+                              value={row.model_id}
+                              onChange={(e) => setRowModel(i, e.target.value)}
+                              disabled={!row.selectedProviderId}
+                            >
+                              <option value="">— model —</option>
+                              {availableModels.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name || m.id}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+
+                          {showWeight && (
+                            <Field label="Weight">
+                              <input
+                                className="sys-input"
+                                type="number"
+                                min={1}
+                                value={row.weight}
+                                onChange={(e) => setRowNum(i, "weight", Number(e.target.value))}
+                              />
+                            </Field>
+                          )}
+
+                          {showPriority && (
+                            <Field label="Priority">
+                              <input
+                                className="sys-input"
+                                type="number"
+                                min={0}
+                                value={row.priority}
+                                onChange={(e) => setRowNum(i, "priority", Number(e.target.value))}
+                              />
+                            </Field>
+                          )}
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => removeRow(i)}
+                            disabled={upstreamRows.length === 1}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {(showWeight || showPriority) && (
+                  <div style={sectionHintStyle}>
+                    {showWeight && "Weight: higher value = more traffic. "}
+                    {showPriority && "Priority: lower number = higher priority (0 = first choice)."}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                {!isNew && selected && (
+                  <button className="btn btn-ghost" onClick={() => handleDelete(selected.virtual_model_id)}>
+                    Delete
+                  </button>
+                )}
+                <button className="btn btn-ghost" onClick={closeForm}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                  {saving ? "Saving…" : isNew ? "Create" : "Save"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   )
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
     <div>
-      <label style={{
-        display: "block", fontSize: 12, fontWeight: 600, textTransform: "uppercase",
-        letterSpacing: "0.04em", color: "var(--color-text-secondary)", marginBottom: 4,
-      }}>
+      <label className="sys-label">
         {label}
         {hint && (
-          <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 6, color: "var(--color-text-tertiary)" }}>
+          <span
+            style={{
+              fontWeight: 400,
+              marginLeft: 6,
+              color: "var(--color-text-tertiary)",
+            }}
+          >
             — {hint}
           </span>
         )}
@@ -503,30 +774,175 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-function inputStyle(disabled = false): React.CSSProperties {
+function Badge({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode
+  tone?: "neutral" | "green" | "amber"
+}) {
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontWeight: 600,
+        background:
+          tone === "green"
+            ? "rgba(48,209,88,0.12)"
+            : tone === "amber"
+              ? "rgba(255,159,10,0.12)"
+              : "rgba(255,255,255,0.06)",
+        color:
+          tone === "green"
+            ? "var(--color-green)"
+            : tone === "amber"
+              ? "var(--color-orange)"
+              : "var(--color-text-tertiary)",
+        border:
+          tone === "green"
+            ? "1px solid rgba(48,209,88,0.2)"
+            : tone === "amber"
+              ? "1px solid rgba(255,159,10,0.2)"
+              : "1px solid var(--color-separator)",
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function MetaItem({
+  label,
+  value,
+  mono = false,
+  compact = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  compact?: boolean
+}) {
+  return (
+    <div
+      style={{
+        padding: compact ? "8px 10px" : "10px 12px",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--color-separator)",
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: compact ? 10 : 11,
+          color: "var(--color-text-tertiary)",
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: compact ? 11 : 13,
+          color: "var(--color-text)",
+          fontFamily: mono ? "var(--font-mono)" : "var(--font-text)",
+          wordBreak: "break-word",
+          lineHeight: 1.35,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function formatTimestamp(value?: string) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString()
+}
+
+const warningBoxStyle: React.CSSProperties = {
+  padding: "8px 10px",
+  borderRadius: "var(--radius-md)",
+  border: "1px solid rgba(255,159,10,0.2)",
+  background: "rgba(255,159,10,0.08)",
+  color: "var(--color-orange)",
+  fontSize: 11,
+  lineHeight: 1.4,
+  marginBottom: 8,
+}
+
+const routingRowStyle: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+  minWidth: 0,
+  padding: "8px 10px",
+  borderRadius: "var(--radius-md)",
+  border: "1px solid var(--color-separator)",
+  background: "rgba(255,255,255,0.03)",
+  fontSize: 12,
+  color: "var(--color-text-secondary)",
+}
+
+const routingLabelStyle: React.CSSProperties = {
+  color: "var(--color-text-tertiary)",
+  flexShrink: 0,
+  width: 84,
+  fontSize: 11,
+}
+
+const emptyStateStyle: React.CSSProperties = {
+  padding: 24,
+  borderRadius: "var(--radius-lg)",
+  border: "1px dashed var(--color-separator)",
+  textAlign: "center",
+  color: "var(--color-text-tertiary)",
+  fontSize: 13,
+}
+
+const sectionStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+  padding: 16,
+  borderRadius: "var(--radius-lg)",
+  border: "1px solid var(--color-separator)",
+  background: "rgba(255,255,255,0.03)",
+}
+
+const sectionTitleStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  color: "var(--color-text)",
+}
+
+const sectionHintStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "var(--color-text-tertiary)",
+  marginTop: 4,
+}
+
+const formGridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gap: 14,
+}
+
+const upstreamCardStyle: React.CSSProperties = {
+  padding: 14,
+  borderRadius: "var(--radius-lg)",
+  border: "1px solid var(--color-separator)",
+  background: "var(--color-bg-elevated)",
+}
+
+function upstreamGridStyle(showWeight: boolean, showPriority: boolean): React.CSSProperties {
   return {
-    width: "100%", boxSizing: "border-box", padding: "7px 10px",
-    borderRadius: "var(--radius-md)", border: "1px solid var(--color-separator)",
-    background: disabled ? "var(--color-surface-2, rgba(255,255,255,0.04))" : "var(--color-surface)",
-    color: disabled ? "var(--color-text-tertiary)" : "var(--color-text)",
-    fontSize: 13, fontFamily: "var(--font-text)", outline: "none",
-    opacity: disabled ? 0.6 : 1,
+    display: "grid",
+    gridTemplateColumns: `minmax(180px, 1fr) minmax(220px, 1.2fr)${showWeight ? " 110px" : ""}${showPriority ? " 110px" : ""}`,
+    gap: 12,
+    alignItems: "start",
   }
-}
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: "8px 20px", borderRadius: "var(--radius-md)",
-  background: "var(--color-blue)", color: "#fff",
-  border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer",
-}
-
-const addBtnStyle: React.CSSProperties = {
-  padding: "4px 10px", borderRadius: "var(--radius-sm)",
-  background: "rgba(10,132,255,0.12)", color: "var(--color-blue)",
-  border: "1px solid rgba(10,132,255,0.2)", fontSize: 12, fontWeight: 600, cursor: "pointer",
-}
-
-const colHeaderStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)",
-  textTransform: "uppercase", letterSpacing: "0.04em",
 }

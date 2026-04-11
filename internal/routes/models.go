@@ -55,10 +55,11 @@ func handleModels(c *gin.Context) {
 			seen[model.ID] = struct{}{}
 
 			openaiModel := map[string]interface{}{
-				"id":       model.ID,
-				"object":   "model",
-				"created":  time.Now().Unix(),
-				"owned_by": provider.GetInstanceID(),
+				"id":        model.ID,
+				"object":    "model",
+				"created":   time.Now().Unix(),
+				"owned_by":  provider.GetInstanceID(),
+				"api_shape": "openai",
 			}
 
 			// Add optional fields if available
@@ -98,6 +99,7 @@ func handleModels(c *gin.Context) {
 				"created":      time.Now().Unix(),
 				"owned_by":     "virtual",
 				"display_name": vm.Name,
+				"api_shape":    vm.APIShape,
 			}
 			if vm.Description != "" {
 				entry["description"] = vm.Description

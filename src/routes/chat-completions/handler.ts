@@ -46,41 +46,7 @@ import {
 } from "~/serialization"
 import { type ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
 
-// Helper function to normalize model names for validation
-function normalizeModelName(modelName: string): string {
-  // Handle Claude model variants with date suffixes
-  const claudeModelMap: Record<string, string> = {
-    "claude-haiku-4-5-20251001": "claude-haiku-4.5",
-    "claude-sonnet-4-6-20241022": "claude-sonnet-4.6",
-    "claude-opus-4-6-20241022": "claude-opus-4.6",
-    "claude-3-5-sonnet-20241022": "claude-3.5-sonnet",
-    "claude-3-5-sonnet-20240620": "claude-3.5-sonnet",
-  }
 
-  // Check exact mapping first
-  if (claudeModelMap[modelName]) {
-    return claudeModelMap[modelName]
-  }
-
-  // Handle pattern-based mappings
-  if (modelName.startsWith("claude-haiku-4")) {
-    return "claude-haiku-4.5"
-  }
-  if (modelName.startsWith("claude-sonnet-4-6")) {
-    return "claude-sonnet-4.6"
-  }
-  if (modelName.startsWith("claude-sonnet-4.5")) {
-    return "claude-sonnet-4.5"
-  }
-  if (modelName.startsWith("claude-sonnet-4")) {
-    return "claude-sonnet-4"
-  }
-  if (modelName.startsWith("claude-opus-4")) {
-    return "claude-opus-4.6"
-  }
-
-  return modelName
-}
 
 function getDefaultMaxTokensForModel(model: {
   vendor?: string
@@ -264,7 +230,7 @@ export async function handleCompletion(c: Context) {
 
   let payload = await c.req.json<ChatCompletionsPayload>()
   const requestedModel = payload.model
-  const normalizedModel = normalizeModelName(requestedModel)
+  const normalizedModel = requestedModel
 
   // Log REQUEST
   consola.info({
@@ -300,9 +266,6 @@ export async function handleCompletion(c: Context) {
       payload = { ...payload, tools: validTools }
     }
   }
-
-  const requestedModel = payload.model
-  const normalizedModel = normalizeModelName(requestedModel)
 
   const resolvedRoute = await resolveProvidersForModel(
     requestedModel,

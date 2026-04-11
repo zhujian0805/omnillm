@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -131,6 +132,7 @@ type VirtualModelRecord struct {
 type VirtualModelUpstreamRecord struct {
 	ID             int64     `json:"id"`
 	VirtualModelID string    `json:"virtual_model_id"`
+	ProviderID     string    `json:"provider_id"`
 	ModelID        string    `json:"model_id"`
 	Weight         int       `json:"weight"`
 	Priority       int       `json:"priority"`
@@ -270,6 +272,7 @@ func (db *Database) createTables() error {
 		`CREATE TABLE IF NOT EXISTS virtual_model_upstreams (
 			id               INTEGER PRIMARY KEY AUTOINCREMENT,
 			virtual_model_id TEXT NOT NULL,
+			provider_id      TEXT NOT NULL DEFAULT '',
 			model_id         TEXT NOT NULL,
 			weight           INTEGER NOT NULL DEFAULT 1,
 			priority         INTEGER NOT NULL DEFAULT 0,
@@ -277,10 +280,15 @@ func (db *Database) createTables() error {
 			FOREIGN KEY (virtual_model_id)
 				REFERENCES virtual_models(virtual_model_id) ON DELETE CASCADE
 		)`,
+		// Backfill newer columns for existing databases
+		`ALTER TABLE virtual_model_upstreams ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`,
 	}
 
 	for _, query := range queries {
 		if _, err := db.db.Exec(query); err != nil {
+			if strings.Contains(query, "ALTER TABLE") && strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return fmt.Errorf("failed to execute query: %w", err)
 		}
 	}
@@ -956,7 +964,7 @@ func NewVirtualModelUpstreamStore() *VirtualModelUpstreamStore {
 
 func (s *VirtualModelUpstreamStore) GetForVModel(virtualModelID string) ([]VirtualModelUpstreamRecord, error) {
 	rows, err := s.db.db.Query(`
-		SELECT id, virtual_model_id, model_id, weight, priority, created_at
+		SELECT id, virtual_model_id, provider_id, model_id, weight, priority, created_at
 		FROM virtual_model_upstreams
 		WHERE virtual_model_id = ?
 		ORDER BY priority ASC, id ASC
@@ -970,7 +978,7 @@ func (s *VirtualModelUpstreamStore) GetForVModel(virtualModelID string) ([]Virtu
 	for rows.Next() {
 		var r VirtualModelUpstreamRecord
 		var createdAtStr string
-		if err := rows.Scan(&r.ID, &r.VirtualModelID, &r.ModelID, &r.Weight, &r.Priority, &createdAtStr); err != nil {
+		if err := rows.Scan(&r.ID, &r.VirtualModelID, &r.ProviderID, &r.ModelID, &r.Weight, &r.Priority, &createdAtStr); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = parseTime(createdAtStr)
@@ -992,9 +1000,9 @@ func (s *VirtualModelUpstreamStore) SetForVModel(virtualModelID string, upstream
 	}
 	for _, u := range upstreams {
 		if _, err := tx.Exec(`
-			INSERT INTO virtual_model_upstreams (virtual_model_id, model_id, weight, priority)
-			VALUES (?, ?, ?, ?)
-		`, virtualModelID, u.ModelID, u.Weight, u.Priority); err != nil {
+			INSERT INTO virtual_model_upstreams (virtual_model_id, provider_id, model_id, weight, priority)
+			VALUES (?, ?, ?, ?, ?)
+		`, virtualModelID, u.ProviderID, u.ModelID, u.Weight, u.Priority); err != nil {
 			return err
 		}
 	}
