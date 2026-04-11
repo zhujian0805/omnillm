@@ -117,6 +117,7 @@ func handleMessages(c *gin.Context) {
 			}
 
 			providerRequest := attemptRequest
+			applyGitHubCopilotSingleUpstreamMode(provider, &providerRequest)
 
 			log.Debug().
 				Str("request_id", requestIDStr).
@@ -204,7 +205,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(canonicalRequest)
 	if err != nil {
-		if shouldFallbackToNonStreaming(err) {
+		if shouldFallbackToNonStreaming(err) && allowStreamingFallback(canonicalRequest) {
 			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
 			canonicalRequest.Stream = false
 			return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)

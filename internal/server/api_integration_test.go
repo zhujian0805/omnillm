@@ -128,11 +128,21 @@ func registerStubProvider(
 	executeFn func(*cif.CanonicalRequest) (*cif.CanonicalResponse, error),
 	streamFn func(*cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error),
 ) string {
+	return registerStubProviderWithType(t, "stub-provider", modelID, executeFn, streamFn)
+}
+
+func registerStubProviderWithType(
+	t *testing.T,
+	providerID string,
+	modelID string,
+	executeFn func(*cif.CanonicalRequest) (*cif.CanonicalResponse, error),
+	streamFn func(*cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error),
+) string {
 	t.Helper()
 
 	instanceID := fmt.Sprintf("stub-%d", time.Now().UnixNano())
 	provider := &stubProvider{
-		id:         "stub-provider",
+		id:         providerID,
 		instanceID: instanceID,
 		name:       "Stub Provider",
 		models: &providertypes.ModelsResponse{
@@ -737,6 +747,51 @@ func TestMessagesEndpointHandlesLongMixedConversation(t *testing.T) {
 	body := readBody(t, resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+}
+
+func TestChatCompletionsStreamingDoesNotFallbackForGitHubCopilotCompatMode(t *testing.T) {
+	modelID := "copilot-stream-no-fallback-model"
+	var executeCalls int
+	var streamCalls int
+
+	registerStubProviderWithType(
+		t,
+		string(providertypes.ProviderGitHubCopilot),
+		modelID,
+		func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+			executeCalls++
+			return &cif.CanonicalResponse{
+				ID:         "resp_unexpected_nonstream",
+				Model:      req.Model,
+				Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "non-stream fallback should not run"}},
+				StopReason: cif.StopReasonEndTurn,
+			}, nil
+		},
+		func(_ *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+			streamCalls++
+			return nil, errors.New("simulated upstream streaming failure")
+		},
+	)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(
+		t,
+		srv.URL+"/v1/chat/completions",
+		fmt.Sprintf(`{"model":"%s","stream":true,"messages":[{"role":"user","content":"ping"}]}`, modelID),
+		nil,
+	)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d: %s", resp.StatusCode, body)
+	}
+	if executeCalls != 0 {
+		t.Fatalf("expected zero non-stream fallback calls, got %d", executeCalls)
+	}
+	if streamCalls != 1 {
+		t.Fatalf("expected one stream attempt, got %d", streamCalls)
 	}
 }
 

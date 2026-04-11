@@ -129,6 +129,171 @@ func TestCopilotAdapterExecute_UsesResponsesAPIForGPT54Models(t *testing.T) {
 	}
 }
 
+func TestCopilotAdapterExecute_SendsModernCopilotHeadersForChatCompletions(t *testing.T) {
+	var capturedHeaders http.Header
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		capturedHeaders = r.Header.Clone()
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    "chatcmpl_headers",
+			"model": "claude-haiku-4.5",
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"message": map[string]interface{}{
+						"role":    "assistant",
+						"content": "pong",
+					},
+					"finish_reason": "stop",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	imageData := "ZmFrZS1pbWFnZS1ieXRlcw=="
+	_, err := adapter.Execute(&cif.CanonicalRequest{
+		Model: "claude-haiku-4.5",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "Describe this image."},
+					cif.CIFImagePart{
+						Type:      "image",
+						MediaType: "image/png",
+						Data:      &imageData,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if got := capturedHeaders.Get("Authorization"); got != "Bearer test-token" {
+		t.Fatalf("unexpected authorization header: %q", got)
+	}
+	if got := capturedHeaders.Get("Copilot-Integration-Id"); got != "vscode-chat" {
+		t.Fatalf("unexpected copilot integration header: %q", got)
+	}
+	if got := capturedHeaders.Get("Editor-Version"); got != ghservice.EditorVersion {
+		t.Fatalf("unexpected editor version header: %q", got)
+	}
+	if got := capturedHeaders.Get("Editor-Plugin-Version"); got != ghservice.PluginVersion {
+		t.Fatalf("unexpected plugin version header: %q", got)
+	}
+	if got := capturedHeaders.Get("User-Agent"); got != ghservice.UserAgent {
+		t.Fatalf("unexpected user agent header: %q", got)
+	}
+	if got := capturedHeaders.Get("Openai-Intent"); got != "conversation-panel" {
+		t.Fatalf("unexpected OpenAI intent header: %q", got)
+	}
+	if got := capturedHeaders.Get("X-Github-Api-Version"); got != ghservice.APIVersion {
+		t.Fatalf("unexpected GitHub API version header: %q", got)
+	}
+	if got := capturedHeaders.Get("X-Vscode-User-Agent-Library-Version"); got != "electron-fetch" {
+		t.Fatalf("unexpected VS Code library header: %q", got)
+	}
+	if got := capturedHeaders.Get("X-Initiator"); got != "user" {
+		t.Fatalf("expected user initiator header, got %q", got)
+	}
+	if got := capturedHeaders.Get("Copilot-Vision-Request"); got != "true" {
+		t.Fatalf("expected vision header to be set, got %q", got)
+	}
+	if got := capturedHeaders.Get("X-Request-Id"); got == "" {
+		t.Fatal("expected x-request-id header to be set")
+	}
+}
+
+func TestCopilotAdapterExecute_SendsAgentInitiatorHeadersForResponses(t *testing.T) {
+	var capturedHeaders http.Header
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			http.NotFound(w, r)
+			return
+		}
+
+		capturedHeaders = r.Header.Clone()
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "resp_headers",
+			"model":  "gpt-5.4-2026-03-17",
+			"status": "completed",
+			"output": []map[string]interface{}{
+				{
+					"type": "message",
+					"id":   "msg_headers",
+					"content": []map[string]interface{}{
+						{"type": "output_text", "text": "pong"},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	_, err := adapter.Execute(&cif.CanonicalRequest{
+		Model: "gpt-5.4",
+		Messages: []cif.CIFMessage{
+			cif.CIFAssistantMessage{
+				Role: "assistant",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "Previous reasoning step."},
+				},
+			},
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "Continue."},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+
+	if got := capturedHeaders.Get("Copilot-Integration-Id"); got != "vscode-chat" {
+		t.Fatalf("unexpected copilot integration header: %q", got)
+	}
+	if got := capturedHeaders.Get("Openai-Intent"); got != "conversation-panel" {
+		t.Fatalf("unexpected OpenAI intent header: %q", got)
+	}
+	if got := capturedHeaders.Get("X-Github-Api-Version"); got != ghservice.APIVersion {
+		t.Fatalf("unexpected GitHub API version header: %q", got)
+	}
+	if got := capturedHeaders.Get("X-Initiator"); got != "agent" {
+		t.Fatalf("expected agent initiator header, got %q", got)
+	}
+	if got := capturedHeaders.Get("Copilot-Vision-Request"); got != "" {
+		t.Fatalf("expected no vision header for non-vision request, got %q", got)
+	}
+	if got := capturedHeaders.Get("X-Request-Id"); got == "" {
+		t.Fatal("expected x-request-id header to be set")
+	}
+}
+
 func TestGitHubCopilotProviderGetHeaders_RefreshesExpiredToken(t *testing.T) {
 	provider := NewGitHubCopilotProvider("github-copilot-test")
 	provider.githubToken = "github-token"
@@ -446,6 +611,64 @@ func TestCopilotAdapterExecute_FallsBackToResponsesWhenChatCompletionsIsUnsuppor
 	}
 }
 
+func TestCopilotAdapterExecute_ForceChatCompletionsSkipsResponsesFallback(t *testing.T) {
+	var chatCalls int
+	var responsesCalls int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			chatCalls++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "model \"future-copilot-model\" is not accessible via the /chat/completions endpoint",
+					"code":    "unsupported_api_for_model",
+					"type":    "invalid_request_error",
+				},
+			})
+		case "/v1/responses":
+			responsesCalls++
+			http.Error(w, "responses should not be used in forced chat compatibility mode", http.StatusTeapot)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.token = "test-token"
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	forceChatCompletions := true
+	_, err := adapter.Execute(&cif.CanonicalRequest{
+		Model: "future-copilot-model",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "ping"},
+				},
+			},
+		},
+		Extensions: &cif.Extensions{
+			ForceChatCompletions: &forceChatCompletions,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected Execute to return upstream chat completions error")
+	}
+
+	if chatCalls != 1 {
+		t.Fatalf("expected one /chat/completions call, got %d", chatCalls)
+	}
+	if responsesCalls != 0 {
+		t.Fatalf("expected zero /v1/responses calls, got %d", responsesCalls)
+	}
+}
+
 func TestCopilotAdapterExecuteStream_RefreshesTokenAndRetriesOnUnauthorized(t *testing.T) {
 	var requestCalls int
 
@@ -540,6 +763,73 @@ data: {"id":"chatcmpl_refresh","model":"claude-haiku-4.5","choices":[{"index":0,
 	}
 	if requestCalls != 2 {
 		t.Fatalf("expected two upstream requests (401 then retry), got %d", requestCalls)
+	}
+}
+
+func TestCopilotAdapterExecuteStream_DisableAuthRetryMakesSingleAttempt(t *testing.T) {
+	var requestCalls int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		requestCalls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": map[string]interface{}{
+				"message": "IDE token expired: unauthorized: token expired",
+				"type":    "authentication_error",
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.githubToken = "github-token"
+	provider.token = "stale-token"
+	provider.expiresAt = time.Now().Add(30 * time.Minute).Unix()
+
+	var refreshCalls int
+	provider.tokenFetcher = func(githubToken string) (*ghservice.CopilotTokenResponse, error) {
+		refreshCalls++
+		return &ghservice.CopilotTokenResponse{
+			Token:     "fresh-token",
+			ExpiresAt: time.Now().Add(time.Hour).Unix(),
+		}, nil
+	}
+
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+	forceChatCompletions := true
+	disableAuthRetry := true
+	_, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+		Model: "claude-haiku-4.5",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "ping"},
+				},
+			},
+		},
+		Stream: true,
+		Extensions: &cif.Extensions{
+			ForceChatCompletions: &forceChatCompletions,
+			DisableAuthRetry:     &disableAuthRetry,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected ExecuteStream to return upstream auth error without retry")
+	}
+
+	if refreshCalls != 0 {
+		t.Fatalf("expected zero token refresh attempts, got %d", refreshCalls)
+	}
+	if requestCalls != 1 {
+		t.Fatalf("expected one upstream request, got %d", requestCalls)
 	}
 }
 

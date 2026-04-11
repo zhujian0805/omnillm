@@ -4,7 +4,9 @@ package copilot
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
 	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -331,20 +333,33 @@ func (p *GitHubCopilotProvider) GetBaseURL() string {
 func (p *GitHubCopilotProvider) GetHeaders(forVision bool) map[string]string {
 	token := p.GetToken()
 	headers := map[string]string{
-		"Authorization":         fmt.Sprintf("Bearer %s", token),
-		"Content-Type":          "application/json",
-		"User-Agent":            "OmniModel/1.0",
-		"Accept":                "application/json",
-		"Editor-Version":        "vscode/1.83.1",
-		"Editor-Plugin-Version": "copilot/1.126.0",
-		"Openai-Organization":   "github-copilot",
+		"Authorization":                       fmt.Sprintf("Bearer %s", token),
+		"Content-Type":                        "application/json",
+		"Accept":                              "application/json",
+		"copilot-integration-id":              "vscode-chat",
+		"Editor-Version":                      ghservice.EditorVersion,
+		"Editor-Plugin-Version":               ghservice.PluginVersion,
+		"User-Agent":                          ghservice.UserAgent,
+		"OpenAI-Intent":                       "conversation-panel",
+		"X-Github-Api-Version":                ghservice.APIVersion,
+		"X-Request-Id":                        generateCopilotRequestID(),
+		"X-Vscode-User-Agent-Library-Version": "electron-fetch",
 	}
 
 	if forVision {
-		headers["OpenAI-Intent"] = "copilot-chat"
+		headers["copilot-vision-request"] = "true"
 	}
 
 	return headers
+}
+
+func generateCopilotRequestID() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err == nil {
+		return hex.EncodeToString(buf)
+	}
+
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }
 
 func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
@@ -649,7 +664,7 @@ func (a *CopilotAdapter) GetProvider() types.Provider {
 }
 
 func (a *CopilotAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-	if a.shouldUseResponsesAPI(request.Model) {
+	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(request.Model) {
 		return a.executeResponses(request)
 	}
 
@@ -659,7 +674,7 @@ func (a *CopilotAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 	}
 
 	var apiErr *copilotAPIError
-	if errors.As(err, &apiErr) && a.isUnsupportedChatCompletionsModel(apiErr) {
+	if !a.forceChatCompletions(request) && errors.As(err, &apiErr) && a.isUnsupportedChatCompletionsModel(apiErr) {
 		log.Info().
 			Str("model", request.Model).
 			Str("provider", a.provider.GetInstanceID()).
@@ -671,7 +686,7 @@ func (a *CopilotAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 }
 
 func (a *CopilotAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
-	if a.shouldUseResponsesAPI(request.Model) {
+	if !a.forceChatCompletions(request) && a.shouldUseResponsesAPI(request.Model) {
 		return a.executeResponsesStream(request)
 	}
 
@@ -681,7 +696,7 @@ func (a *CopilotAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 	}
 
 	var apiErr *copilotAPIError
-	if errors.As(err, &apiErr) && a.isUnsupportedChatCompletionsModel(apiErr) {
+	if !a.forceChatCompletions(request) && errors.As(err, &apiErr) && a.isUnsupportedChatCompletionsModel(apiErr) {
 		log.Info().
 			Str("model", request.Model).
 			Str("provider", a.provider.GetInstanceID()).
@@ -699,6 +714,13 @@ func (a *CopilotAdapter) RemapModel(canonicalModel string) string {
 func (a *CopilotAdapter) shouldUseResponsesAPI(model string) bool {
 	modelLower := strings.ToLower(model)
 	return strings.Contains(modelLower, "gpt-5.4")
+}
+
+func (a *CopilotAdapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
+	return request != nil &&
+		request.Extensions != nil &&
+		request.Extensions.ForceChatCompletions != nil &&
+		*request.Extensions.ForceChatCompletions
 }
 
 func (a *CopilotAdapter) isUnsupportedChatCompletionsModel(apiErr *copilotAPIError) bool {
@@ -738,7 +760,7 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	for k, v := range a.provider.GetHeaders(false) {
+	for k, v := range a.requestHeaders(request) {
 		req.Header.Set(k, v)
 	}
 
@@ -752,7 +774,7 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, a
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
-		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("chat.completions") {
+		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions") {
 			return a.executeOpenAIWithRetry(request, false)
 		}
 		return nil, apiErr
@@ -786,7 +808,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	for k, v := range a.provider.GetHeaders(false) {
+	for k, v := range a.requestHeaders(request) {
 		req.Header.Set(k, v)
 	}
 	req.Header.Set("Accept", "text/event-stream")
@@ -802,7 +824,7 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequ
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
-		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("chat.completions-stream") {
+		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("chat.completions-stream") {
 			return a.executeOpenAIStreamWithRetry(request, false)
 		}
 		return nil, apiErr
@@ -833,7 +855,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 		return nil, fmt.Errorf("failed to create responses request: %w", err)
 	}
 
-	for k, v := range a.provider.GetHeaders(false) {
+	for k, v := range a.requestHeaders(request) {
 		req.Header.Set(k, v)
 	}
 
@@ -847,7 +869,7 @@ func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
-		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("responses") {
+		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("responses") {
 			return a.executeResponsesWithRetry(request, false)
 		}
 		return nil, apiErr
@@ -881,7 +903,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 		return nil, fmt.Errorf("failed to create responses request: %w", err)
 	}
 
-	for k, v := range a.provider.GetHeaders(false) {
+	for k, v := range a.requestHeaders(request) {
 		req.Header.Set(k, v)
 	}
 	req.Header.Set("Accept", "text/event-stream")
@@ -897,7 +919,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
-		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("responses-stream") {
+		if allowAuthRetry && a.shouldRetryAfterAuthError(request, apiErr) && a.refreshTokenForRetry("responses-stream") {
 			return a.executeResponsesStreamWithRetry(request, false)
 		}
 		return nil, apiErr
@@ -908,8 +930,71 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalR
 	return eventCh, nil
 }
 
-func (a *CopilotAdapter) shouldRetryAfterAuthError(apiErr *copilotAPIError) bool {
+func (a *CopilotAdapter) shouldRetryAfterAuthError(request *cif.CanonicalRequest, apiErr *copilotAPIError) bool {
+	if request != nil &&
+		request.Extensions != nil &&
+		request.Extensions.DisableAuthRetry != nil &&
+		*request.Extensions.DisableAuthRetry {
+		return false
+	}
+
 	return apiErr != nil && apiErr.IsAuthenticationError() && a.provider.githubToken != ""
+}
+
+func (a *CopilotAdapter) requestHeaders(request *cif.CanonicalRequest) map[string]string {
+	headers := a.provider.GetHeaders(a.requestUsesVision(request))
+	headers["X-Initiator"] = a.requestInitiator(request)
+	return headers
+}
+
+func (a *CopilotAdapter) requestUsesVision(request *cif.CanonicalRequest) bool {
+	if request == nil {
+		return false
+	}
+
+	for _, message := range request.Messages {
+		for _, part := range messageContentParts(message) {
+			if _, ok := part.(cif.CIFImagePart); ok {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (a *CopilotAdapter) requestInitiator(request *cif.CanonicalRequest) string {
+	if request == nil {
+		return "user"
+	}
+
+	for _, message := range request.Messages {
+		switch msg := message.(type) {
+		case cif.CIFAssistantMessage:
+			if len(msg.Content) > 0 {
+				return "agent"
+			}
+		case cif.CIFUserMessage:
+			for _, part := range msg.Content {
+				if _, ok := part.(cif.CIFToolResultPart); ok {
+					return "agent"
+				}
+			}
+		}
+	}
+
+	return "user"
+}
+
+func messageContentParts(message cif.CIFMessage) []cif.CIFContentPart {
+	switch msg := message.(type) {
+	case cif.CIFUserMessage:
+		return msg.Content
+	case cif.CIFAssistantMessage:
+		return msg.Content
+	default:
+		return nil
+	}
 }
 
 func (a *CopilotAdapter) refreshTokenForRetry(endpoint string) bool {

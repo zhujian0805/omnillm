@@ -132,6 +132,12 @@ type Extensions struct {
 	ThinkingBudgetTokens *int `json:"thinkingBudgetTokens,omitempty"`
 	// Qwen needs dummy tool injection — flag set by Alibaba adapter
 	RequiresDummyToolInjection *bool `json:"requiresDummyToolInjection,omitempty"`
+	// Force providers that support multiple upstream APIs to stay on chat completions.
+	ForceChatCompletions *bool `json:"forceChatCompletions,omitempty"`
+	// Disable provider-level auth retries to keep one upstream attempt per user request.
+	DisableAuthRetry *bool `json:"disableAuthRetry,omitempty"`
+	// Disable route-level streaming fallback to a second non-streaming request.
+	DisableStreamingFallback *bool `json:"disableStreamingFallback,omitempty"`
 }
 
 // ─────────────────────────────────────────────────────────
