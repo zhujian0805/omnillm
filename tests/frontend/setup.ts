@@ -221,8 +221,8 @@ export function setupFetchMocks(globalThis: any, endpoints: FetchMockSetup = {})
 export function createMockProvider(overrides: any = {}) {
   return {
     id: "test-provider-1",
-    type: "github-copilot",
-    name: "GitHub Copilot",
+    type: "alibaba",
+    name: "Alibaba",
     isActive: true,
     authStatus: "authenticated" as const,
     enabledModelCount: 5,

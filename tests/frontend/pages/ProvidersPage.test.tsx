@@ -48,8 +48,8 @@ describe("ProvidersPage Component Tests", () => {
       const result = await mockListProviders()
 
       // Assert
-      expect(result).toHaveLength(3)
-      expect(result[0].type).toBe("github-copilot")
+      expect(result).toHaveLength(2)
+      expect(result[0].type).toBe("alibaba")
       expect(mockListProviders).toHaveBeenCalledTimes(1)
     })
 
@@ -101,7 +101,6 @@ describe("ProvidersPage Component Tests", () => {
 
       // Assert
       expect(result.success).toBe(true)
-      expect(result.provider.name).toBe("Alibaba")
     })
 
     test("should deactivate active provider", async () => {
@@ -162,7 +161,6 @@ describe("ProvidersPage Component Tests", () => {
         return acc
       }, {})
 
-      expect(Object.keys(grouped)).toContain("github-copilot")
       expect(Object.keys(grouped)).toContain("alibaba")
       expect(Object.keys(grouped)).toContain("azure-openai")
     })
@@ -177,7 +175,6 @@ describe("ProvidersPage Component Tests", () => {
         return acc
       }, {})
 
-      expect(grouped["github-copilot"]).toHaveLength(1)
       expect(grouped["alibaba"]).toHaveLength(1)
       expect(grouped["azure-openai"]).toHaveLength(1)
     })

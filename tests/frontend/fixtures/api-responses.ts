@@ -6,16 +6,6 @@
 
 export const MOCK_PROVIDERS_LIST = [
   {
-    id: "github-copilot-1",
-    type: "github-copilot",
-    name: "GitHub Copilot",
-    isActive: true,
-    authStatus: "authenticated" as const,
-    enabledModelCount: 2,
-    totalModelCount: 2,
-    priority: 1
-  },
-  {
     id: "alibaba-1",
     type: "alibaba",
     name: "Alibaba",
