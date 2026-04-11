@@ -146,10 +146,10 @@ func handleResponses(c *gin.Context) {
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
 	}
-	c.JSON(http.StatusBadGateway, gin.H{
+	c.JSON(providerFailureStatus(lastErr), gin.H{
 		"error": gin.H{
 			"message": errMsg,
-			"type":    "server_error",
+			"type":    providerFailureType("server_error", lastErr),
 		},
 	})
 }
@@ -192,9 +192,12 @@ func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 func handleResponsesStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(canonicalRequest)
 	if err != nil {
-		log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming not supported, falling back to non-streaming")
-		canonicalRequest.Stream = false
-		return handleResponsesNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
+		if shouldFallbackToNonStreaming(err) {
+			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
+			canonicalRequest.Stream = false
+			return handleResponsesNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
+		}
+		return err
 	}
 
 	c.Header("Content-Type", "text/event-stream")

@@ -107,76 +107,78 @@ func handleChatCompletions(c *gin.Context) {
 		Msg("--> REQUEST")
 
 	// Resolve providers for the requested model
-	resolvedModel, normalizedModel := resolveRequestedModel(requestIDStr, canonicalRequest.Model)
-	canonicalRequest.Model = resolvedModel
+	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
 
-	modelRoute, err := modelrouting.ResolveProvidersForModel(
-		canonicalRequest.Model,
-		normalizedModel,
-		modelCache,
-	)
-	if err != nil {
-		log.Error().Err(err).Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers for model")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Failed to resolve providers: %v", err),
-				"type":    "provider_error",
-			},
-		})
-		return
-	}
-
-	if len(modelRoute.CandidateProviders) == 0 {
-		log.Warn().Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("No providers available for model")
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Model '%s' not found or no providers available", canonicalRequest.Model),
-				"type":    "model_not_found",
-			},
-		})
-		return
-	}
-
-	if normalizedModel != canonicalRequest.Model {
-		log.Debug().Str("request_id", requestIDStr).Str("from", canonicalRequest.Model).Str("to", normalizedModel).Msg("Normalized chat request model")
-		canonicalRequest.Model = normalizedModel
-	}
-
-	// Try candidate providers in priority order
 	var lastErr error
-	for _, provider := range modelRoute.CandidateProviders {
-		adapter := provider.GetAdapter()
-		if adapter == nil {
+	for _, attempt := range attempts {
+		attemptRequest := *canonicalRequest
+		attemptRequest.Model = attempt.RequestedModel
+
+		modelRoute, err := modelrouting.ResolveProvidersForModel(
+			attempt.RequestedModel,
+			attempt.NormalizedModel,
+			modelCache,
+		)
+		if err != nil {
+			log.Error().Err(err).Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("Failed to resolve providers for model")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": gin.H{
+					"message": fmt.Sprintf("Failed to resolve providers: %v", err),
+					"type":    "provider_error",
+				},
+			})
+			return
+		}
+
+		if len(modelRoute.CandidateProviders) == 0 {
+			lastErr = fmt.Errorf("model '%s' not found or no providers available", attempt.RequestedModel)
+			log.Warn().Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("No providers available for model attempt")
 			continue
 		}
 
-		log.Debug().
-			Str("request_id", requestIDStr).
-			Str("model", canonicalRequest.Model).
-			Str("provider", provider.GetInstanceID()).
-			Msg("Trying provider for request")
-
-		// Remap model name for this provider
-		remappedModel := adapter.RemapModel(canonicalRequest.Model)
-		if remappedModel != canonicalRequest.Model {
-			log.Debug().Str("request_id", requestIDStr).Str("from", canonicalRequest.Model).Str("to", remappedModel).Msg("Remapped model name")
-			canonicalRequest.Model = remappedModel
+		if attempt.NormalizedModel != attemptRequest.Model {
+			log.Debug().Str("request_id", requestIDStr).Str("from", attemptRequest.Model).Str("to", attempt.NormalizedModel).Msg("Normalized chat request model")
+			attemptRequest.Model = attempt.NormalizedModel
 		}
 
-		if canonicalRequest.Stream {
-			lastErr = handleStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
-		} else {
-			lastErr = handleNonStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
-		}
+		// Try candidate providers in priority order
+		for _, provider := range modelRoute.CandidateProviders {
+			adapter := provider.GetAdapter()
+			if adapter == nil {
+				continue
+			}
 
-		if lastErr == nil {
-			return // success
-		}
+			providerRequest := attemptRequest
 
-		log.Warn().Err(lastErr).
-			Str("request_id", requestIDStr).
-			Str("provider", provider.GetInstanceID()).
-			Msg("Provider failed, trying next")
+			log.Debug().
+				Str("request_id", requestIDStr).
+				Str("model", providerRequest.Model).
+				Str("provider", provider.GetInstanceID()).
+				Msg("Trying provider for request")
+
+			// Remap model name for this provider
+			remappedModel := adapter.RemapModel(providerRequest.Model)
+			if remappedModel != providerRequest.Model {
+				log.Debug().Str("request_id", requestIDStr).Str("from", providerRequest.Model).Str("to", remappedModel).Msg("Remapped model name")
+				providerRequest.Model = remappedModel
+			}
+
+			if providerRequest.Stream {
+				lastErr = handleStreamingResponse(c, adapter, &providerRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
+			} else {
+				lastErr = handleNonStreamingResponse(c, adapter, &providerRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
+			}
+
+			if lastErr == nil {
+				return // success
+			}
+
+			log.Warn().Err(lastErr).
+				Str("request_id", requestIDStr).
+				Str("provider", provider.GetInstanceID()).
+				Str("upstream_model", attempt.RequestedModel).
+				Msg("Provider failed, trying next")
+		}
 	}
 
 	// All providers failed
@@ -184,10 +186,10 @@ func handleChatCompletions(c *gin.Context) {
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
 	}
-	c.JSON(http.StatusBadGateway, gin.H{
+	c.JSON(providerFailureStatus(lastErr), gin.H{
 		"error": gin.H{
 			"message": errMsg,
-			"type":    "provider_error",
+			"type":    providerFailureType("provider_error", lastErr),
 		},
 	})
 }
@@ -231,10 +233,12 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(canonicalRequest)
 	if err != nil {
-		// Fallback to non-streaming if streaming not supported
-		log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming not supported, falling back to non-streaming")
-		canonicalRequest.Stream = false
-		return handleNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
+		if shouldFallbackToNonStreaming(err) {
+			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
+			canonicalRequest.Stream = false
+			return handleNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
+		}
+		return err
 	}
 
 	// Set SSE headers

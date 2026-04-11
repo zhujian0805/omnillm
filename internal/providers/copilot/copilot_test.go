@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"omnimodel/internal/cif"
+	ghservice "omnimodel/internal/services/github"
 )
 
 func TestCopilotAdapterExecute_UsesResponsesAPIForGPT54Models(t *testing.T) {
@@ -124,6 +126,34 @@ func TestCopilotAdapterExecute_UsesResponsesAPIForGPT54Models(t *testing.T) {
 	block, ok := content[0].(map[string]interface{})
 	if !ok || block["type"] != "input_text" || block["text"] != "ping" {
 		t.Fatalf("unexpected content block: %#v", content[0])
+	}
+}
+
+func TestGitHubCopilotProviderGetHeaders_RefreshesExpiredToken(t *testing.T) {
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.githubToken = "github-token"
+	provider.token = "expired-token"
+	provider.expiresAt = time.Now().Add(-time.Minute).Unix()
+
+	var refreshCalls int
+	provider.tokenFetcher = func(githubToken string) (*ghservice.CopilotTokenResponse, error) {
+		refreshCalls++
+		if githubToken != "github-token" {
+			t.Fatalf("expected github token to be passed to refresh, got %q", githubToken)
+		}
+		return &ghservice.CopilotTokenResponse{
+			Token:     "fresh-token",
+			ExpiresAt: time.Now().Add(time.Hour).Unix(),
+		}, nil
+	}
+
+	headers := provider.GetHeaders(false)
+
+	if got := headers["Authorization"]; got != "Bearer fresh-token" {
+		t.Fatalf("expected refreshed authorization header, got %q", got)
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("expected one token refresh, got %d", refreshCalls)
 	}
 }
 
@@ -413,6 +443,103 @@ func TestCopilotAdapterExecute_FallsBackToResponsesWhenChatCompletionsIsUnsuppor
 	textPart, ok := response.Content[0].(cif.CIFTextPart)
 	if !ok || textPart.Text != "fallback-ok" {
 		t.Fatalf("unexpected fallback response content: %#v", response.Content)
+	}
+}
+
+func TestCopilotAdapterExecuteStream_RefreshesTokenAndRetriesOnUnauthorized(t *testing.T) {
+	var requestCalls int
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+
+		requestCalls++
+		switch r.Header.Get("Authorization") {
+		case "Bearer stale-token":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "IDE token expired: unauthorized: token expired",
+					"type":    "authentication_error",
+				},
+			})
+		case "Bearer fresh-token":
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(strings.TrimSpace(`
+data: {"id":"chatcmpl_refresh","model":"claude-haiku-4.5","choices":[{"index":0,"delta":{"role":"assistant"}}]}
+
+data: {"id":"chatcmpl_refresh","model":"claude-haiku-4.5","choices":[{"index":0,"delta":{"content":"pong"}}]}
+
+data: {"id":"chatcmpl_refresh","model":"claude-haiku-4.5","choices":[{"index":0,"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":1}}
+`) + "\n\n"))
+		default:
+			t.Fatalf("unexpected authorization header: %q", r.Header.Get("Authorization"))
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider.baseURL = server.URL
+	provider.githubToken = "github-token"
+	provider.token = "stale-token"
+	provider.expiresAt = time.Now().Add(30 * time.Minute).Unix()
+
+	var refreshCalls int
+	provider.tokenFetcher = func(githubToken string) (*ghservice.CopilotTokenResponse, error) {
+		refreshCalls++
+		if githubToken != "github-token" {
+			t.Fatalf("expected github token to be passed to refresh, got %q", githubToken)
+		}
+		return &ghservice.CopilotTokenResponse{
+			Token:     "fresh-token",
+			ExpiresAt: time.Now().Add(time.Hour).Unix(),
+		}, nil
+	}
+
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+	eventCh, err := adapter.ExecuteStream(&cif.CanonicalRequest{
+		Model: "claude-haiku-4.5",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "ping"},
+				},
+			},
+		},
+		Stream: true,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteStream returned error: %v", err)
+	}
+
+	var sawTextDelta bool
+	var sawEnd bool
+	for event := range eventCh {
+		switch e := event.(type) {
+		case cif.CIFContentDelta:
+			if delta, ok := e.Delta.(cif.TextDelta); ok && delta.Text == "pong" {
+				sawTextDelta = true
+			}
+		case cif.CIFStreamEnd:
+			sawEnd = true
+		}
+	}
+
+	if !sawTextDelta {
+		t.Fatal("expected a streamed text delta after token refresh")
+	}
+	if !sawEnd {
+		t.Fatal("expected stream end after token refresh")
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("expected one token refresh after 401, got %d", refreshCalls)
+	}
+	if requestCalls != 2 {
+		t.Fatalf("expected two upstream requests (401 then retry), got %d", requestCalls)
 	}
 }
 

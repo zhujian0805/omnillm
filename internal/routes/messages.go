@@ -73,93 +73,95 @@ func handleMessages(c *gin.Context) {
 		Msg("--> REQUEST")
 
 	// Resolve providers
-	resolvedModel, normalizedModel := resolveRequestedModel(requestIDStr, canonicalRequest.Model)
-	canonicalRequest.Model = resolvedModel
-	modelRoute, err := modelrouting.ResolveProvidersForModel(
-		canonicalRequest.Model,
-		normalizedModel,
-		modelCache,
-	)
-	if err != nil {
-		log.Error().Err(err).Str("request_id", requestIDStr).Str("model", canonicalRequest.Model).Msg("Failed to resolve providers")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Failed to resolve providers: %v", err),
-				"type":    "api_error",
-			},
-		})
-		return
-	}
-
-	if len(modelRoute.CandidateProviders) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": fmt.Sprintf("Model '%s' not found or no providers available", canonicalRequest.Model),
-				"type":    "invalid_request_error",
-			},
-		})
-		return
-	}
-
-	if normalizedModel != canonicalRequest.Model {
-		log.Debug().
-			Str("request_id", requestIDStr).
-			Str("from", canonicalRequest.Model).
-			Str("to", normalizedModel).
-			Msg("Normalized Anthropic request model")
-		canonicalRequest.Model = normalizedModel
-	}
-
-	// Try candidate providers in priority order
+	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
 	var lastErr error
-	for _, provider := range modelRoute.CandidateProviders {
-		adapter := provider.GetAdapter()
-		if adapter == nil {
-			continue
-		}
+	for _, attempt := range attempts {
+		attemptRequest := *canonicalRequest
+		attemptRequest.Model = attempt.RequestedModel
 
-		log.Debug().
-			Str("request_id", requestIDStr).
-			Str("model", canonicalRequest.Model).
-			Str("provider", provider.GetInstanceID()).
-			Msg("Trying provider for Anthropic request")
-
-		remappedModel := adapter.RemapModel(canonicalRequest.Model)
-		log.Debug().
-			Str("request_id", requestIDStr).
-			Str("provider", provider.GetInstanceID()).
-			Str("api_shape", "anthropic").
-			Str("inbound_path", c.FullPath()).
-			Str("upstream_api", upstreamAPIForProvider(provider.GetID(), remappedModel)).
-			Str("canonical_model", canonicalRequest.Model).
-			Str("upstream_model", remappedModel).
-			Msg("Converted CIF request to upstream model API")
-		canonicalRequest.Model = remappedModel
-
-		if canonicalRequest.Stream {
-			lastErr = handleAnthropicStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
-		} else {
-			lastErr = handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
-		}
-
-		if lastErr == nil {
+		modelRoute, err := modelrouting.ResolveProvidersForModel(
+			attempt.RequestedModel,
+			attempt.NormalizedModel,
+			modelCache,
+		)
+		if err != nil {
+			log.Error().Err(err).Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("Failed to resolve providers")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": gin.H{
+					"message": fmt.Sprintf("Failed to resolve providers: %v", err),
+					"type":    "api_error",
+				},
+			})
 			return
 		}
 
-		log.Warn().Err(lastErr).
-			Str("request_id", requestIDStr).
-			Str("provider", provider.GetInstanceID()).
-			Msg("Provider failed for Anthropic request, trying next")
+		if len(modelRoute.CandidateProviders) == 0 {
+			lastErr = fmt.Errorf("model '%s' not found or no providers available", attempt.RequestedModel)
+			continue
+		}
+
+		if attempt.NormalizedModel != attemptRequest.Model {
+			log.Debug().
+				Str("request_id", requestIDStr).
+				Str("from", attemptRequest.Model).
+				Str("to", attempt.NormalizedModel).
+				Msg("Normalized Anthropic request model")
+			attemptRequest.Model = attempt.NormalizedModel
+		}
+
+		// Try candidate providers in priority order
+		for _, provider := range modelRoute.CandidateProviders {
+			adapter := provider.GetAdapter()
+			if adapter == nil {
+				continue
+			}
+
+			providerRequest := attemptRequest
+
+			log.Debug().
+				Str("request_id", requestIDStr).
+				Str("model", providerRequest.Model).
+				Str("provider", provider.GetInstanceID()).
+				Msg("Trying provider for Anthropic request")
+
+			remappedModel := adapter.RemapModel(providerRequest.Model)
+			log.Debug().
+				Str("request_id", requestIDStr).
+				Str("provider", provider.GetInstanceID()).
+				Str("api_shape", "anthropic").
+				Str("inbound_path", c.FullPath()).
+				Str("upstream_api", upstreamAPIForProvider(provider.GetID(), remappedModel)).
+				Str("canonical_model", providerRequest.Model).
+				Str("upstream_model", remappedModel).
+				Msg("Converted CIF request to upstream model API")
+			providerRequest.Model = remappedModel
+
+			if providerRequest.Stream {
+				lastErr = handleAnthropicStreamingResponse(c, adapter, &providerRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
+			} else {
+				lastErr = handleAnthropicNonStreamingResponse(c, adapter, &providerRequest, requestIDStr, originalModel, provider.GetInstanceID(), startTime)
+			}
+
+			if lastErr == nil {
+				return
+			}
+
+			log.Warn().Err(lastErr).
+				Str("request_id", requestIDStr).
+				Str("provider", provider.GetInstanceID()).
+				Str("upstream_model", attempt.RequestedModel).
+				Msg("Provider failed for Anthropic request, trying next")
+		}
 	}
 
 	errMsg := "All providers failed"
 	if lastErr != nil {
 		errMsg = fmt.Sprintf("All providers failed. Last error: %v", lastErr)
 	}
-	c.JSON(http.StatusBadGateway, gin.H{
+	c.JSON(providerFailureStatus(lastErr), gin.H{
 		"error": gin.H{
 			"message": errMsg,
-			"type":    "api_error",
+			"type":    providerFailureType("api_error", lastErr),
 		},
 	})
 }
@@ -202,9 +204,12 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID string, originalModel string, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(canonicalRequest)
 	if err != nil {
-		log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming not supported, falling back to non-streaming")
-		canonicalRequest.Stream = false
-		return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
+		if shouldFallbackToNonStreaming(err) {
+			log.Warn().Err(err).Str("request_id", requestID).Msg("Streaming request failed before stream start, retrying as non-streaming")
+			canonicalRequest.Stream = false
+			return handleAnthropicNonStreamingResponse(c, adapter, canonicalRequest, requestID, originalModel, providerID, startTime)
+		}
+		return err
 	}
 
 	c.Header("Content-Type", "text/event-stream")

@@ -21,29 +21,43 @@ func SelectUpstream(
 	strategy database.LbStrategy,
 	virtualModelID string,
 ) *database.VirtualModelUpstreamRecord {
+	ordered := OrderUpstreams(upstreams, strategy, virtualModelID)
+	if len(ordered) == 0 {
+		return nil
+	}
+	return &ordered[0]
+}
+
+// OrderUpstreams returns all upstreams in the order they should be attempted.
+func OrderUpstreams(
+	upstreams []database.VirtualModelUpstreamRecord,
+	strategy database.LbStrategy,
+	virtualModelID string,
+) []database.VirtualModelUpstreamRecord {
 	if len(upstreams) == 0 {
 		return nil
 	}
 
+	ordered := append([]database.VirtualModelUpstreamRecord(nil), upstreams...)
+
 	switch strategy {
 	case database.LbStrategyRoundRobin:
 		rrMu.Lock()
-		idx := rrState[virtualModelID] % len(upstreams)
+		idx := rrState[virtualModelID] % len(ordered)
 		rrState[virtualModelID] = idx + 1
 		rrMu.Unlock()
-		return &upstreams[idx]
+		return append(ordered[idx:], ordered[:idx]...)
 
 	case database.LbStrategyRandom:
-		idx := rand.Intn(len(upstreams))
-		return &upstreams[idx]
+		idx := rand.Intn(len(ordered))
+		return moveToFront(ordered, idx)
 
 	case database.LbStrategyPriority:
-		// upstreams are already sorted by priority ASC from the DB query
-		return &upstreams[0]
+		return ordered
 
 	case database.LbStrategyWeighted:
 		totalWeight := 0
-		for _, u := range upstreams {
+		for _, u := range ordered {
 			w := u.Weight
 			if w < 1 {
 				w = 1
@@ -51,20 +65,31 @@ func SelectUpstream(
 			totalWeight += w
 		}
 		roll := rand.Intn(totalWeight)
-		for i, u := range upstreams {
+		for i, u := range ordered {
 			w := u.Weight
 			if w < 1 {
 				w = 1
 			}
 			roll -= w
 			if roll < 0 {
-				return &upstreams[i]
+				return moveToFront(ordered, i)
 			}
 		}
-		// Fallback (floating-point edge case)
-		return &upstreams[len(upstreams)-1]
+		return moveToFront(ordered, len(ordered)-1)
 
 	default:
-		return &upstreams[0]
+		return ordered
 	}
+}
+
+func moveToFront(upstreams []database.VirtualModelUpstreamRecord, idx int) []database.VirtualModelUpstreamRecord {
+	if idx <= 0 || idx >= len(upstreams) {
+		return upstreams
+	}
+
+	ordered := make([]database.VirtualModelUpstreamRecord, 0, len(upstreams))
+	ordered = append(ordered, upstreams[idx])
+	ordered = append(ordered, upstreams[:idx]...)
+	ordered = append(ordered, upstreams[idx+1:]...)
+	return ordered
 }

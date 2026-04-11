@@ -26,13 +26,14 @@ import (
 )
 
 type GitHubCopilotProvider struct {
-	id          string
-	instanceID  string
-	name        string
-	token       string // short-lived Copilot API token
-	githubToken string // long-lived GitHub OAuth token
-	expiresAt   int64  // Copilot token expiry (unix timestamp)
-	baseURL     string
+	id           string
+	instanceID   string
+	name         string
+	token        string // short-lived Copilot API token
+	githubToken  string // long-lived GitHub OAuth token
+	expiresAt    int64  // Copilot token expiry (unix timestamp)
+	baseURL      string
+	tokenFetcher func(string) (*ghservice.CopilotTokenResponse, error)
 }
 
 type CopilotAdapter struct {
@@ -52,6 +53,25 @@ type copilotAPIError struct {
 
 func (e *copilotAPIError) Error() string {
 	return fmt.Sprintf("API request failed with status %d: %s", e.statusCode, string(e.body))
+}
+
+func (e *copilotAPIError) StatusCode() int {
+	if e == nil {
+		return 0
+	}
+	return e.statusCode
+}
+
+func (e *copilotAPIError) IsAuthenticationError() bool {
+	if e == nil {
+		return false
+	}
+	if e.statusCode == http.StatusUnauthorized || e.statusCode == http.StatusForbidden {
+		return true
+	}
+
+	body := strings.ToLower(string(e.body))
+	return strings.Contains(body, "token expired") || strings.Contains(body, "unauthorized")
 }
 
 type copilotErrorEnvelope struct {
@@ -115,10 +135,11 @@ type copilotResponsesStreamState struct {
 
 func NewGitHubCopilotProvider(instanceID string) *GitHubCopilotProvider {
 	return &GitHubCopilotProvider{
-		id:         "github-copilot",
-		instanceID: instanceID,
-		name:       "GitHub Copilot",
-		baseURL:    "https://api.githubcopilot.com",
+		id:           "github-copilot",
+		instanceID:   instanceID,
+		name:         "GitHub Copilot",
+		baseURL:      "https://api.githubcopilot.com",
+		tokenFetcher: ghservice.GetCopilotToken,
 	}
 }
 
@@ -213,9 +234,9 @@ func (p *GitHubCopilotProvider) SetGitHubToken(token string) {
 }
 
 func (p *GitHubCopilotProvider) GetToken() string {
-	// Auto-refresh if token is close to expiry (within 5 minutes)
-	if p.githubToken != "" && p.expiresAt > 0 {
-		if time.Now().Unix() > p.expiresAt-300 {
+	if p.githubToken != "" {
+		needsRefresh := p.token == "" || p.expiresAt == 0 || time.Now().Unix() > p.expiresAt-300
+		if needsRefresh {
 			if err := p.RefreshToken(); err != nil {
 				log.Warn().Err(err).Msg("Failed to auto-refresh Copilot token")
 			}
@@ -230,7 +251,12 @@ func (p *GitHubCopilotProvider) RefreshToken() error {
 		return nil
 	}
 
-	copilotToken, err := ghservice.GetCopilotToken(p.githubToken)
+	fetcher := p.tokenFetcher
+	if fetcher == nil {
+		fetcher = ghservice.GetCopilotToken
+	}
+
+	copilotToken, err := fetcher(p.githubToken)
 	if err != nil {
 		return fmt.Errorf("failed to refresh Copilot token: %w", err)
 	}
@@ -303,8 +329,9 @@ func (p *GitHubCopilotProvider) GetBaseURL() string {
 }
 
 func (p *GitHubCopilotProvider) GetHeaders(forVision bool) map[string]string {
+	token := p.GetToken()
 	headers := map[string]string{
-		"Authorization":         fmt.Sprintf("Bearer %s", p.token),
+		"Authorization":         fmt.Sprintf("Bearer %s", token),
 		"Content-Type":          "application/json",
 		"User-Agent":            "OmniModel/1.0",
 		"Accept":                "application/json",
@@ -692,6 +719,10 @@ func (a *CopilotAdapter) isUnsupportedChatCompletionsModel(apiErr *copilotAPIErr
 }
 
 func (a *CopilotAdapter) executeOpenAI(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	return a.executeOpenAIWithRetry(request, true)
+}
+
+func (a *CopilotAdapter) executeOpenAIWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	openaiPayload := a.convertCIFToOpenAI(request, toolNameMapper)
 	openaiPayload["stream"] = false
@@ -720,7 +751,11 @@ func (a *CopilotAdapter) executeOpenAI(request *cif.CanonicalRequest) (*cif.Cano
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("chat.completions") {
+			return a.executeOpenAIWithRetry(request, false)
+		}
+		return nil, apiErr
 	}
 
 	var openaiResp map[string]interface{}
@@ -732,6 +767,10 @@ func (a *CopilotAdapter) executeOpenAI(request *cif.CanonicalRequest) (*cif.Cano
 }
 
 func (a *CopilotAdapter) executeOpenAIStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	return a.executeOpenAIStreamWithRetry(request, true)
+}
+
+func (a *CopilotAdapter) executeOpenAIStreamWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	openaiPayload := a.convertCIFToOpenAI(request, toolNameMapper)
 	openaiPayload["stream"] = true
@@ -762,7 +801,11 @@ func (a *CopilotAdapter) executeOpenAIStream(request *cif.CanonicalRequest) (<-c
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("chat.completions-stream") {
+			return a.executeOpenAIStreamWithRetry(request, false)
+		}
+		return nil, apiErr
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
@@ -771,6 +814,10 @@ func (a *CopilotAdapter) executeOpenAIStream(request *cif.CanonicalRequest) (<-c
 }
 
 func (a *CopilotAdapter) executeResponses(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+	return a.executeResponsesWithRetry(request, true)
+}
+
+func (a *CopilotAdapter) executeResponsesWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (*cif.CanonicalResponse, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	responsesPayload := a.convertCIFToResponses(request, toolNameMapper)
 	responsesPayload["stream"] = false
@@ -799,7 +846,11 @@ func (a *CopilotAdapter) executeResponses(request *cif.CanonicalRequest) (*cif.C
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("responses") {
+			return a.executeResponsesWithRetry(request, false)
+		}
+		return nil, apiErr
 	}
 
 	var responsesResp copilotResponsesResponse
@@ -811,6 +862,10 @@ func (a *CopilotAdapter) executeResponses(request *cif.CanonicalRequest) (*cif.C
 }
 
 func (a *CopilotAdapter) executeResponsesStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
+	return a.executeResponsesStreamWithRetry(request, true)
+}
+
+func (a *CopilotAdapter) executeResponsesStreamWithRetry(request *cif.CanonicalRequest, allowAuthRetry bool) (<-chan cif.CIFStreamEvent, error) {
 	toolNameMapper := newCopilotToolNameMapper(request)
 	responsesPayload := a.convertCIFToResponses(request, toolNameMapper)
 	responsesPayload["stream"] = true
@@ -841,12 +896,37 @@ func (a *CopilotAdapter) executeResponsesStream(request *cif.CanonicalRequest) (
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		apiErr := &copilotAPIError{statusCode: resp.StatusCode, body: body}
+		if allowAuthRetry && a.shouldRetryAfterAuthError(apiErr) && a.refreshTokenForRetry("responses-stream") {
+			return a.executeResponsesStreamWithRetry(request, false)
+		}
+		return nil, apiErr
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
 	go a.parseResponsesSSE(resp.Body, eventCh, toolNameMapper)
 	return eventCh, nil
+}
+
+func (a *CopilotAdapter) shouldRetryAfterAuthError(apiErr *copilotAPIError) bool {
+	return apiErr != nil && apiErr.IsAuthenticationError() && a.provider.githubToken != ""
+}
+
+func (a *CopilotAdapter) refreshTokenForRetry(endpoint string) bool {
+	if err := a.provider.RefreshToken(); err != nil {
+		log.Warn().
+			Err(err).
+			Str("provider", a.provider.GetInstanceID()).
+			Str("endpoint", endpoint).
+			Msg("Failed to refresh Copilot token after upstream auth error")
+		return false
+	}
+
+	log.Info().
+		Str("provider", a.provider.GetInstanceID()).
+		Str("endpoint", endpoint).
+		Msg("Refreshed Copilot token after upstream auth error, retrying request")
+	return true
 }
 
 func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent, toolNameMapper *copilotToolNameMapper) {
