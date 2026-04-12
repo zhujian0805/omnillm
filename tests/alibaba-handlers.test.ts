@@ -31,7 +31,7 @@ const fetchMock = mock((_url: string, _init?: RequestInit) =>
 // @ts-expect-error - mocked fetch is enough for these tests
 globalThis.fetch = fetchMock
 
-describe("AlibabaProvider.createChatCompletions", () => {
+describe("AlibabaProvider adapter (CIF)", () => {
   beforeEach(() => {
     fetchMock.mockClear()
   })
@@ -40,7 +40,7 @@ describe("AlibabaProvider.createChatCompletions", () => {
     globalThis.fetch = originalFetch
   })
 
-  test("injects the Qwen OAuth system message when none is provided", async () => {
+  function makeOAuthProvider() {
     const provider = new AlibabaProvider("alibaba-oauth-test")
     ;(
       provider as unknown as {
@@ -61,15 +61,20 @@ describe("AlibabaProvider.createChatCompletions", () => {
       expires_at: Date.now() + 10 * 60_000,
       base_url: "",
     }
+    return provider
+  }
 
-    await provider.createChatCompletions({
+  test("injects the Qwen OAuth system message when none is provided", async () => {
+    const provider = makeOAuthProvider()
+
+    await provider.adapter.execute({
       model: "qwen3-coder-flash",
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
       stream: false,
     })
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    const body = JSON.parse(String(init.body)) as {
+    const body = JSON.parse(init.body as string) as {
       messages: Array<Record<string, unknown>>
     }
 
@@ -85,38 +90,17 @@ describe("AlibabaProvider.createChatCompletions", () => {
   })
 
   test("merges existing system text into the injected Qwen OAuth system message", async () => {
-    const provider = new AlibabaProvider("alibaba-oauth-test")
-    ;(
-      provider as unknown as {
-        tokenData: {
-          auth_type: "oauth"
-          access_token: string
-          refresh_token: string
-          resource_url: string
-          expires_at: number
-          base_url: string
-        }
-      }
-    ).tokenData = {
-      auth_type: "oauth",
-      access_token: "test-token",
-      refresh_token: "refresh-token",
-      resource_url: "portal.qwen.ai",
-      expires_at: Date.now() + 10 * 60_000,
-      base_url: "",
-    }
+    const provider = makeOAuthProvider()
 
-    await provider.createChatCompletions({
+    await provider.adapter.execute({
       model: "qwen3-coder-flash",
-      messages: [
-        { role: "system", content: "Be concise." },
-        { role: "user", content: "hi" },
-      ],
+      systemPrompt: "Be concise.",
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
       stream: false,
     })
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    const body = JSON.parse(String(init.body)) as {
+    const body = JSON.parse(init.body as string) as {
       messages: Array<Record<string, unknown>>
     }
 
