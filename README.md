@@ -377,6 +377,79 @@ This allows Claude Code to target OmniModel as its Anthropic-compatible endpoint
 
 ---
 
+### ⚠️ Caveat: Using Claude Code with GitHub Copilot Upstream
+
+When you route Claude Code through OmniModel with GitHub Copilot as the upstream provider, **GitHub Copilot is charged per request** — not per token. Claude Code makes many small background calls that silently add up:
+
+- **Sub-agent calls** — spawned for parallel tasks (search, file exploration, etc.)
+- **Tool-use calls** — quick validation and formatting requests
+- **Small/fast model calls** — Claude Code's internal use of "haiku" class models for lightweight tasks
+
+**If you don't override the `_MODEL` environment variables**, Claude Code defaults to Anthropic's Haiku model for all these small tasks, which means every sub-agent invocation and tool call becomes a separate request billed against your Copilot quota.
+
+#### Solution: Override small/fast models to a free or low-cost model
+
+Set these environment variables to route Claude Code's lightweight calls to a cheaper or free model instead of your primary Copilot upstream.
+
+#### Windows (PowerShell)
+
+```powershell
+$env:ANTHROPIC_DEFAULT_HAIKU_MODEL = "gpt-5-mini"
+$env:ANTHROPIC_SMALL_FAST_MODEL = "gpt-5-mini"
+$env:CLAUDE_CODE_SUBAGENT_MODEL = "gpt-5-mini"
+```
+
+#### Windows (CMD)
+
+```cmd
+set ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5-mini
+set ANTHROPIC_SMALL_FAST_MODEL=gpt-5-mini
+set CLAUDE_CODE_SUBAGENT_MODEL=gpt-5-mini
+```
+
+#### Linux / macOS (Bash, Zsh, etc.)
+
+```sh
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5-mini
+export ANTHROPIC_SMALL_FAST_MODEL=gpt-5-mini
+export CLAUDE_CODE_SUBAGENT_MODEL=gpt-5-mini
+```
+
+#### Persisting across sessions
+
+**Windows (PowerShell profile)** — add to `$PROFILE`:
+```powershell
+$env:ANTHROPIC_DEFAULT_HAIKU_MODEL = "qwen3.6-plus"
+$env:ANTHROPIC_SMALL_FAST_MODEL = "qwen3.6-plus"
+$env:CLAUDE_CODE_SUBAGENT_MODEL = "qwen3.6-plus"
+```
+
+**Linux / macOS** — add to `~/.bashrc`, `~/.zshrc`, or `~/.profile`:
+```sh
+export ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-plus
+export ANTHROPIC_SMALL_FAST_MODEL=qwen3.6-plus
+export CLAUDE_CODE_SUBAGENT_MODEL=qwen3.6-plus
+```
+
+Alternatively, set them in `.env.local` or `.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:5000",
+    "ANTHROPIC_MODEL": "claude-haiku-4.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "qwen3.6-plus",
+    "ANTHROPIC_SMALL_FAST_MODEL": "qwen3.6-plus",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "qwen3.6-plus",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  }
+}
+```
+
+This ensures only your main conversation requests go through the per-request-billed provider, while all the small background traffic is handled by your free or flat-rate subscription — potentially saving dozens or hundreds of unnecessary Copilot requests per session.
+
+---
+
 ## Operations and Troubleshooting
 
 ### Common checks
