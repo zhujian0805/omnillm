@@ -954,10 +954,10 @@ func GetVersion() string {
 	if err == nil {
 		version := strings.TrimSpace(string(data))
 		if version != "" {
-			return version
+			return strings.TrimPrefix(version, "v")
 		}
 	}
-	return "v0.0.1" // fallback
+	return "0.0.1" // fallback (without v prefix; frontend adds it)
 }
 
 func makeGetInfoHandler(port int) gin.HandlerFunc {

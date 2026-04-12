@@ -1216,32 +1216,29 @@ function PriorityModal({
   priorities: Record<string, number>
   onPrioritiesChange: (p: Record<string, number>) => void
 }) {
-  const activeProviders = providers
-    .filter((p) => p.isActive)
-    .sort((a, b) => (priorities[a.id] ?? 0) - (priorities[b.id] ?? 0))
   const [open, setOpen] = useState(false)
-  const [ordered, setOrdered] = useState<Array<Provider>>(activeProviders)
-  const [draggedId, setDraggedId] = useState<string | null>(null)
+  const [ordered, setOrdered] = useState<Array<Provider>>([])
 
-  useEffect(() => {
-    if (open) setOrdered(activeProviders)
-  }, [activeProviders, open])
-
-  if (activeProviders.length < 2) return null
-
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    setDraggedId(id)
-    e.dataTransfer.effectAllowed = "move"
+  const openModal = () => {
+    const snapshot = providers
+      .filter((p) => p.isActive)
+      .sort((a, b) => (priorities[a.id] ?? 0) - (priorities[b.id] ?? 0))
+    setOrdered(snapshot)
+    setOpen(true)
   }
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault()
-    if (!draggedId || draggedId === targetId) return
-    const di = ordered.findIndex((p) => p.id === draggedId)
-    const ti = ordered.findIndex((p) => p.id === targetId)
-    const next = [...ordered]
-    ;[next[di], next[ti]] = [next[ti], next[di]]
-    setOrdered(next)
-    setDraggedId(null)
+
+  const activeCount = providers.filter((p) => p.isActive).length
+
+  if (activeCount < 2) return null
+
+  const handleMove = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= ordered.length) return
+    setOrdered((prev) => {
+      const next = [...prev]
+      ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
+      return next
+    })
   }
   const handleSave = () => {
     const newPriorities: Record<string, number> = {}
@@ -1256,9 +1253,7 @@ function PriorityModal({
     <>
       <button
         className="btn btn-ghost btn-sm"
-        onClick={() => {
-          setOpen(true)
-        }}
+        onClick={openModal}
       >
         Priority
       </button>
@@ -1296,36 +1291,20 @@ function PriorityModal({
                   marginBottom: 16,
                 }}
               >
-                Drag to reorder. Providers higher in the list are tried first.
+                Reorder providers. Higher items are tried first.
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {ordered.map((p, i) => (
                   <div
                     key={p.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, p.id)}
-                    onDragOver={(e) => {
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = "move"
-                    }}
-                    onDrop={(e) => handleDrop(e, p.id)}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 12,
+                      gap: 10,
                       padding: "12px 16px",
-                      background:
-                        draggedId === p.id ?
-                          "rgba(10,132,255,0.1)"
-                        : "rgba(255,255,255,0.04)",
-                      border: "1px solid",
-                      borderColor:
-                        draggedId === p.id ?
-                          "var(--color-blue)"
-                        : "var(--color-separator)",
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid var(--color-separator)",
                       borderRadius: "var(--radius-md)",
-                      cursor: "grab",
-                      opacity: draggedId === p.id ? 0.5 : 1,
                       transition: "all 0.12s var(--ease)",
                     }}
                   >
@@ -1343,14 +1322,46 @@ function PriorityModal({
                     <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>
                       {p.name}
                     </span>
-                    <span
-                      style={{
-                        color: "var(--color-text-tertiary)",
-                        fontSize: 16,
-                      }}
-                    >
-                      ⠿
-                    </span>
+                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <button
+                        onClick={() => handleMove(i, -1)}
+                        disabled={i === 0}
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--color-separator)",
+                          borderRadius: 4,
+                          color: i === 0 ? "var(--color-text-tertiary)" : "var(--color-text)",
+                          cursor: i === 0 ? "not-allowed" : "pointer",
+                          opacity: i === 0 ? 0.3 : 1,
+                          padding: "2px 8px",
+                          fontSize: 14,
+                          lineHeight: 1,
+                          pointerEvents: i === 0 ? "none" : "auto",
+                        }}
+                        title="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => handleMove(i, 1)}
+                        disabled={i === ordered.length - 1}
+                        style={{
+                          background: "transparent",
+                          border: "1px solid var(--color-separator)",
+                          borderRadius: 4,
+                          color: i === ordered.length - 1 ? "var(--color-text-tertiary)" : "var(--color-text)",
+                          cursor: i === ordered.length - 1 ? "not-allowed" : "pointer",
+                          opacity: i === ordered.length - 1 ? 0.3 : 1,
+                          padding: "2px 8px",
+                          fontSize: 14,
+                          lineHeight: 1,
+                          pointerEvents: i === ordered.length - 1 ? "none" : "auto",
+                        }}
+                        title="Move down"
+                      >
+                        ↓
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
