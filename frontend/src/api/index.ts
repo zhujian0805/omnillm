@@ -1,3 +1,7 @@
+import { createLogger } from "@/lib/logger"
+
+const log = createLogger("api")
+
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 export interface Provider {
@@ -236,6 +240,7 @@ async function detectBackendPort(): Promise<number> {
 
     for (const port of possiblePorts) {
       try {
+        log.trace(`trying backend port ${port}`)
         const response = await fetch(
           `${globalThis.location.protocol}//${globalThis.location.hostname}:${port}/api/admin/info`,
           {
@@ -245,7 +250,7 @@ async function detectBackendPort(): Promise<number> {
         )
         if (response.ok) {
           detectedBackendPort = port
-          console.log(`✅ Auto-detected backend server on port ${port}`)
+          log.info(`Auto-detected backend server on port ${port}`)
           return port
         }
       } catch {
@@ -268,9 +273,7 @@ async function detectBackendPort(): Promise<number> {
         )
         if (response.ok) {
           detectedBackendPort = guessedPort
-          console.log(
-            `✅ Auto-detected backend server on port ${guessedPort} (frontend port - 1000)`,
-          )
+          log.info(`Auto-detected backend server on port ${guessedPort} (frontend port - 1000)`)
           return guessedPort
         }
       } catch {
@@ -308,18 +311,30 @@ async function getBackendBase(): Promise<string> {
 async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const backendBase = await getBackendBase()
   const fullUrl = `${backendBase}${path}`
+  const method = opts.method || "GET"
+
+  const t0 = performance.now()
+  log.trace(`${method} ${path}`, { url: fullUrl })
 
   const res = await fetch(fullUrl, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   })
+
+  const ms = Math.round(performance.now() - t0)
   if (!res.ok) {
     const body = (await res
       .json()
       .catch(() => ({}) as Record<string, unknown>)) as Record<string, unknown>
+    log.error(`${method} ${path} HTTP ${res.status}`, {
+      durationMs: ms,
+      error: body.error,
+    })
     // eslint-disable-next-line @typescript-eslint/no-base-to-string
     throw new Error(String(body.error || `HTTP ${res.status}`))
   }
+
+  log.debug(`${method} ${path} ${res.status} ${ms}ms`)
   return res.json() as Promise<T>
 }
 

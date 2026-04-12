@@ -1,5 +1,9 @@
 import { useCallback, useState } from "react"
 
+import { createLogger } from "@/lib/logger"
+
+const log = createLogger("toast")
+
 export interface Toast {
   id: number
   message: string
@@ -13,6 +17,7 @@ export function useToast() {
 
   const showToast = useCallback(
     (message: string, type: Toast["type"] = "success") => {
+      log.info(message, { type })
       const id = ++_id
       setToasts((prev) => [...prev, { id, message, type }])
       setTimeout(

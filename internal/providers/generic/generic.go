@@ -90,7 +90,73 @@ func (p *GenericProvider) GetInstanceID() string { return p.instanceID }
 func (p *GenericProvider) GetName() string       { return p.name }
 
 func (p *GenericProvider) SetupAuth(options *types.AuthOptions) error {
-	return fmt.Errorf("use the admin UI to authenticate %s", p.id)
+	switch p.id {
+	case "alibaba":
+		return p.setupAlibabaAuth(options)
+	case "azure-openai":
+		return p.setupAzureAuth(options)
+	default:
+		return fmt.Errorf("use the admin UI to authenticate %s", p.id)
+	}
+}
+
+func (p *GenericProvider) setupAlibabaAuth(options *types.AuthOptions) error {
+	switch options.Method {
+	case "api-key":
+		if options.APIKey == "" {
+			return fmt.Errorf("alibaba: API key is required")
+		}
+		// Save token to database
+		tokenStore := database.NewTokenStore()
+		tokenData := map[string]interface{}{
+			"access_token": options.APIKey,
+		}
+		if err := tokenStore.Save(p.instanceID, p.id, tokenData); err != nil {
+			return fmt.Errorf("failed to save alibaba token: %w", err)
+		}
+		p.token = options.APIKey
+
+		// Save region config
+		configStore := database.NewProviderConfigStore()
+		config := map[string]interface{}{
+			"auth_type": "api-key",
+			"region":    options.Region,
+		}
+		if err := configStore.Save(p.instanceID, config); err != nil {
+			return fmt.Errorf("failed to save alibaba config: %w", err)
+		}
+		p.config = config
+		p.baseURL = normalizeAlibabaBaseURL(config)
+
+		log.Info().Str("provider", p.instanceID).Str("region", options.Region).Msg("Alibaba authenticated via API key")
+		return nil
+
+	case "oauth":
+		// OAuth is handled via separate device code endpoints in the admin routes.
+		// This method just acknowledges the OAuth method was selected.
+		log.Info().Str("provider", p.instanceID).Msg("Alibaba OAuth method selected - use device code endpoints")
+		return nil
+
+	default:
+		return fmt.Errorf("alibaba: unsupported auth method: %s", options.Method)
+	}
+}
+
+func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
+	if options.APIKey == "" {
+		return fmt.Errorf("azure-openai: API key is required")
+	}
+	tokenStore := database.NewTokenStore()
+	tokenData := map[string]interface{}{
+		"access_token": options.APIKey,
+	}
+	if err := tokenStore.Save(p.instanceID, p.id, tokenData); err != nil {
+		return fmt.Errorf("failed to save azure token: %w", err)
+	}
+	p.token = options.APIKey
+
+	log.Info().Str("provider", p.instanceID).Msg("Azure OpenAI authenticated via API key")
+	return nil
 }
 
 func (p *GenericProvider) GetToken() string { return p.token }

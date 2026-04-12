@@ -14,6 +14,9 @@ import {
   type LogLevel,
 } from "@/api"
 import { parseLogLine } from "@/lib/logs"
+import { createLogger } from "@/lib/logger"
+
+const log = createLogger("logging-page")
 
 const LOG_LEVELS = [
   { value: "trace", label: "Trace" },
@@ -103,21 +106,27 @@ export function LoggingPage({
   const logViewportRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
+    log.debug("loading current log level from backend")
     getLogLevel()
-      .then((result) => setLogLevelState(result.level))
-      .catch((e: unknown) =>
+      .then((result) => {
+        log.debug("log level loaded", { level: result.level })
+        setLogLevelState(result.level)
+      })
+      .catch((e: unknown) => {
+        log.error("failed to load log level", e)
         showToast(
           "Failed to load log level: "
             + (e instanceof Error ? e.message : String(e)),
           "error",
-        ),
-      )
+        )
+      })
   }, [showToast])
 
   useEffect(() => {
     let es: EventSource | null = null
 
     const setupLogStream = async () => {
+      log.info("setting up log stream")
       try {
         es = await subscribeToLogs((line) => {
           setLines((prev) => [...prev.slice(-(MAX_LINES - 1)), line])
@@ -126,17 +135,18 @@ export function LoggingPage({
         })
 
         es.addEventListener("open", () => {
+          log.info("log stream connected")
           setConnected(true)
           setConnecting(false)
         })
 
         es.addEventListener("error", (e) => {
-          console.error("EventSource error:", e)
+          log.error("EventSource error", e)
           setConnected(false)
           setConnecting(false)
         })
       } catch (error) {
-        console.error("Failed to setup log stream:", error)
+        log.error("failed to setup log stream", error)
         setConnected(false)
         setConnecting(false)
         showToast(
@@ -151,6 +161,7 @@ export function LoggingPage({
 
     return () => {
       if (es) {
+        log.debug("closing log stream")
         es.close()
       }
     }
@@ -180,15 +191,18 @@ export function LoggingPage({
   }
 
   const clearLogs = () => {
+    log.info("clearing visible log buffer")
     setLines([])
     showToast("Cleared visible log buffer")
   }
 
   const copyLogs = async () => {
+    log.debug("copying visible logs to clipboard", { lineCount: lines.length })
     try {
       await navigator.clipboard.writeText(lines.join("\n"))
       showToast("Copied visible logs")
     } catch (e) {
+      log.error("clipboard copy failed", e)
       showToast(
         "Copy failed: " + (e instanceof Error ? e.message : String(e)),
         "error",
@@ -359,12 +373,14 @@ export function LoggingPage({
               onChange={async (e) => {
                 const newLevel = e.target.value as LogLevel
                 try {
+                  log.info("changing log level", { from: logLevel, to: newLevel })
                   await updateLogLevel(newLevel)
                   setLogLevelState(newLevel)
                   showToast(
                     `Log level changed to ${LOG_LEVELS.find((level) => level.value === newLevel)?.label ?? newLevel}`,
                   )
                 } catch (error) {
+                  log.error("failed to update log level", error)
                   showToast(
                     `Failed to update log level: ${error instanceof Error ? error.message : String(error)}`,
                     "error",

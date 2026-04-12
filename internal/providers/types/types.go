@@ -21,6 +21,8 @@ type AuthOptions struct {
 	ClientSecret string `json:"client_secret,omitempty"`
 	GithubToken  string `json:"github_token,omitempty"`
 	Token        string `json:"token,omitempty"` // alias for GithubToken from frontend
+	APIKey       string `json:"apiKey,omitempty"`
+	Region       string `json:"region,omitempty"`
 }
 
 type Model struct {

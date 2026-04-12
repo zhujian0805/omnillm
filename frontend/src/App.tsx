@@ -16,6 +16,10 @@ import { VmodelPage } from "@/pages/VmodelPage"
 // Import Material Design overlay styles
 import "@/styles/material-overlay.css"
 
+import { createLogger } from "@/lib/logger"
+
+const log = createLogger("app")
+
 type Tab = "providers" | "chat" | "logging" | "vmodel" | "about"
 type Theme = "dark" | "light"
 type DesignSystem = "default" | "material"
@@ -106,9 +110,15 @@ export default function AppComponent() {
   const [uxMode, setUxMode] = useState<UXMode>(loadUXMode())
 
   useEffect(() => {
+    log.info("initializing", { hostname: globalThis.location.hostname, port: globalThis.location.port })
     getInfo()
-      .then(setInfo)
-      .catch(() => {})
+      .then((result) => {
+        setInfo(result)
+        log.debug("server info loaded", result)
+      })
+      .catch((err) => {
+        log.error("failed to load server info", err)
+      })
   }, [])
 
   // Handle browser back/forward navigation
