@@ -97,3 +97,40 @@ func TestAlibabaApplyConfigUsesOAuthResourceURL(t *testing.T) {
 		t.Fatalf("expected OAuth resource_url to win, got %q", provider.baseURL)
 	}
 }
+
+func TestAlibabaOAuthGetModelsUsesSupportedCatalog(t *testing.T) {
+	if err := database.InitializeDatabase(t.TempDir()); err != nil {
+		t.Fatalf("failed to initialize database: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = database.GetDatabase().Close()
+	})
+
+	tokenStore := database.NewTokenStore()
+	if err := tokenStore.Save("alibaba-oauth-test", "alibaba", map[string]interface{}{
+		"access_token": "oauth-token",
+		"auth_type":    "oauth",
+		"resource_url": "portal.qwen.ai",
+	}); err != nil {
+		t.Fatalf("failed to save token: %v", err)
+	}
+
+	provider := NewGenericProvider("alibaba", "alibaba-oauth-test", "Alibaba")
+	if err := provider.LoadFromDB(); err != nil {
+		t.Fatalf("failed to load provider from database: %v", err)
+	}
+
+	models, err := provider.GetModels()
+	if err != nil {
+		t.Fatalf("GetModels() error = %v", err)
+	}
+	if len(models.Data) != 2 {
+		t.Fatalf("expected 2 supported OAuth models, got %d", len(models.Data))
+	}
+	if models.Data[0].ID != "qwen3-coder-plus" && models.Data[1].ID != "qwen3-coder-plus" {
+		t.Fatalf("expected qwen3-coder-plus in OAuth model list, got %#v", models.Data)
+	}
+	if models.Data[0].ID != "qwen3-coder-flash" && models.Data[1].ID != "qwen3-coder-flash" {
+		t.Fatalf("expected qwen3-coder-flash in OAuth model list, got %#v", models.Data)
+	}
+}

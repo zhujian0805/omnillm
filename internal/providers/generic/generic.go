@@ -508,6 +508,9 @@ func (p *GenericProvider) LoadFromDB() error {
 }
 
 func (p *GenericProvider) detectRegion() string {
+	if strings.Contains(strings.ToLower(p.instanceID), "global") {
+		return "global"
+	}
 	if p.baseURL != "" && strings.Contains(strings.ToLower(p.baseURL), "dashscope-intl") {
 		return "global"
 	}
@@ -593,27 +596,38 @@ func (p *GenericProvider) getAlibabaModels() (*types.ModelsResponse, error) {
 		return nil, fmt.Errorf("alibaba: not authenticated (set access_token via admin UI)")
 	}
 
-	// For OAuth, portal.qwen.ai does NOT expose a /models endpoint.
-	// Return the hardcoded model list (same approach as CLIProxyAPI).
-	// For API-key, try the DashScope /models endpoint first, fall back to hardcoded.
 	authType, _ := firstString(p.config, "auth_type", "authType")
 	if authType == "oauth" {
 		return p.getAlibabaModelsHardcoded(), nil
 	}
 
-	// API-key: try fetching models from DashScope
+	// API-key: try fetching models from DashScope first.
 	resp, err := p.fetchAlibabaModelsFromAPI()
 	if err == nil && len(resp.Data) > 0 {
 		return resp, nil
 	}
 
-	// Fallback to hardcoded list
+	// Fallback to the bundled catalog if live discovery is unavailable.
 	log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to fetch models from API, using hardcoded list")
 	return p.getAlibabaModelsHardcoded(), nil
 }
 
 func (p *GenericProvider) getAlibabaModelsHardcoded() *types.ModelsResponse {
 	models := providerModels["alibaba"]
+	authType, _ := firstString(p.config, "auth_type", "authType")
+	if authType == "oauth" {
+		oauthSupported := map[string]bool{
+			"qwen3-coder-flash": true,
+			"qwen3-coder-plus":  true,
+		}
+		filtered := make([]types.Model, 0, len(models))
+		for _, model := range models {
+			if oauthSupported[model.ID] {
+				filtered = append(filtered, model)
+			}
+		}
+		models = filtered
+	}
 	if models == nil {
 		models = []types.Model{}
 	}
@@ -797,11 +811,6 @@ func (a *GenericAdapter) RemapModel(model string) string {
 			return "claude-sonnet-4-6"
 		case strings.HasPrefix(model, "claude-haiku-4"):
 			return "gemini-3-flash"
-		}
-	case "alibaba":
-		// qwen3.6-plus is our catalog ID; the DashScope API uses qwen-plus for the same model
-		if model == "qwen3.6-plus" {
-			return "qwen-plus"
 		}
 	}
 	return model

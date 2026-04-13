@@ -122,3 +122,24 @@ func TestAlibabaOAuthBuildOpenAIPayloadMergesSystemPrompts(t *testing.T) {
 		t.Fatalf("expected merged system prompt %q, got %v", want, messages[0]["content"])
 	}
 }
+
+func TestAlibabaBuildOpenAIPayloadPreservesQwen36Plus(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "alibaba-test", "Alibaba")
+	adapter := &GenericAdapter{provider: provider}
+
+	payload := adapter.buildOpenAIPayload(&cif.CanonicalRequest{
+		Model: "qwen3.6-plus",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "hello"},
+				},
+			},
+		},
+	})
+
+	if payload["model"] != "qwen3.6-plus" {
+		t.Fatalf("expected preserved model qwen3.6-plus, got %v", payload["model"])
+	}
+}

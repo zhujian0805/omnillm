@@ -150,7 +150,7 @@ func handleMessages(c *gin.Context) {
 			log.Warn().Err(lastErr).
 				Str("request_id", requestIDStr).
 				Str("provider", provider.GetInstanceID()).
-				Str("upstream_model", attempt.RequestedModel).
+				Str("upstream_model", providerRequest.Model).
 				Msg("Provider failed for Anthropic request, trying next")
 		}
 	}
