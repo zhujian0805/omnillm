@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
   activateProvider,
   addProviderInstance,
+  authAndCreateProvider,
   authProvider,
   cancelAuth,
   deactivateProvider,
@@ -1755,6 +1756,612 @@ function ProviderCard({
   )
 }
 
+// ─── Add Provider Flow (full-page inline wizard) ─────────────────────────────
+
+type AddFlowStep = "select" | "configure" | "authenticating"
+
+function AddProviderFlow({
+  onDone,
+  onCancel,
+  showToast,
+}: {
+  onDone: () => void
+  onCancel: () => void
+  showToast: (msg: string, type?: "success" | "error") => void
+}) {
+  const [step, setStep] = useState<AddFlowStep>("select")
+  const [selectedType, setSelectedType] = useState<string | null>(null)
+  const [authFlow, setAuthFlow] = useState<AuthFlow | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Track whether the component is still mounted so in-flight async callbacks
+  // don't call state setters or onDone after unmount.
+  const mountedRef = useRef(true)
+
+  const stopPoll = useCallback(() => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current)
+      pollTimer.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      stopPoll()
+    }
+  }, [stopPoll])
+
+  const startPoll = useCallback(() => {
+    stopPoll()
+    pollTimer.current = setInterval(async () => {
+      try {
+        const af = await getAuthStatus()
+        // Guard against state updates on unmounted component.
+        if (!mountedRef.current) return
+        setAuthFlow(af)
+        if (af?.status === "complete") {
+          stopPoll()
+          showToast("Provider added successfully!")
+          onDone()
+        } else if (af?.status === "error") {
+          stopPoll()
+          showToast("Authentication failed: " + (af.error ?? "unknown"), "error")
+          setStep("configure")
+          setAuthFlow(null)
+        }
+      } catch {
+        /* ignore transient poll errors */
+      }
+    }, 2000)
+  }, [onDone, showToast, stopPoll])
+
+  const handleAuthSubmit = async (body: Record<string, string>) => {
+    if (!selectedType) return
+    setSubmitting(true)
+    try {
+      const result = await authAndCreateProvider(selectedType, body)
+      if (result.requiresAuth) {
+        // Use the pending_id returned by the server rather than constructing it
+        // client-side, so any future backend changes don't silently break this.
+        setAuthFlow({
+          providerId: result.pending_id ?? (selectedType + "-pending"),
+          status: "awaiting_user",
+          userCode: result.user_code,
+          instructionURL: result.verification_uri,
+        })
+        setStep("authenticating")
+        startPoll()
+      } else if (result.success) {
+        showToast(`Provider "${result.provider?.name ?? selectedType}" added successfully!`)
+        onDone()
+      } else {
+        // Backend returned 200 with success:false for a non-OAuth path — surface the error.
+        showToast(
+          result.message ?? "Authentication failed. Please check your credentials.",
+          "error",
+        )
+      }
+    } catch (e) {
+      showToast(
+        "Failed: " + (e instanceof Error ? e.message : String(e)),
+        "error",
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleCancelAuth = async () => {
+    stopPoll()
+    setAuthFlow(null)
+    try {
+      await cancelAuth()
+    } catch {
+      /* ignore */
+    }
+    setStep("configure")
+  }
+
+  // ── Step 1: Select type ──────────────────────────────────────────────────────
+  if (step === "select") {
+    return (
+      <div>
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 24,
+          }}
+        >
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onCancel}
+            style={{ padding: "4px 10px" }}
+          >
+            ← Back
+          </button>
+          <h2
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: 18,
+              margin: 0,
+              color: "var(--color-text)",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Add Provider
+          </h2>
+        </div>
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--color-text-secondary)",
+            marginBottom: 20,
+            marginTop: 0,
+          }}
+        >
+          Choose the provider type you want to add. You can add multiple accounts of the same type.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {PROVIDER_TYPES.map((pt) => {
+            const accent = PROVIDER_ACCENT[pt.id] ?? "#0a84ff"
+            return (
+              <button
+                key={pt.id}
+                onClick={() => {
+                  setSelectedType(pt.id)
+                  setStep("configure")
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "14px 16px",
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid var(--color-separator)",
+                  borderRadius: "var(--radius-md)",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "all 0.15s var(--ease)",
+                  width: "100%",
+                  color: "var(--color-text)",
+                }}
+                onMouseEnter={(e) => {
+                  ;(e.currentTarget as HTMLButtonElement).style.background = `${accent}10`
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = `${accent}30`
+                }}
+                onMouseLeave={(e) => {
+                  ;(e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.04)"
+                  ;(e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-separator)"
+                }}
+              >
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: "var(--radius-sm)",
+                    background: `${accent}18`,
+                    border: `1px solid ${accent}28`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: accent,
+                    flexShrink: 0,
+                  }}
+                >
+                  {PROVIDER_ICONS[pt.id] ?? <span style={{ fontSize: 18 }}>◌</span>}
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-0.01em" }}>
+                    {pt.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
+                    {pt.desc}
+                  </div>
+                </div>
+                <span style={{ marginLeft: "auto", color: "var(--color-text-tertiary)", fontSize: 16 }}>
+                  ›
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Step 2: Configure / authenticate ─────────────────────────────────────────
+  if (step === "configure" && selectedType) {
+    const typeName = PROVIDER_TYPES.find((pt) => pt.id === selectedType)?.name ?? selectedType
+    const accent = PROVIDER_ACCENT[selectedType] ?? "#0a84ff"
+
+    const authFormProps = {
+      onSubmit: handleAuthSubmit,
+      onCancel: () => setStep("select"),
+      submitting,
+    }
+
+    return (
+      <div>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setStep("select")}
+            style={{ padding: "4px 10px" }}
+          >
+            ← Back
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: "var(--radius-sm)",
+                background: `${accent}18`,
+                border: `1px solid ${accent}28`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: accent,
+                flexShrink: 0,
+              }}
+            >
+              {PROVIDER_ICONS[selectedType] ?? <span style={{ fontSize: 18 }}>◌</span>}
+            </div>
+            <div>
+              <h2
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 600,
+                  fontSize: 18,
+                  margin: 0,
+                  color: "var(--color-text)",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {typeName}
+              </h2>
+              <p style={{ fontSize: 12, color: "var(--color-text-secondary)", margin: "2px 0 0", marginTop: 2 }}>
+                {PROVIDER_TYPES.find((pt) => pt.id === selectedType)?.desc ?? ""}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            maxWidth: 480,
+          }}
+        >
+          {selectedType === "alibaba" && (
+            <AddFlowAlibabaForm {...authFormProps} />
+          )}
+          {selectedType === "github-copilot" && (
+            <AddFlowCopilotForm {...authFormProps} />
+          )}
+          {selectedType === "antigravity" && (
+            <AddFlowAntigravityForm {...authFormProps} />
+          )}
+          {selectedType === "azure-openai" && (
+            <AddFlowAzureForm {...authFormProps} />
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Step 3: Authenticating (OAuth device flow in progress) ───────────────────
+  if (step === "authenticating") {
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+          <h2
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: 18,
+              margin: 0,
+              color: "var(--color-text)",
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Authenticating…
+          </h2>
+        </div>
+
+        {authFlow && (
+          <div
+            style={{
+              background: "rgba(255,159,10,0.08)",
+              border: "1px solid rgba(255,159,10,0.25)",
+              borderRadius: "var(--radius-lg)",
+              padding: "18px 20px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+            }}
+          >
+            {authFlow.userCode && (
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-secondary)",
+                    marginBottom: 8,
+                    fontWeight: 500,
+                  }}
+                >
+                  Enter this code on the authorization page:
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 28,
+                    fontWeight: 700,
+                    letterSpacing: "0.15em",
+                    color: "var(--color-orange)",
+                    background: "rgba(255,159,10,0.12)",
+                    border: "1px solid rgba(255,159,10,0.3)",
+                    borderRadius: "var(--radius-md)",
+                    padding: "10px 16px",
+                    display: "inline-block",
+                  }}
+                >
+                  {authFlow.userCode}
+                </div>
+              </div>
+            )}
+            {authFlow.instructionURL && (
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--color-text-secondary)",
+                    marginBottom: 6,
+                    fontWeight: 500,
+                  }}
+                >
+                  Open this URL in your browser:
+                </div>
+                <a
+                  href={authFlow.instructionURL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-sm"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+                >
+                  Open Authorization Page ↗
+                </a>
+              </div>
+            )}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                fontSize: 13,
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <Spin size={13} />
+              Waiting for authorization…
+            </div>
+            <div>
+              <button className="btn btn-sm btn-ghost" onClick={handleCancelAuth}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
+// ── Forms used only by AddProviderFlow ────────────────────────────────────────
+
+interface AddFlowFormProps {
+  onSubmit: (body: Record<string, string>) => Promise<void>
+  onCancel: () => void
+  submitting: boolean
+}
+
+function AddFlowAlibabaForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+  const [method, setMethod] = useState("api-key")
+  const [region, setRegion] = useState("global")
+  const [apiKey, setApiKey] = useState("")
+  const submit = async () => {
+    const body: Record<string, string> = { method }
+    if (method === "api-key") {
+      if (!apiKey.trim()) return
+      body.apiKey = apiKey.trim()
+      body.region = region
+    }
+    await onSubmit(body)
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <FormRow label="Auth Method">
+        <select className="sys-select" value={method} onChange={(e) => setMethod(e.target.value)}>
+          <option value="api-key">API Key</option>
+          <option value="oauth">OAuth (device flow)</option>
+        </select>
+      </FormRow>
+      {method === "api-key" && (
+        <>
+          <FormRow label="Region">
+            <select className="sys-select" value={region} onChange={(e) => setRegion(e.target.value)}>
+              <option value="global">Global (dashscope-intl.aliyuncs.com)</option>
+              <option value="china">China (dashscope.aliyuncs.com)</option>
+            </select>
+          </FormRow>
+          <FormRow label="DashScope API Key">
+            <input
+              className="sys-input"
+              type="password"
+              placeholder="sk-…"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </FormRow>
+        </>
+      )}
+      {method === "oauth" && (
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+          A browser authorization page will open. You'll enter a code to authenticate your Qwen / Alibaba account.
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
+          {submitting ? <><Spin size={13} /> Connecting…</> : method === "oauth" ? "Start OAuth →" : "Add Provider"}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowCopilotForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+  const [method, setMethod] = useState("oauth")
+  const [token, setToken] = useState("")
+  const submit = async () => {
+    const body: Record<string, string> = { method }
+    if (method === "token") {
+      if (!token.trim()) return
+      body.token = token.trim()
+    }
+    await onSubmit(body)
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <FormRow label="Auth Method">
+        <select className="sys-select" value={method} onChange={(e) => setMethod(e.target.value)}>
+          <option value="oauth">OAuth device flow (browser)</option>
+          <option value="token">Paste existing token</option>
+        </select>
+      </FormRow>
+      {method === "token" && (
+        <FormRow label="GitHub Token">
+          <input
+            className="sys-input"
+            type="password"
+            placeholder="ghu_…"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </FormRow>
+      )}
+      {method === "oauth" && (
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+          Opens the GitHub device authorization page. Sign in with your GitHub Copilot account.
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
+          {submitting ? <><Spin size={13} /> Connecting…</> : method === "oauth" ? "Start OAuth →" : "Add Provider"}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowAntigravityForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+  const [clientId, setClientId] = useState("")
+  const [clientSecret, setClientSecret] = useState("")
+  const submit = async () => {
+    if (!clientId.trim() || !clientSecret.trim()) return
+    await onSubmit({ method: "oauth", clientId: clientId.trim(), clientSecret: clientSecret.trim() })
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <FormRow label="OAuth Client ID">
+        <input
+          className="sys-input"
+          type="text"
+          placeholder="…apps.googleusercontent.com"
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+        />
+      </FormRow>
+      <FormRow label="OAuth Client Secret">
+        <input
+          className="sys-input"
+          type="password"
+          placeholder="GOCSPX-…"
+          value={clientSecret}
+          onChange={(e) => setClientSecret(e.target.value)}
+        />
+      </FormRow>
+      <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
+        Opens a Google OAuth browser flow once submitted.
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
+          {submitting ? <><Spin size={13} /> Connecting…</> : "Start OAuth →"}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowAzureForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
+  const [apiKey, setApiKey] = useState("")
+  const [endpoint, setEndpoint] = useState("")
+  const submit = async () => {
+    if (!apiKey.trim() || !endpoint.trim()) return
+    await onSubmit({ apiKey: apiKey.trim(), endpoint: endpoint.trim() })
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <FormRow label="Endpoint">
+        <input
+          className="sys-input"
+          type="text"
+          placeholder="https://your-resource.openai.azure.com"
+          value={endpoint}
+          onChange={(e) => setEndpoint(e.target.value)}
+        />
+      </FormRow>
+      <FormRow label="API Key">
+        <input
+          className="sys-input"
+          type="password"
+          placeholder="Enter your Azure OpenAI API key"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+        />
+      </FormRow>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
+          {submitting ? <><Spin size={13} /> Connecting…</> : "Add Provider"}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={submitting}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Add Provider Modal ───────────────────────────────────────────────────────
 
 const PROVIDER_TYPES = [
@@ -1941,6 +2548,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
   const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(true)
   const [activating, setActivating] = useState<string | null>(null)
+  const [addingProvider, setAddingProvider] = useState(false)
   const [priorities, setPriorities] = useState<Record<string, number>>({})
   const [collapsedGroups, setCollapsedGroups] = useState<
     Record<string, boolean>
@@ -2184,6 +2792,20 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     )
   }
 
+  // ── Add Provider flow takes over the whole page ──────────────────────────────
+  if (addingProvider) {
+    return (
+      <AddProviderFlow
+        onDone={async () => {
+          setAddingProvider(false)
+          await load()
+        }}
+        onCancel={() => setAddingProvider(false)}
+        showToast={showToast}
+      />
+    )
+  }
+
   return (
     <div>
       <AuthFlowBanner authFlow={status?.authFlow} providers={providers} onCancel={handleCancelAuth} />
@@ -2247,10 +2869,13 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
             priorities={priorities}
             onPrioritiesChange={handlePrioritiesChange}
           />
-          <AddProviderModal
-            onAdd={handleAddInstance}
+          <button
+            className="btn btn-primary btn-sm"
             disabled={isFlowRunning}
-          />
+            onClick={() => setAddingProvider(true)}
+          >
+            Add Provider
+          </button>
         </div>
       </div>
 
@@ -2396,7 +3021,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
                       </p>
                       <button
                         className="btn btn-ghost btn-sm"
-                        onClick={() => handleAddInstance(providerType)}
+                        onClick={() => setAddingProvider(true)}
                         disabled={isFlowRunning}
                       >
                         Add Account

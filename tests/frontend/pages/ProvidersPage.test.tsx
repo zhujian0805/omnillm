@@ -231,10 +231,12 @@ describe("ProvidersPage Component Tests", () => {
     })
 
     test("should display enabled model count", () => {
-      const provider = MOCK_PROVIDERS_LIST[0]
+      const provider = MOCK_PROVIDERS_LIST.find(
+        provider => provider.type === "azure-openai"
+      )
 
-      expect(provider.enabledModelCount).toBe(2)
-      expect(provider.totalModelCount).toBe(2)
+      expect(provider?.enabledModelCount).toBe(1)
+      expect(provider?.totalModelCount).toBe(1)
     })
   })
 
@@ -369,13 +371,12 @@ describe("ProvidersPage Component Tests", () => {
 
     test("should update priority on drag and drop", () => {
       const providers = [...MOCK_PROVIDERS_LIST]
-      const [alibaba] = providers.splice(1, 1)
-      providers.unshift(alibaba)
+      const [azure] = providers.splice(1, 1)
+      providers.unshift(azure)
 
-      // New order: Alibaba, GitHub, Azure
-      expect(providers[0].type).toBe("alibaba")
-      expect(providers[1].type).toBe("github-copilot")
-      expect(providers[2].type).toBe("azure-openai")
+      // New order: Azure, Alibaba
+      expect(providers[0].type).toBe("azure-openai")
+      expect(providers[1].type).toBe("alibaba")
     })
   })
 
@@ -419,10 +420,12 @@ describe("ProvidersPage Component Tests", () => {
 
   describe("Provider Configuration", () => {
     test("should load Azure OpenAI deployments", () => {
-      const provider = MOCK_PROVIDERS_LIST[2]
+      const provider = MOCK_PROVIDERS_LIST.find(
+        provider => provider.type === "azure-openai"
+      )
 
-      expect(provider.config?.deployments).toContain("gpt-4-deployment")
-      expect(provider.config?.apiVersion).toBe("2024-02-15-preview")
+      expect(provider?.config?.deployments).toContain("gpt-4-deployment")
+      expect(provider?.config?.apiVersion).toBe("2024-02-15-preview")
     })
 
     test("should update provider config", async () => {

@@ -150,6 +150,10 @@ func (p *GitHubCopilotProvider) GetID() string         { return p.id }
 func (p *GitHubCopilotProvider) GetInstanceID() string { return p.instanceID }
 func (p *GitHubCopilotProvider) GetName() string       { return p.name }
 
+// SetInstanceID updates the provider's in-memory instance ID.
+// Used by auth-and-create flow to assign the canonical ID after successful auth.
+func (p *GitHubCopilotProvider) SetInstanceID(newID string) { p.instanceID = newID }
+
 func (p *GitHubCopilotProvider) SetupAuth(options *types.AuthOptions) error {
 	// If a GitHub token is provided directly, use it
 	if options != nil && options.GithubToken != "" {

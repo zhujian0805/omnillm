@@ -408,6 +408,23 @@ export const addProviderInstance = (providerType: string) =>
     { method: "POST" },
   )
 
+export const authAndCreateProvider = (
+  providerType: string,
+  body: Record<string, string>,
+) =>
+  apiFetch<{
+    success?: boolean
+    requiresAuth?: boolean
+    provider?: Provider
+    pending_id?: string
+    user_code?: string
+    verification_uri?: string
+    message?: string
+  }>(
+    `/api/admin/providers/auth-and-create/${providerType}`,
+    { method: "POST", body: JSON.stringify(body) },
+  )
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const updateProviderConfig = (id: string, config: Record<string, any>) =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

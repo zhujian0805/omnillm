@@ -337,6 +337,16 @@ func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
 	}
 	p.token = options.APIKey
 
+	// If endpoint provided, save it to config and apply immediately
+	if options.Endpoint != "" {
+		configStore := database.NewProviderConfigStore()
+		cfg := map[string]interface{}{"endpoint": options.Endpoint}
+		if err := configStore.Save(p.instanceID, cfg); err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Azure: failed to save endpoint config")
+		}
+		p.applyConfig(cfg)
+	}
+
 	log.Info().Str("provider", p.instanceID).Msg("Azure OpenAI authenticated via API key")
 	return nil
 }
@@ -789,13 +799,9 @@ func (a *GenericAdapter) RemapModel(model string) string {
 			return "gemini-3-flash"
 		}
 	case "alibaba":
-		switch {
-		case strings.HasPrefix(model, "claude-haiku"):
-			return "qwen3-coder-flash"
-		case strings.HasPrefix(model, "claude-sonnet"):
-			return "qwen3-coder-plus"
-		case strings.HasPrefix(model, "claude-opus"):
-			return "qwen3-max"
+		// qwen3.6-plus is our catalog ID; the DashScope API uses qwen-plus for the same model
+		if model == "qwen3.6-plus" {
+			return "qwen-plus"
 		}
 	}
 	return model

@@ -107,6 +107,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 
 	// Provider type-specific routes (use specific path to avoid conflicts with wildcard :id routes)
 	router.POST("/providers/add/:type", handleAddProviderInstance)
+	router.POST("/providers/auth-and-create/:type", handleAuthAndCreateProvider)
 
 	// System info and status
 	router.GET("/info", makeGetInfoHandler(port))
@@ -453,6 +454,354 @@ func handleAddProviderInstance(c *gin.Context) {
 			"authStatus": "unauthenticated",
 		},
 	})
+}
+
+// handleAuthAndCreateProvider authenticates a new provider instance *before*
+// persisting it to the database.  The provider is only saved when auth succeeds,
+// eliminating the temporary placeholder record and the post-auth rename.
+//
+// POST /api/admin/providers/auth-and-create/:type
+// Body: same as handleProviderAuth (method, apiKey, region, token, …)
+func handleAuthAndCreateProvider(c *gin.Context) {
+	providerType := c.Param("type")
+
+	var req types.AuthOptions
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	providerRegistry := registry.GetProviderRegistry()
+
+	// Cancel any existing active auth flow before starting a new one to prevent
+	// concurrent goroutines from corrupting the singleton activeAuthFlow state.
+	activeAuthFlowMu.Lock()
+	if activeAuthFlow != nil {
+		if activeAuthFlow.cancelFn != nil {
+			activeAuthFlow.cancelFn()
+		}
+		log.Info().Str("provider", activeAuthFlow.ProviderID).Msg("Auth-and-create: cancelled previous auth flow")
+		activeAuthFlow = nil
+	}
+	activeAuthFlowMu.Unlock()
+
+	switch providerType {
+
+	// ── Alibaba ──────────────────────────────────────────────────────────────
+	case "alibaba":
+		if req.Method == "oauth" {
+			// Build an ephemeral provider object — not yet in the registry.
+			gen := generic.NewGenericProvider("alibaba", "alibaba-tmp", "")
+
+			// Initiate device flow without creating a DB record first.
+			flow, err := alibabapkg.InitiateDeviceFlow(context.Background())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": fmt.Sprintf("Failed to initiate Alibaba OAuth: %v", err),
+				})
+				return
+			}
+
+			verifyURL := flow.VerificationURIComplete
+			if verifyURL == "" {
+				verifyURL = flow.VerificationURI
+			}
+			if verifyURL != "" && !strings.Contains(verifyURL, "prompt=") {
+				sep := "&"
+				if !strings.Contains(verifyURL, "?") {
+					sep = "?"
+				}
+				verifyURL += sep + "prompt=login"
+			}
+
+			// Use a sentinel provider ID for the auth flow; the real ID is
+			// assigned by SaveAlibabaOAuthToken once the user authorizes.
+			const pendingID = "alibaba-pending"
+
+			alibabaCtx, alibabaCancel := context.WithCancel(context.Background())
+			activeAuthFlowMu.Lock()
+			activeAuthFlow = &authFlowState{
+				ProviderID:     pendingID,
+				Status:         "awaiting_user",
+				InstructionURL: verifyURL,
+				UserCode:       flow.UserCode,
+				deviceCode:     flow.DeviceCode,
+				codeVerifier:   flow.CodeVerifier,
+				cancelFn:       alibabaCancel,
+			}
+			activeAuthFlowMu.Unlock()
+
+			alibabaFlow := flow
+			go func() {
+				defer alibabaCancel()
+				td, err := alibabapkg.PollForToken(
+					alibabaCtx,
+					alibabaFlow.DeviceCode,
+					alibabaFlow.CodeVerifier,
+					alibabaFlow.Interval,
+					alibabaFlow.ExpiresIn,
+				)
+				if err != nil {
+					if alibabaCtx.Err() != nil {
+						return
+					}
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = err.Error()
+					}
+					activeAuthFlowMu.Unlock()
+					log.Error().Err(err).Str("type", "alibaba").Msg("Auth-and-create: Alibaba OAuth failed")
+					return
+				}
+
+				// Derive canonical instance ID and persist token — first DB write.
+				newInstanceID, err := gen.SaveAlibabaOAuthToken(td)
+				if err != nil {
+					log.Error().Err(err).Str("type", "alibaba").Msg("Auth-and-create: failed to save Alibaba OAuth token")
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = "Failed to save OAuth token"
+					}
+					activeAuthFlowMu.Unlock()
+					return
+				}
+
+				// Register provider for the first time with its canonical ID.
+				if err := providerRegistry.Register(gen, true); err != nil {
+					log.Warn().Err(err).Str("provider", newInstanceID).Msg("Auth-and-create: failed to register Alibaba provider")
+				}
+
+				// Update status and provider ID atomically.
+				activeAuthFlowMu.Lock()
+				if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+					activeAuthFlow.ProviderID = newInstanceID
+					activeAuthFlow.Status = "complete"
+				}
+				activeAuthFlowMu.Unlock()
+
+				log.Info().Str("provider", newInstanceID).Msg("Auth-and-create: Alibaba OAuth completed")
+			}()
+
+			c.JSON(http.StatusOK, gin.H{
+				"success":          false,
+				"requiresAuth":     true,
+				"pending_id":       pendingID,
+				"user_code":        flow.UserCode,
+				"verification_uri": verifyURL,
+				"message":          fmt.Sprintf("Visit %s and enter code: %s", verifyURL, flow.UserCode),
+			})
+			return
+		}
+
+		// API-key path — build provider with the canonical ID from the start to
+		// avoid writing any ephemeral "alibaba-new" records to the database.
+		suffix := req.APIKey
+		if len(suffix) > 6 {
+			suffix = suffix[len(suffix)-6:]
+		}
+		region := req.Region
+		if region == "" {
+			region = "global"
+		}
+		canonicalID := "alibaba-apikey-" + region + "-" + suffix
+		gen := generic.NewGenericProvider("alibaba", canonicalID, "")
+
+		if err := gen.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(gen, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         gen.GetInstanceID(),
+				"type":       gen.GetID(),
+				"name":       gen.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	// ── GitHub Copilot ───────────────────────────────────────────────────────
+	case "github-copilot":
+		cop := copilot.NewGitHubCopilotProvider("copilot-tmp")
+
+		if req.Method == "oauth" || (req.GithubToken == "" && req.Token == "") {
+			deviceCode, err := cop.InitiateDeviceCodeFlow()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": fmt.Sprintf("Failed to initiate OAuth: %v", err),
+				})
+				return
+			}
+
+			const pendingID = "copilot-pending"
+			copilotCtx, copilotCancel := context.WithCancel(context.Background())
+			activeAuthFlowMu.Lock()
+			activeAuthFlow = &authFlowState{
+				ProviderID:     pendingID,
+				Status:         "awaiting_user",
+				InstructionURL: deviceCode.VerificationURI,
+				UserCode:       deviceCode.UserCode,
+				deviceCode:     deviceCode.DeviceCode,
+				cancelFn:       copilotCancel,
+			}
+			activeAuthFlowMu.Unlock()
+
+			dc := deviceCode
+			go func() {
+				defer copilotCancel()
+				if err := cop.PollAndCompleteDeviceCodeFlow(dc); err != nil {
+					if copilotCtx.Err() != nil {
+						return
+					}
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = err.Error()
+					}
+					activeAuthFlowMu.Unlock()
+					log.Error().Err(err).Str("type", "github-copilot").Msg("Auth-and-create: OAuth failed")
+					return
+				}
+
+				// Assign a canonical instance ID using the GitHub username embedded in the provider name.
+				canonicalID := providerRegistry.NextInstanceID("github-copilot")
+				cop.SetInstanceID(canonicalID)
+
+				if err := cop.SaveToDB(); err != nil {
+					log.Error().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to save GitHub Copilot token")
+					activeAuthFlowMu.Lock()
+					if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+						activeAuthFlow.Status = "error"
+						activeAuthFlow.Error = "Failed to save token"
+					}
+					activeAuthFlowMu.Unlock()
+					return
+				}
+
+				if err := providerRegistry.Register(cop, true); err != nil {
+					log.Warn().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to register GitHub Copilot provider")
+				}
+
+				// Update status and provider ID atomically.
+				activeAuthFlowMu.Lock()
+				if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
+					activeAuthFlow.ProviderID = canonicalID
+					activeAuthFlow.Status = "complete"
+				}
+				activeAuthFlowMu.Unlock()
+
+				log.Info().Str("provider", canonicalID).Msg("Auth-and-create: GitHub Copilot OAuth completed")
+			}()
+
+			c.JSON(http.StatusOK, gin.H{
+				"success":          false,
+				"requiresAuth":     true,
+				"pending_id":       pendingID,
+				"user_code":        deviceCode.UserCode,
+				"verification_uri": deviceCode.VerificationURI,
+				"message":          fmt.Sprintf("Visit %s and enter code: %s", deviceCode.VerificationURI, deviceCode.UserCode),
+			})
+			return
+		}
+
+		// Direct token path.
+		token := req.Token
+		if token == "" {
+			token = req.GithubToken
+		}
+		req.GithubToken = token
+		if err := cop.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		canonicalID := providerRegistry.NextInstanceID("github-copilot")
+		cop.SetInstanceID(canonicalID)
+
+		if err := cop.SaveToDB(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to save provider credentials: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(cop, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         cop.GetInstanceID(),
+				"type":       cop.GetID(),
+				"name":       cop.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	// ── Azure OpenAI / Antigravity (API-key / config based) ──────────────────
+	case "azure-openai", "antigravity":
+		instanceID := providerRegistry.NextInstanceID(providerType)
+		gen := generic.NewGenericProvider(providerType, instanceID, "")
+
+		if err := gen.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(gen, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         gen.GetInstanceID(),
+				"type":       gen.GetID(),
+				"name":       gen.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Unknown provider type '%s'", providerType),
+		})
+	}
 }
 
 func handleDeleteProvider(c *gin.Context) {
@@ -1295,11 +1644,16 @@ func handleGetAuthStatus(c *gin.Context) {
 func handleCancelAuth(c *gin.Context) {
 	activeAuthFlowMu.Lock()
 	flow := activeAuthFlow
-	if flow != nil {
+	// Only cancel flows that are still in-progress; if the flow already
+	// completed/errored, clearing it here would race with the frontend's
+	// final poll that reads the "complete" status.
+	if flow != nil && (flow.Status == "pending" || flow.Status == "awaiting_user") {
 		if flow.cancelFn != nil {
 			flow.cancelFn()
 		}
 		activeAuthFlow = nil
+	} else {
+		flow = nil // signal to caller: nothing was cancelled
 	}
 	activeAuthFlowMu.Unlock()
 
