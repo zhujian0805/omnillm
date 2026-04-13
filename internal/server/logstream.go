@@ -42,9 +42,6 @@ var preferredLogFieldOrder = []string{
 	"stop_reason",
 	"input_tokens",
 	"output_tokens",
-	"method",
-	"path",
-	"status",
 	"latency_ms",
 	"url",
 	"admin",
@@ -119,7 +116,7 @@ func collectFormattedFields(event map[string]interface{}) []string {
 
 func formatStructuredField(key string, value interface{}) (string, bool) {
 	switch key {
-	case "", "level", "message", "time":
+	case "", "level", "message", "time", "method", "path", "status":
 		return "", false
 	}
 
