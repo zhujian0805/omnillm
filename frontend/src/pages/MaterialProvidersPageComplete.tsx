@@ -314,6 +314,19 @@ function MaterialAuthForm({
             {values.method === "api-key" && (
               <>
                 <FormControl fullWidth sx={{ mb: 2 }}>
+                  <InputLabel>API Mode</InputLabel>
+                  <Select
+                    value={values.plan || "standard"}
+                    onChange={(e) => setValues({ ...values, plan: e.target.value })}
+                    label="API Mode"
+                  >
+                    <MenuItem value="standard">
+                      Standard (pay-as-you-go, recommended for qwen3.6-plus)
+                    </MenuItem>
+                    <MenuItem value="coding-plan">Coding Plan</MenuItem>
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth sx={{ mb: 2 }}>
                   <InputLabel>Region</InputLabel>
                   <Select
                     value={values.region || "global"}
@@ -330,9 +343,19 @@ function MaterialAuthForm({
                 </FormControl>
                 <TextField
                   fullWidth
+                  label="Base URL (optional)"
+                  placeholder={values.plan === "coding-plan"
+                    ? "https://coding-intl.dashscope.aliyuncs.com/v1"
+                    : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"}
+                  value={values.endpoint || ""}
+                  onChange={(e) => setValues({ ...values, endpoint: e.target.value })}
+                  sx={{ mb: 2 }}
+                />
+                <TextField
+                  fullWidth
                   label="DashScope API Key"
                   type="password"
-                  placeholder="sk-…"
+                  placeholder={values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
                   value={values.apiKey || ""}
                   onChange={(e) => setValues({ ...values, apiKey: e.target.value })}
                   sx={{ mb: 2 }}

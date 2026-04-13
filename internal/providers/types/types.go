@@ -23,6 +23,7 @@ type AuthOptions struct {
 	Token        string `json:"token,omitempty"` // alias for GithubToken from frontend
 	APIKey       string `json:"apiKey,omitempty"`
 	Region       string `json:"region,omitempty"`
+	Plan         string `json:"plan,omitempty"`
 	Endpoint     string `json:"endpoint,omitempty"`
 }
 

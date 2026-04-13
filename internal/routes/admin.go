@@ -42,14 +42,14 @@ var (
 )
 
 type authFlowState struct {
-	ProviderID     string `json:"providerId"`
-	Status         string `json:"status"` // pending, awaiting_user, complete, error
-	InstructionURL string `json:"instructionURL,omitempty"`
-	UserCode       string `json:"userCode,omitempty"`
-	Error          string `json:"error,omitempty"`
-	deviceCode   string              // internal, not exposed
-	codeVerifier string              // internal PKCE verifier for Alibaba OAuth
-	cancelFn     context.CancelFunc // cancels the background polling goroutine
+	ProviderID     string             `json:"providerId"`
+	Status         string             `json:"status"` // pending, awaiting_user, complete, error
+	InstructionURL string             `json:"instructionURL,omitempty"`
+	UserCode       string             `json:"userCode,omitempty"`
+	Error          string             `json:"error,omitempty"`
+	deviceCode     string             // internal, not exposed
+	codeVerifier   string             // internal PKCE verifier for Alibaba OAuth
+	cancelFn       context.CancelFunc // cancels the background polling goroutine
 }
 
 // BroadcastLog sends a log message to all SSE subscribers
@@ -187,6 +187,9 @@ func normalizeProviderConfigForFrontend(providerType string, config map[string]i
 		if region, ok := firstStringValue(config, "region"); ok {
 			normalized["region"] = region
 		}
+		if plan, ok := firstStringValue(config, "plan"); ok {
+			normalized["plan"] = plan
+		}
 		if len(normalized) == 0 {
 			return nil
 		}
@@ -217,6 +220,7 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 	case "alibaba":
 		baseURL, _ := firstStringValue(config, "baseUrl", "base_url")
 		region, _ := firstStringValue(config, "region")
+		plan, _ := firstStringValue(config, "plan")
 
 		normalized := map[string]interface{}{}
 		if baseURL != "" {
@@ -224,6 +228,9 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		}
 		if region != "" {
 			normalized["region"] = region
+		}
+		if plan != "" {
+			normalized["plan"] = plan
 		}
 		return normalized
 	default:
@@ -602,11 +609,21 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 		if len(suffix) > 6 {
 			suffix = suffix[len(suffix)-6:]
 		}
+		plan := strings.ToLower(strings.TrimSpace(req.Plan))
+		switch plan {
+		case "", "standard":
+			plan = "standard"
+		case "coding", "coding_plan", "coding-plan":
+			plan = "coding-plan"
+		default:
+			plan = "standard"
+		}
 		region := req.Region
 		if region == "" {
 			region = "global"
 		}
-		canonicalID := "alibaba-apikey-" + region + "-" + suffix
+		planSlug := strings.ReplaceAll(plan, "-plan", "")
+		canonicalID := "alibaba-" + planSlug + "-" + region + "-" + suffix
 		gen := generic.NewGenericProvider("alibaba", canonicalID, "")
 
 		if err := gen.SetupAuth(&req); err != nil {

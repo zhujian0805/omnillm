@@ -34,6 +34,10 @@ const (
 	BaseURLChina = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	// BaseURLGlobal is the DashScope endpoint for the international (non-China) region.
 	BaseURLGlobal = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+	// CodingPlanBaseURLChina is the Coding Plan endpoint for mainland China.
+	CodingPlanBaseURLChina = "https://coding.dashscope.aliyuncs.com/v1"
+	// CodingPlanBaseURLGlobal is the Coding Plan endpoint for the international region.
+	CodingPlanBaseURLGlobal = "https://coding-intl.dashscope.aliyuncs.com/v1"
 
 	// RefreshSkew is how early we proactively refresh a token before it expires.
 	RefreshSkew = 5 * time.Minute

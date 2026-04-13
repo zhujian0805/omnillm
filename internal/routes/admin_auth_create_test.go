@@ -175,7 +175,7 @@ func TestHandleAuthAndCreateProviderAlibabaAPIKeyUsesCanonicalID(t *testing.T) {
 		router,
 		http.MethodPost,
 		"/api/admin/providers/auth-and-create/alibaba",
-		`{"method":"api-key","apiKey":"sk-alibaba-abcdef123456","region":"global"}`,
+		`{"method":"api-key","plan":"standard","apiKey":"sk-alibaba-abcdef123456","region":"global"}`,
 	)
 
 	if recorder.Code != http.StatusOK {
@@ -199,7 +199,7 @@ func TestHandleAuthAndCreateProviderAlibabaAPIKeyUsesCanonicalID(t *testing.T) {
 		} `json:"provider"`
 	}](t, recorder)
 
-	const expectedID = "alibaba-apikey-global-123456"
+	const expectedID = "alibaba-standard-global-123456"
 
 	if !payload.Success {
 		t.Fatal("expected success=true")
@@ -234,7 +234,7 @@ func TestHandleAuthAndCreateProviderAlibabaAPIKeyUsesCanonicalID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read provider config: %v", err)
 	}
-	if configRecord == nil || !strings.Contains(configRecord.ConfigData, `"region":"global"`) {
+	if configRecord == nil || !strings.Contains(configRecord.ConfigData, `"region":"global"`) || !strings.Contains(configRecord.ConfigData, `"plan":"standard"`) {
 		t.Fatalf("expected saved region config, got %#v", configRecord)
 	}
 }

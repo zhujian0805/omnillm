@@ -115,6 +115,12 @@ func (p *GenericProvider) setupAlibabaAuth(options *types.AuthOptions) error {
 		if options.APIKey == "" {
 			return fmt.Errorf("alibaba: API key is required")
 		}
+		region := strings.TrimSpace(options.Region)
+		if region == "" {
+			region = "global"
+		}
+		plan := normalizeAlibabaAPIPlan(options.Plan)
+
 		// Save token to database
 		tokenStore := database.NewTokenStore()
 		tokenData := map[string]interface{}{
@@ -129,15 +135,24 @@ func (p *GenericProvider) setupAlibabaAuth(options *types.AuthOptions) error {
 		configStore := database.NewProviderConfigStore()
 		config := map[string]interface{}{
 			"auth_type": "api-key",
-			"region":    options.Region,
+			"region":    region,
+			"plan":      plan,
+		}
+		if endpoint := strings.TrimSpace(options.Endpoint); endpoint != "" {
+			config["base_url"] = endpoint
 		}
 		if err := configStore.Save(p.instanceID, config); err != nil {
 			return fmt.Errorf("failed to save alibaba config: %w", err)
 		}
 		p.config = config
 		p.baseURL = normalizeAlibabaBaseURL(config)
+		p.name = alibabaAPIKeyProviderName(config)
 
-		log.Info().Str("provider", p.instanceID).Str("region", options.Region).Msg("Alibaba authenticated via API key")
+		log.Info().
+			Str("provider", p.instanceID).
+			Str("region", region).
+			Str("plan", plan).
+			Msg("Alibaba authenticated via API key")
 		return nil
 
 	case "oauth":
@@ -463,7 +478,6 @@ func (p *GenericProvider) LoadFromDB() error {
 		// This ensures stale records (e.g. "alibaba-oauth-china" from before
 		// the email was added to the instance ID) show the correct user email.
 		if p.id == "alibaba" && p.token != "" {
-			region := p.detectRegion()
 			// Only try JWT extraction for OAuth tokens that actually look like JWTs
 			authType, _ := firstString(p.config, "auth_type", "authType")
 
@@ -493,7 +507,7 @@ func (p *GenericProvider) LoadFromDB() error {
 					Msg("Alibaba OAuth provider has non-JWT token; using token suffix")
 			} else {
 				// API key provider - keep default naming
-				p.name = "Alibaba DashScope (" + region + ")"
+				p.name = alibabaAPIKeyProviderName(p.config)
 				log.Info().
 					Str("instanceID", p.instanceID).
 					Str("authType", authType).
@@ -745,6 +759,9 @@ func normalizeAlibabaBaseURL(config map[string]interface{}) string {
 		if baseURL, ok := firstString(config, "base_url", "baseUrl"); ok {
 			return ensureAlibabaBaseURL(baseURL, false)
 		}
+		plan, _ := firstString(config, "plan")
+		region, _ := firstString(config, "region")
+		return defaultAlibabaAPIBaseURL(plan, region)
 	case "oauth":
 		if resourceURL, ok := firstString(config, "resource_url", "resourceUrl"); ok {
 			return ensureAlibabaBaseURL(resourceURL, true)
@@ -761,6 +778,51 @@ func normalizeAlibabaBaseURL(config map[string]interface{}) string {
 	}
 
 	return ensureAlibabaBaseURL(providerBaseURLs["alibaba"], false)
+}
+
+func normalizeAlibabaAPIPlan(plan string) string {
+	switch strings.ToLower(strings.TrimSpace(plan)) {
+	case "coding", "coding-plan", "coding_plan":
+		return "coding-plan"
+	default:
+		return "standard"
+	}
+}
+
+func defaultAlibabaAPIBaseURL(plan string, region string) string {
+	switch normalizeAlibabaAPIPlan(plan) {
+	case "coding-plan":
+		if strings.EqualFold(strings.TrimSpace(region), "china") {
+			return alibabapkg.CodingPlanBaseURLChina
+		}
+		return alibabapkg.CodingPlanBaseURLGlobal
+	default:
+		if strings.EqualFold(strings.TrimSpace(region), "china") {
+			return alibabapkg.BaseURLChina
+		}
+		return alibabapkg.BaseURLGlobal
+	}
+}
+
+func alibabaAPIKeyProviderName(config map[string]interface{}) string {
+	region, _ := firstString(config, "region")
+	if region == "" {
+		region = "global"
+	}
+
+	switch normalizeAlibabaAPIPlan(stringValueOrEmpty(config["plan"])) {
+	case "coding-plan":
+		return "Alibaba Coding Plan (" + region + ")"
+	default:
+		return "Alibaba DashScope Standard (" + region + ")"
+	}
+}
+
+func stringValueOrEmpty(value interface{}) string {
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
 }
 
 // ensureAlibabaBaseURL normalizes a base URL. When forOAuth is true, it uses

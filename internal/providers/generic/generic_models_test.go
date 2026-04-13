@@ -98,6 +98,32 @@ func TestAlibabaApplyConfigUsesOAuthResourceURL(t *testing.T) {
 	}
 }
 
+func TestAlibabaApplyConfigUsesStandardAPIKeyDefaults(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "alibaba-standard", "Alibaba")
+	provider.applyConfig(map[string]interface{}{
+		"auth_type": "api-key",
+		"plan":      "standard",
+		"region":    "global",
+	})
+
+	if provider.baseURL != "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" {
+		t.Fatalf("expected standard global base URL, got %q", provider.baseURL)
+	}
+}
+
+func TestAlibabaApplyConfigUsesCodingPlanDefaults(t *testing.T) {
+	provider := NewGenericProvider("alibaba", "alibaba-coding", "Alibaba")
+	provider.applyConfig(map[string]interface{}{
+		"auth_type": "api-key",
+		"plan":      "coding-plan",
+		"region":    "global",
+	})
+
+	if provider.baseURL != "https://coding-intl.dashscope.aliyuncs.com/v1" {
+		t.Fatalf("expected coding plan global base URL, got %q", provider.baseURL)
+	}
+}
+
 func TestAlibabaOAuthGetModelsUsesSupportedCatalog(t *testing.T) {
 	if err := database.InitializeDatabase(t.TempDir()); err != nil {
 		t.Fatalf("failed to initialize database: %v", err)

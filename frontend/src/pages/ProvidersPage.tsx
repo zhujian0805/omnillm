@@ -232,8 +232,132 @@ function FormRow({
   children: React.ReactNode
 }) {
   return (
-    <div>
-      <label className="sys-label">{label}</label>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <label
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--color-text-secondary)",
+          letterSpacing: "0.01em",
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+const addFlowPanelStyle = {
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,0.045) 0%, rgba(255,255,255,0.025) 100%)",
+  border: "1px solid var(--color-separator)",
+  borderRadius: "var(--radius-lg)",
+  padding: 18,
+  display: "flex",
+  flexDirection: "column",
+  gap: 16,
+  boxShadow: "0 18px 44px rgba(0,0,0,0.16)",
+} as const
+
+const addFlowControlStyle = {
+  width: "100%",
+  minHeight: 44,
+  borderRadius: "var(--radius-md)",
+  border: "1px solid var(--color-separator)",
+  background: "rgba(255,255,255,0.045)",
+  color: "var(--color-text)",
+  padding: "0 14px",
+  outline: "none",
+  fontSize: 13,
+  lineHeight: 1.4,
+} as const
+
+const addFlowTextInputStyle = {
+  ...addFlowControlStyle,
+  padding: "11px 14px",
+} as const
+
+function AddFlowChoiceGroup({
+  value,
+  onChange,
+  options,
+  accent = "#0a84ff",
+}: {
+  value: string
+  onChange: (next: string) => void
+  options: Array<{ value: string; label: string }>
+  accent?: string
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+        gap: 8,
+      }}
+    >
+      {options.map((option) => {
+        const active = value === option.value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            style={{
+              minHeight: 44,
+              borderRadius: "var(--radius-md)",
+              border: active
+                ? `1px solid ${accent}66`
+                : "1px solid var(--color-separator)",
+              background: active ? `${accent}18` : "rgba(255,255,255,0.03)",
+              color: active ? "var(--color-text)" : "var(--color-text-secondary)",
+              fontSize: 13,
+              fontWeight: active ? 600 : 500,
+              cursor: "pointer",
+              transition: "all 0.15s var(--ease)",
+              padding: "0 12px",
+              textAlign: "center",
+            }}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function AddFlowHint({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode
+  tone?: "neutral" | "warning"
+}) {
+  const palette = tone === "warning"
+    ? {
+        background: "rgba(255,159,10,0.08)",
+        border: "1px solid rgba(255,159,10,0.18)",
+        color: "var(--color-text-secondary)",
+      }
+    : {
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid var(--color-separator)",
+        color: "var(--color-text-secondary)",
+      }
+
+  return (
+    <div
+      style={{
+        ...palette,
+        borderRadius: "var(--radius-md)",
+        padding: "12px 14px",
+        fontSize: 13,
+        lineHeight: 1.5,
+      }}
+    >
       {children}
     </div>
   )
@@ -2036,10 +2160,14 @@ function AddProviderFlow({
 
         <div
           style={{
+            background: "var(--color-bg-elevated)",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--color-separator)",
+            boxShadow: "var(--shadow-card)",
+            padding: 24,
             display: "flex",
             flexDirection: "column",
-            gap: 16,
-            maxWidth: 480,
+            gap: 20,
           }}
         >
           {selectedType === "alibaba" && (
@@ -2179,50 +2307,88 @@ interface AddFlowFormProps {
 
 function AddFlowAlibabaForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
   const [method, setMethod] = useState("api-key")
+  const [plan, setPlan] = useState("standard")
   const [region, setRegion] = useState("global")
+  const [endpoint, setEndpoint] = useState("")
   const [apiKey, setApiKey] = useState("")
   const submit = async () => {
     const body: Record<string, string> = { method }
     if (method === "api-key") {
       if (!apiKey.trim()) return
+      body.plan = plan
       body.apiKey = apiKey.trim()
       body.region = region
+      if (endpoint.trim()) {
+        body.endpoint = endpoint.trim()
+      }
     }
     await onSubmit(body)
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={addFlowPanelStyle}>
       <FormRow label="Auth Method">
-        <select className="sys-select" value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="api-key">API Key</option>
-          <option value="oauth">OAuth (device flow)</option>
-        </select>
+        <AddFlowChoiceGroup
+          value={method}
+          onChange={setMethod}
+          accent="#ff9f0a"
+          options={[
+            { value: "api-key", label: "API Key" },
+            { value: "oauth", label: "OAuth" },
+          ]}
+        />
       </FormRow>
       {method === "api-key" && (
         <>
+          <FormRow label="API Mode">
+            <AddFlowChoiceGroup
+              value={plan}
+              onChange={setPlan}
+              accent="#ff9f0a"
+              options={[
+                { value: "standard", label: "Standard" },
+                { value: "coding-plan", label: "Coding Plan" },
+              ]}
+            />
+          </FormRow>
           <FormRow label="Region">
-            <select className="sys-select" value={region} onChange={(e) => setRegion(e.target.value)}>
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              style={addFlowControlStyle}
+            >
               <option value="global">Global (dashscope-intl.aliyuncs.com)</option>
               <option value="china">China (dashscope.aliyuncs.com)</option>
             </select>
           </FormRow>
-          <FormRow label="DashScope API Key">
+          <FormRow label="Base URL (optional)">
             <input
-              className="sys-input"
-              type="password"
-              placeholder="sk-…"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              type="text"
+              placeholder={plan === "coding-plan" ? "https://coding-intl.dashscope.aliyuncs.com/v1" : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"}
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              style={addFlowTextInputStyle}
             />
           </FormRow>
+          <FormRow label="DashScope API Key">
+            <input
+              type="password"
+              placeholder={plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              style={addFlowTextInputStyle}
+            />
+          </FormRow>
+          <AddFlowHint>
+            Standard is the right default for `qwen3.6-plus`. Use Coding Plan only when you have a dedicated Coding Plan key and base URL.
+          </AddFlowHint>
         </>
       )}
       {method === "oauth" && (
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
-          A browser authorization page will open. You'll enter a code to authenticate your Qwen / Alibaba account.
-        </p>
+        <AddFlowHint tone="warning">
+          OAuth connects to the Qwen portal flow. It does not behave like a standard DashScope API-key provider, and some newer models such as `qwen3.6-plus` may be unavailable there.
+        </AddFlowHint>
       )}
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
           {submitting ? <><Spin size={13} /> Connecting…</> : method === "oauth" ? "Start OAuth →" : "Add Provider"}
         </button>
@@ -2246,28 +2412,32 @@ function AddFlowCopilotForm({ onSubmit, onCancel, submitting }: AddFlowFormProps
     await onSubmit(body)
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={addFlowPanelStyle}>
       <FormRow label="Auth Method">
-        <select className="sys-select" value={method} onChange={(e) => setMethod(e.target.value)}>
-          <option value="oauth">OAuth device flow (browser)</option>
-          <option value="token">Paste existing token</option>
-        </select>
+        <AddFlowChoiceGroup
+          value={method}
+          onChange={setMethod}
+          options={[
+            { value: "oauth", label: "OAuth" },
+            { value: "token", label: "Token" },
+          ]}
+        />
       </FormRow>
       {method === "token" && (
         <FormRow label="GitHub Token">
           <input
-            className="sys-input"
             type="password"
             placeholder="ghu_…"
             value={token}
             onChange={(e) => setToken(e.target.value)}
+            style={addFlowTextInputStyle}
           />
         </FormRow>
       )}
       {method === "oauth" && (
-        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+        <AddFlowHint>
           Opens the GitHub device authorization page. Sign in with your GitHub Copilot account.
-        </p>
+        </AddFlowHint>
       )}
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
@@ -2289,28 +2459,28 @@ function AddFlowAntigravityForm({ onSubmit, onCancel, submitting }: AddFlowFormP
     await onSubmit({ method: "oauth", clientId: clientId.trim(), clientSecret: clientSecret.trim() })
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={addFlowPanelStyle}>
       <FormRow label="OAuth Client ID">
         <input
-          className="sys-input"
           type="text"
           placeholder="…apps.googleusercontent.com"
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
+          style={addFlowTextInputStyle}
         />
       </FormRow>
       <FormRow label="OAuth Client Secret">
         <input
-          className="sys-input"
           type="password"
           placeholder="GOCSPX-…"
           value={clientSecret}
           onChange={(e) => setClientSecret(e.target.value)}
+          style={addFlowTextInputStyle}
         />
       </FormRow>
-      <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: 0 }}>
+      <AddFlowHint>
         Opens a Google OAuth browser flow once submitted.
-      </p>
+      </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
           {submitting ? <><Spin size={13} /> Connecting…</> : "Start OAuth →"}
@@ -2331,25 +2501,28 @@ function AddFlowAzureForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) 
     await onSubmit({ apiKey: apiKey.trim(), endpoint: endpoint.trim() })
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={addFlowPanelStyle}>
       <FormRow label="Endpoint">
         <input
-          className="sys-input"
           type="text"
           placeholder="https://your-resource.openai.azure.com"
           value={endpoint}
           onChange={(e) => setEndpoint(e.target.value)}
+          style={addFlowTextInputStyle}
         />
       </FormRow>
       <FormRow label="API Key">
         <input
-          className="sys-input"
           type="password"
           placeholder="Enter your Azure OpenAI API key"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
+          style={addFlowTextInputStyle}
         />
       </FormRow>
+      <AddFlowHint>
+        Use your Azure endpoint and key here. Deployments can be configured after the provider is added.
+      </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit} disabled={submitting}>
           {submitting ? <><Spin size={13} /> Connecting…</> : "Add Provider"}
