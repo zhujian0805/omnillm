@@ -174,7 +174,7 @@ describe("Material Design UI Browser Tests", () => {
       const expectedElements = [
         "header", // Should have header
         "main",   // Should have main content
-        "LLM Proxy", // App title
+        "OmniModel", // App title
         "Material Design", // Should mention Material Design when toggled
       ]
 

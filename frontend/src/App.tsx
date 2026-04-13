@@ -234,7 +234,7 @@ export default function AppComponent() {
                 lineHeight: 1,
               }}
             >
-              LLM Proxy
+              OmniModel
             </div>
             <div
               style={{
@@ -247,7 +247,7 @@ export default function AppComponent() {
             >
               {designSystem === "material" ?
                 "Material Design"
-              : "Model Routing"}
+              : "Intelligent LLM Router"}
             </div>
           </div>
         </div>

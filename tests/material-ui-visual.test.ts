@@ -46,7 +46,7 @@ dangerousDescribe("Material Design UI Visual Tests", () => {
         const response = await fetch(`${FRONTEND_URL}/admin/`)
         if (response.ok) {
           const html = await response.text()
-          expect(html).toContain("LLM Proxy")
+          expect(html).toContain("OmniModel")
           expect(html).toContain("id=\"root\"")
         } else {
           console.warn(`Frontend not available at ${FRONTEND_URL}, but API tests will continue`)
