@@ -6,6 +6,8 @@ import {
   Database,
   Settings,
   Layers,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -103,6 +105,7 @@ export default function AppComponent() {
   const [info, setInfo] = useState<ServerInfo | null>(null)
   const [theme, setTheme] = useState<Theme>(loadTheme())
   const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsed)
+  const [toggleHovered, setToggleHovered] = useState(false)
 
   useEffect(() => {
     log.info("initializing", {
@@ -382,31 +385,36 @@ export default function AppComponent() {
 
       <button
         onClick={toggleSidebar}
+        onMouseEnter={() => setToggleHovered(true)}
+        onMouseLeave={() => setToggleHovered(false)}
         title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
         aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
         style={{
           position: "fixed",
           top: "50%",
-          left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 12,
+          left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 8,
           transform: "translateY(-50%)",
-          width: 12,
-          height: 40,
-          borderRadius: "0 4px 4px 0",
+          width: 16,
+          height: 64,
+          borderRadius: "0 8px 8px 0",
           border: "1px solid var(--color-separator)",
           borderLeft: "none",
-          background: "var(--color-surface)",
-          color: "var(--color-text-secondary)",
+          background:
+            toggleHovered ? "var(--color-blue)" : "var(--color-surface)",
+          color: toggleHovered ? "white" : "var(--color-text-tertiary)",
+          boxShadow: toggleHovered ? "0 2px 8px rgba(56,189,248,0.3)" : "none",
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 14,
-          fontWeight: 600,
-          transition: "left 0.2s ease",
+          transition: "left 0.2s ease, background 0.15s ease, color 0.15s ease",
           zIndex: 41,
+          padding: 0,
         }}
       >
-        {sidebarCollapsed ? ">" : "<"}
+        {sidebarCollapsed ?
+          <ChevronRight size={14} strokeWidth={2.5} />
+        : <ChevronLeft size={14} strokeWidth={2.5} />}
       </button>
 
       <div
