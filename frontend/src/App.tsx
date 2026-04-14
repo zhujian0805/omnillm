@@ -18,7 +18,6 @@ import { MaterialLoggingPageComplete } from "@/pages/MaterialLoggingPageComplete
 import { MaterialProvidersPageComplete } from "@/pages/MaterialProvidersPageComplete"
 import { MaterialAboutPageComplete } from "@/pages/MaterialSettingsPageComplete"
 import { ProvidersPage } from "@/pages/ProvidersPage"
-import { ProvidersPageRedesign } from "@/pages/ProvidersPageRedesign"
 import { AboutPage } from "@/pages/SettingsPage"
 import { VmodelPage } from "@/pages/VmodelPage"
 // Import Material Design overlay styles
@@ -31,7 +30,6 @@ const log = createLogger("app")
 type Tab = "providers" | "chat" | "logging" | "vmodel" | "about"
 type Theme = "dark" | "light"
 type DesignSystem = "default" | "material"
-type UXMode = "original" | "redesign"
 
 const NAV_ITEMS = [
   { id: "providers" as const, label: "Providers", icon: Database },
@@ -42,15 +40,6 @@ const NAV_ITEMS = [
 ]
 
 const SIDEBAR_WIDTH = 260
-
-function loadUXMode(): UXMode {
-  try {
-    const stored = localStorage.getItem("olp-ux-mode")
-    return stored === "redesign" ? "redesign" : "original"
-  } catch {
-    return "original"
-  }
-}
 
 function loadDesignSystem(): DesignSystem {
   try {
@@ -125,7 +114,6 @@ export default function AppComponent() {
   const [theme, setTheme] = useState<Theme>(loadTheme())
   const [designSystem, setDesignSystem] =
     useState<DesignSystem>(loadDesignSystem())
-  const [uxMode, setUxMode] = useState<UXMode>(loadUXMode())
 
   useEffect(() => {
     log.info("initializing", { hostname: globalThis.location.hostname, port: globalThis.location.port })
@@ -153,16 +141,6 @@ export default function AppComponent() {
   const handleTabChange = (newTab: Tab) => {
     setTab(newTab)
     saveTab(newTab)
-  }
-
-  const toggleUXMode = () => {
-    const next: UXMode = uxMode === "original" ? "redesign" : "original"
-    setUxMode(next)
-    try {
-      localStorage.setItem("olp-ux-mode", next)
-    } catch {
-      /* ignore */
-    }
   }
 
   const toggleDesignSystem = () => {
@@ -276,7 +254,7 @@ export default function AppComponent() {
         </div>
 
         {/* Nav Items */}
-        <nav style={{ flex: 1, padding: "12px 10px" }}>
+        <nav aria-label="Main navigation" style={{ flex: 1, padding: "12px 10px" }}>
           <div
             style={{
               fontSize: 10,
@@ -296,8 +274,6 @@ export default function AppComponent() {
               <button
                 key={item.id}
                 onClick={() => handleTabChange(item.id)}
-                role="link"
-                aria-label={`Navigate to ${item.label}`}
                 aria-current={isActive ? "page" : undefined}
                 style={{
                   display: "flex",
@@ -391,52 +367,6 @@ export default function AppComponent() {
             {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
             {theme === "dark" ? "Light" : "Dark"} mode
           </button>
-
-          {/* Hidden dev toggles */}
-          <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-            {false && (
-              <button
-                onClick={toggleUXMode}
-                title={uxMode === "original" ? "Switch to Control Tower UX" : "Switch to Original UX"}
-                style={{
-                  flex: 1,
-                  height: 28,
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid var(--color-separator)",
-                  background: "var(--color-surface-2)",
-                  color: "var(--color-text-tertiary)",
-                  cursor: "pointer",
-                  fontSize: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {uxMode === "original" ? "Original" : "Redesign"}
-              </button>
-            )}
-            {false && (
-              <button
-                onClick={toggleDesignSystem}
-                title={designSystem === "default" ? "Switch to Material Design" : "Switch to Default Design"}
-                style={{
-                  flex: 1,
-                  height: 28,
-                  borderRadius: "var(--radius-sm)",
-                  border: "1px solid var(--color-separator)",
-                  background: "var(--color-surface-2)",
-                  color: "var(--color-text-tertiary)",
-                  cursor: "pointer",
-                  fontSize: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {designSystem === "default" ? "Default" : "Material"}
-              </button>
-            )}
-          </div>
         </div>
       </aside>
 
@@ -522,10 +452,7 @@ export default function AppComponent() {
                   </>
                   // Default versions
                 : <>
-                    {tab === "providers"
-                      && (uxMode === "redesign" ?
-                        <ProvidersPageRedesign showToast={showToast} />
-                      : <ProvidersPage showToast={showToast} />)}
+                    {tab === "providers" && <ProvidersPage showToast={showToast} />}
                     {tab === "chat" && <ChatPage showToast={showToast} />}
                     {tab === "logging" && <LoggingPage showToast={showToast} />}
                     {tab === "vmodel" && <VmodelPage showToast={showToast} />}

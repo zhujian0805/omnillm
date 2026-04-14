@@ -1,5 +1,5 @@
-import { Send as SendIcon, Settings as SettingsIcon, Bot, User, X, Trash2, MessageSquare } from "lucide-react"
-import { useEffect, useState, useRef, useCallback } from "react"
+import { Send as SendIcon, Settings as SettingsIcon, Bot, User, X, Trash2, MessageSquare, Loader2 } from "lucide-react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 
 import { EmptyState } from "@/components/EmptyState"
 
@@ -30,6 +30,10 @@ interface ChatPageProps {
 }
 
 type ApiShape = "openai" | "anthropic" | "responses"
+
+interface MessageWithId extends ChatMessage {
+  id: string
+}
 
 // Helper function to extract message content from different API response formats
 function extractMessageContent(response: ChatApiResponse, apiShape: ApiShape): string {
@@ -83,7 +87,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const [models, setModels] = useState<Array<ModelInfo>>([])
   const [selectedModel, setSelectedModel] = useState<string>("")
   const [apiShape, setApiShape] = useState<ApiShape>("openai")
-  const [messages, setMessages] = useState<Array<ChatMessage>>([])
+  const [messages, setMessages] = useState<Array<MessageWithId>>([])
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [modelsLoading, setModelsLoading] = useState(true)
@@ -94,7 +98,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const unavailableModelToastRef = useRef<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
-  const availableModels = models.filter((model) => !model.api_shape || model.api_shape === apiShape)
+  const availableModels = useMemo(
+    () => models.filter((model) => !model.api_shape || model.api_shape === apiShape),
+    [models, apiShape]
+  )
 
   // Load sessions and models on component mount
   useEffect(() => {
@@ -161,6 +168,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
       try {
         const session = await getChatSession(currentSessionId)
         setMessages(session.messages.map(msg => ({
+          id: generateUUID(),
           role: msg.role as "user" | "assistant" | "system",
           content: msg.content
         })))
@@ -188,7 +196,8 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const handleSendMessage = async () => {
     if (!inputValue.trim() || !selectedModel || isLoading) return
 
-    const userMessage: ChatMessage = {
+    const userMessage: MessageWithId = {
+      id: generateUUID(),
       role: "user",
       content: inputValue.trim()
     }
@@ -204,14 +213,22 @@ export function ChatPage({ showToast }: ChatPageProps) {
       if (!sessionId) {
         sessionId = generateUUID()
         const title = inputValue.substring(0, 50) + (inputValue.length > 50 ? "..." : "")
-        const createdSession = await createChatSession({
-          session_id: sessionId,
-          title: title,
-          model_id: selectedModel,
-          api_shape: apiShape
-        })
-        sessionId = createdSession.session_id || sessionId
-        setCurrentSessionId(sessionId)
+        try {
+          const createdSession = await createChatSession({
+            session_id: sessionId,
+            title: title,
+            model_id: selectedModel,
+            api_shape: apiShape
+          })
+          sessionId = createdSession.session_id || sessionId
+          setCurrentSessionId(sessionId)
+        } catch (sessionError) {
+          showToast(`Failed to create chat session: ${sessionError instanceof Error ? sessionError.message : String(sessionError)}`, "error")
+          setMessages(messages)
+          setInputValue(userMessage.content)
+          setIsLoading(false)
+          return
+        }
       }
 
       // Add user message to DB
@@ -224,14 +241,15 @@ export function ChatPage({ showToast }: ChatPageProps) {
       // Get AI response
       const response = await createChatCompletion({
         model: selectedModel,
-        messages: newMessages,
+        messages: newMessages.map(({ id: _, ...msg }) => msg),
         stream: false,
       }, apiShape)
 
       if (response && !(response instanceof ReadableStream)) {
         const messageContent = extractMessageContent(response as ChatApiResponse, apiShape)
         if (messageContent) {
-          const assistantMessage: ChatMessage = {
+          const assistantMessage: MessageWithId = {
+            id: generateUUID(),
             role: "assistant",
             content: messageContent
           }
@@ -262,12 +280,12 @@ export function ChatPage({ showToast }: ChatPageProps) {
     }
   }
 
-  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
-  }, [inputValue, selectedModel, isLoading, messages])
+  }
 
   const handleNewChat = () => {
     setCurrentSessionId(null)
@@ -365,7 +383,9 @@ export function ChatPage({ showToast }: ChatPageProps) {
             Model
           </label>
           {modelsLoading ? (
-            <div style={{
+            <div
+              aria-live="polite"
+              style={{
               padding: "10px 12px",
               border: "1px solid var(--color-separator)",
               borderRadius: "var(--radius-md)",
@@ -444,8 +464,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
           {/* Delete All Confirmation Dialog */}
           {showDeleteAllConfirm && (
             <div
-              role="alertdialog"
-              aria-modal="true"
+              role="group"
               aria-label="Confirm delete all chats"
               style={{
                 position: "absolute",
@@ -648,7 +667,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
           ) : (
             messages.map((message, index) => (
               <div
-                key={index}
+                key={message.id}
                 className="animate-slide-in"
                 role={message.role === "user" ? "note" : "article"}
                 aria-label={`${message.role === "user" ? "You" : "Assistant"} said`}
@@ -836,9 +855,9 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 justifyContent: "center",
                 borderRadius: "var(--radius-lg)"
               }}
-              aria-label="Send message"
+              aria-label={isLoading ? "Sending message..." : "Send message"}
             >
-              <SendIcon size={18} />
+              {isLoading ? <Loader2 size={18} className="spinner" /> : <SendIcon size={18} />}
             </button>
           </div>
           {!selectedModel && (
