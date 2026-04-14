@@ -150,13 +150,16 @@ func TestAlibabaOAuthGetModelsUsesSupportedCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModels() error = %v", err)
 	}
-	if len(models.Data) != 2 {
-		t.Fatalf("expected 2 supported OAuth models, got %d", len(models.Data))
+	if len(models.Data) != 3 {
+		t.Fatalf("expected 3 supported OAuth models, got %d", len(models.Data))
 	}
-	if models.Data[0].ID != "qwen3-coder-plus" && models.Data[1].ID != "qwen3-coder-plus" {
-		t.Fatalf("expected qwen3-coder-plus in OAuth model list, got %#v", models.Data)
+	modelIDs := make(map[string]bool, len(models.Data))
+	for _, m := range models.Data {
+		modelIDs[m.ID] = true
 	}
-	if models.Data[0].ID != "qwen3-coder-flash" && models.Data[1].ID != "qwen3-coder-flash" {
-		t.Fatalf("expected qwen3-coder-flash in OAuth model list, got %#v", models.Data)
+	for _, want := range []string{"qwen3-coder-plus", "qwen3-coder-flash", "qwen3-coder-next"} {
+		if !modelIDs[want] {
+			t.Fatalf("expected %q in OAuth model list, got %#v", want, models.Data)
+		}
 	}
 }

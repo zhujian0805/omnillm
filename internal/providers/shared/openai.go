@@ -65,11 +65,17 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 		case cif.CIFAssistantMessage:
 			openaiMsg := map[string]interface{}{"role": "assistant"}
 			var textBuf strings.Builder
+			var reasoningContent string
 			var toolCalls []map[string]interface{}
 			for _, part := range m.Content {
 				switch p := part.(type) {
 				case cif.CIFTextPart:
 					textBuf.WriteString(p.Text)
+				case cif.CIFThinkingPart:
+					// For OpenAI-compatible providers (DashScope Qwen), the thinking
+					// from a prior turn is forwarded as reasoning_content so the model
+					// can continue reasoning coherently in multi-turn conversations.
+					reasoningContent = p.Thinking
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
 					toolCalls = append(toolCalls, map[string]interface{}{
@@ -84,6 +90,9 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 			}
 			if textBuf.Len() > 0 {
 				openaiMsg["content"] = textBuf.String()
+			}
+			if reasoningContent != "" {
+				openaiMsg["reasoning_content"] = reasoningContent
 			}
 			if len(toolCalls) > 0 {
 				openaiMsg["tool_calls"] = toolCalls
@@ -160,6 +169,13 @@ func OpenAIStopReason(reason string) cif.CIFStopReason {
 }
 
 // ParseOpenAISSE parses an OpenAI-compatible SSE stream into CIF events.
+//
+// Qwen3/Alibaba quirks handled here:
+//   - finish_reason may be "stop" even when tool calls were made; the stop
+//     reason is overridden to StopReasonToolUse when any tool call deltas
+//     were observed during the stream.
+//   - reasoning_content in delta chunks (Qwen3 thinking) is forwarded as
+//     ThinkingDelta events so the thinking is not silently dropped.
 func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer body.Close()
 	defer close(eventCh)
@@ -169,6 +185,13 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 
 	var streamStartSent bool
 	var contentBlockIndex int
+	// toolCallsSeen tracks tool call blocks by their provider-side index so we
+	// can correctly handle multi-tool streams and override the stop reason.
+	toolCallsSeen := map[int]bool{}
+	// thinkingBlockOpen tracks whether a thinking content block is currently
+	// open (Qwen3 sends reasoning_content across many delta chunks).
+	var thinkingBlockOpen bool
+	const thinkingBlockIndex = -1 // sentinel: placed before text/tool blocks
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -178,7 +201,13 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
-			eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: cif.StopReasonEndTurn}
+			// No finish_reason was emitted before [DONE] — synthesise a stop
+			// event using whatever we observed in the stream.
+			stopReason := cif.StopReasonEndTurn
+			if len(toolCallsSeen) > 0 {
+				stopReason = cif.StopReasonToolUse
+			}
+			eventCh <- cif.CIFStreamEnd{Type: "stream_end", StopReason: stopReason}
 			return
 		}
 
@@ -214,9 +243,17 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 					OutputTokens: int(completionTokens),
 				}
 			}
+			// Some providers (e.g. Qwen3) report finish_reason "stop" even
+			// when the response contains tool calls.  If we observed any tool
+			// call deltas during the stream, upgrade the stop reason so that
+			// the caller knows it must execute the tools.
+			stopReason := OpenAIStopReason(finishReason)
+			if stopReason != cif.StopReasonToolUse && len(toolCallsSeen) > 0 {
+				stopReason = cif.StopReasonToolUse
+			}
 			eventCh <- cif.CIFStreamEnd{
 				Type:       "stream_end",
-				StopReason: OpenAIStopReason(finishReason),
+				StopReason: stopReason,
 				Usage:      usage,
 			}
 			return
@@ -225,6 +262,25 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 		delta, ok := choice["delta"].(map[string]interface{})
 		if !ok {
 			continue
+		}
+
+		// Handle Qwen3 reasoning_content (thinking) deltas.
+		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
+			if !thinkingBlockOpen {
+				eventCh <- cif.CIFContentDelta{
+					Type:         "content_delta",
+					Index:        thinkingBlockIndex,
+					ContentBlock: cif.CIFThinkingPart{Type: "thinking", Thinking: ""},
+					Delta:        cif.ThinkingDelta{Type: "thinking_delta", Thinking: reasoning},
+				}
+				thinkingBlockOpen = true
+			} else {
+				eventCh <- cif.CIFContentDelta{
+					Type:  "content_delta",
+					Index: thinkingBlockIndex,
+					Delta: cif.ThinkingDelta{Type: "thinking_delta", Thinking: reasoning},
+				}
+			}
 		}
 
 		if content, ok := delta["content"].(string); ok && content != "" {
@@ -242,8 +298,16 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 				if !ok {
 					continue
 				}
+				// Determine the provider-side index for this tool call chunk.
+				providerIdx := 0
+				if idxRaw, ok := tcMap["index"].(float64); ok {
+					providerIdx = int(idxRaw)
+				}
+
 				if id, ok := tcMap["id"].(string); ok && id != "" {
+					// New tool call: allocate a new content block index for it.
 					contentBlockIndex++
+					toolCallsSeen[providerIdx] = true
 					funcMap, _ := tcMap["function"].(map[string]interface{})
 					name, _ := funcMap["name"].(string)
 					eventCh <- cif.CIFContentDelta{
@@ -442,6 +506,7 @@ func ConvertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {
 func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error) {
 	response := &cif.CanonicalResponse{StopReason: cif.StopReasonEndTurn}
 	var textBuf strings.Builder
+	var thinkingBuf strings.Builder
 	toolCalls := make(map[int]*cif.CIFToolCallPart)
 	toolArgBufs := make(map[int]*strings.Builder)
 
@@ -454,6 +519,8 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 			switch d := e.Delta.(type) {
 			case cif.TextDelta:
 				textBuf.WriteString(d.Text)
+			case cif.ThinkingDelta:
+				thinkingBuf.WriteString(d.Thinking)
 			case cif.ToolArgumentsDelta:
 				if toolArgBufs[e.Index] == nil {
 					toolArgBufs[e.Index] = &strings.Builder{}
@@ -473,6 +540,11 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 		}
 	}
 
+	// Assemble response content. Thinking goes first (matching Anthropic ordering),
+	// followed by text, then tool calls.
+	if thinkingBuf.Len() > 0 {
+		response.Content = append(response.Content, cif.CIFThinkingPart{Type: "thinking", Thinking: thinkingBuf.String()})
+	}
 	if textBuf.Len() > 0 {
 		response.Content = append(response.Content, cif.CIFTextPart{Type: "text", Text: textBuf.String()})
 	}

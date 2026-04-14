@@ -39,6 +39,7 @@ var Models = []types.Model{
 // OAuthSupportedModels lists model IDs available to OAuth-authenticated users.
 var OAuthSupportedModels = map[string]bool{
 	"qwen3-coder-flash": true,
+	"qwen3-coder-next":  true,
 	"qwen3-coder-plus":  true,
 }
 
@@ -356,6 +357,18 @@ func IsChatCompletionsModel(modelID string) bool {
 	return !strings.Contains(strings.ToLower(modelID), "realtime")
 }
 
+// IsReasoningModel returns true if the model ID is a known Qwen reasoning model
+// (Qwen3/Qwen3.5/Qwen3.6/QwQ/Qwen-Plus family) that supports the enable_thinking flag
+// on the DashScope China endpoint.
+func IsReasoningModel(modelID string) bool {
+	lower := strings.ToLower(modelID)
+	return strings.Contains(lower, "qwen3") ||
+		strings.Contains(lower, "qwq") ||
+		strings.Contains(lower, "qwen-plus") ||
+		strings.Contains(lower, "qwen3.5") ||
+		strings.Contains(lower, "qwen3.6")
+}
+
 // ModelMetadata returns the hardcoded metadata for the given model ID if known.
 func ModelMetadata(modelID string) (types.Model, bool) {
 	for _, m := range Models {
@@ -559,7 +572,14 @@ func openAIMessageContentText(content interface{}) string {
 }
 
 // BuildOpenAIPayload builds the OpenAI-compatible request payload for Alibaba.
-func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest, isOAuth bool) map[string]interface{} {
+// enableThinking should be true for DashScope China reasoning models (dashscope.aliyuncs.com)
+// to receive reasoning_content in the response. It has no effect on the international endpoint
+// or OAuth-based portal.qwen.ai requests.
+//
+// Important: DashScope China does not return tool_calls SSE deltas when enable_thinking=true
+// is active. When the request carries real tools, enable_thinking is omitted entirely so
+// the model can emit tool calls normally.
+func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest, isOAuth bool, enableThinking bool) map[string]interface{} {
 	if isOAuth {
 		messages = EnsureOAuthSystemMessage(messages)
 	}
@@ -569,11 +589,17 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 		"messages": messages,
 	}
 
+	// Apply Qwen-recommended sampling defaults when the caller hasn't provided values.
+	// opencode uses temperature=0.55 and top_p=1 for all Qwen models.
 	if request.Temperature != nil {
 		payload["temperature"] = *request.Temperature
+	} else {
+		payload["temperature"] = 0.55
 	}
 	if request.TopP != nil {
 		payload["top_p"] = *request.TopP
+	} else {
+		payload["top_p"] = 1.0
 	}
 	if request.MaxTokens != nil {
 		payload["max_tokens"] = *request.MaxTokens
@@ -602,7 +628,9 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 		}
 		payload["tools"] = tools
 	} else {
-		// Qwen3 requires at least one tool (dummy injection workaround)
+		// Qwen3 requires at least one tool to be present in the payload, otherwise
+		// it returns an error.  Inject a dummy no-op tool and force tool_choice to
+		// "none" so the model never actually calls it.
 		payload["tools"] = []map[string]interface{}{{
 			"type": "function",
 			"function": map[string]interface{}{
@@ -614,12 +642,24 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 				},
 			},
 		}}
+		payload["tool_choice"] = "none"
 	}
 
 	if request.ToolChoice != nil {
 		if toolChoice := shared.ConvertCanonicalToolChoiceToOpenAI(request.ToolChoice); toolChoice != nil {
 			payload["tool_choice"] = toolChoice
 		}
+	}
+
+	// DashScope China reasoning models require enable_thinking=true to return
+	// reasoning_content in the response.  This flag is a no-op on the
+	// international endpoint and OAuth portal.qwen.ai requests.
+	//
+	// However, DashScope China does not emit tool_calls SSE deltas when
+	// enable_thinking=true is set.  When the request carries real tools we
+	// omit enable_thinking entirely so the model can emit tool calls normally.
+	if enableThinking && len(request.Tools) == 0 {
+		payload["enable_thinking"] = true
 	}
 
 	return payload

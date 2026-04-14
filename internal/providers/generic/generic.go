@@ -593,7 +593,13 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 
 	if a.provider.id == "alibaba" {
 		authType, _ := firstString(a.provider.config, "auth_type", "authType")
-		return alibabapkg.BuildOpenAIPayload(model, messages, request, authType == "oauth")
+		// Enable thinking for DashScope China reasoning models.
+		// The international endpoint (dashscope-intl) and OAuth portal do not need this flag.
+		baseURL := a.provider.baseURL
+		enableThinking := alibabapkg.IsReasoningModel(model) &&
+			strings.Contains(baseURL, "dashscope.aliyuncs.com") &&
+			!strings.Contains(baseURL, "dashscope-intl")
+		return alibabapkg.BuildOpenAIPayload(model, messages, request, authType == "oauth", enableThinking)
 	}
 
 	if a.provider.id == "azure-openai" {

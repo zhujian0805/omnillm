@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"omnimodel/internal/cif"
 	"omnimodel/internal/database"
 	"omnimodel/internal/providers/types"
 )
@@ -328,6 +329,17 @@ func TestGetModelsHardcoded(t *testing.T) {
 				t.Errorf("unexpected model %q in OAuth catalog", m.ID)
 			}
 		}
+		// qwen3-coder-next must be visible to OAuth users.
+		found := false
+		for _, m := range resp.Data {
+			if m.ID == "qwen3-coder-next" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("expected qwen3-coder-next to be present in OAuth model list")
+		}
 	})
 }
 
@@ -483,4 +495,126 @@ func modelIDs(models []types.Model) []string {
 		ids[i] = fmt.Sprintf("%s(%s)", m.ID, m.Name)
 	}
 	return ids
+}
+
+// ─── IsReasoningModel ────────────────────────────────────────────────────────
+
+func TestIsReasoningModel(t *testing.T) {
+	cases := []struct {
+		modelID string
+		want    bool
+	}{
+		{"qwen3-max", true},
+		{"qwen3-coder-plus", true},
+		{"qwen3-235b-a22b-instruct", true},
+		{"qwq-32b", true},
+		{"qwen-plus", true},
+		{"qwen3.5-plus", true},
+		{"qwen3.6-plus", true},
+		{"QWEN3-MAX", true}, // case insensitive
+		{"qwen2-5-72b-instruct", false},
+		{"qwen2-vl-7b", false},
+		{"qwen-mt-plus", false},
+		{"qwen-turbo", false},
+		{"gpt-4o", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		got := IsReasoningModel(tc.modelID)
+		if got != tc.want {
+			t.Errorf("IsReasoningModel(%q) = %v, want %v", tc.modelID, got, tc.want)
+		}
+	}
+}
+
+// ─── BuildOpenAIPayload: enable_thinking ─────────────────────────────────────
+
+func TestBuildOpenAIPayloadEnableThinkingWhenSet(t *testing.T) {
+	// enable_thinking=true should be sent when there are no real tools in the request.
+	req := &cif.CanonicalRequest{Model: "qwen3-max"}
+	payload := BuildOpenAIPayload("qwen3-max", []map[string]interface{}{}, req, false, true)
+	if val, ok := payload["enable_thinking"]; !ok || val != true {
+		t.Errorf("expected enable_thinking=true, got %v (present=%v)", val, ok)
+	}
+}
+
+func TestBuildOpenAIPayloadNoEnableThinkingByDefault(t *testing.T) {
+	req := &cif.CanonicalRequest{Model: "qwen3-max"}
+	payload := BuildOpenAIPayload("qwen3-max", []map[string]interface{}{}, req, false, false)
+	if val, ok := payload["enable_thinking"]; ok {
+		t.Errorf("expected enable_thinking to be absent, got %v", val)
+	}
+}
+
+// TestBuildOpenAIPayloadEnableThinkingSuppressedWhenToolsPresent verifies that when
+// enableThinking=true AND real tools are in the request, neither enable_thinking nor
+// thinking_budget is sent.  DashScope China rejects thinking_budget=0 as invalid, and
+// enable_thinking=true suppresses tool_calls SSE deltas — so both must be absent.
+func TestBuildOpenAIPayloadEnableThinkingSuppressedWhenToolsPresent(t *testing.T) {
+	desc := "Read a file"
+	req := &cif.CanonicalRequest{
+		Model: "qwen3.6-plus",
+		Tools: []cif.CIFTool{
+			{
+				Name:        "read_file",
+				Description: &desc,
+				ParametersSchema: map[string]interface{}{
+					"type":       "object",
+					"properties": map[string]interface{}{"path": map[string]interface{}{"type": "string"}},
+				},
+			},
+		},
+	}
+	payload := BuildOpenAIPayload("qwen3.6-plus", []map[string]interface{}{}, req, false, true)
+
+	if _, ok := payload["enable_thinking"]; ok {
+		t.Error("enable_thinking must be absent when tools are present to avoid breaking tool_calls streaming")
+	}
+	if _, ok := payload["thinking_budget"]; ok {
+		t.Error("thinking_budget must be absent when tools are present (DashScope rejects thinking_budget=0)")
+	}
+}
+
+// TestBuildOpenAIPayloadEnableThinkingSetWhenNoTools verifies that when enableThinking=true
+// and the request has no real tools, enable_thinking=true is still sent normally.
+func TestBuildOpenAIPayloadEnableThinkingSetWhenNoTools(t *testing.T) {
+	req := &cif.CanonicalRequest{Model: "qwen3-coder-next"}
+	payload := BuildOpenAIPayload("qwen3-coder-next", []map[string]interface{}{}, req, false, true)
+
+	if val, ok := payload["enable_thinking"]; !ok || val != true {
+		t.Errorf("expected enable_thinking=true when no real tools present, got %v (present=%v)", val, ok)
+	}
+	if _, ok := payload["thinking_budget"]; ok {
+		t.Error("thinking_budget must not be set when no real tools present")
+	}
+}
+
+// ─── BuildOpenAIPayload: default temperature/topP ────────────────────────────
+
+func TestBuildOpenAIPayloadDefaultTemperature(t *testing.T) {
+	req := &cif.CanonicalRequest{Model: "qwen3-max"}
+	payload := BuildOpenAIPayload("qwen3-max", []map[string]interface{}{}, req, false, false)
+	if temp, ok := payload["temperature"]; !ok || temp != 0.55 {
+		t.Errorf("expected default temperature=0.55, got %v (present=%v)", temp, ok)
+	}
+	if topP, ok := payload["top_p"]; !ok || topP != 1.0 {
+		t.Errorf("expected default top_p=1.0, got %v (present=%v)", topP, ok)
+	}
+}
+
+func TestBuildOpenAIPayloadCallerTemperatureRespected(t *testing.T) {
+	temp := 0.7
+	topP := 0.9
+	req := &cif.CanonicalRequest{
+		Model:       "qwen3-max",
+		Temperature: &temp,
+		TopP:        &topP,
+	}
+	payload := BuildOpenAIPayload("qwen3-max", []map[string]interface{}{}, req, false, false)
+	if got := payload["temperature"]; got != 0.7 {
+		t.Errorf("expected caller temperature 0.7, got %v", got)
+	}
+	if got := payload["top_p"]; got != 0.9 {
+		t.Errorf("expected caller top_p 0.9, got %v", got)
+	}
 }
