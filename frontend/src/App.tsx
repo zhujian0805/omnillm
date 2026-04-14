@@ -389,7 +389,7 @@ export default function AppComponent() {
           top: "50%",
           left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 12,
           transform: "translateY(-50%)",
-          width: 24,
+          width: 12,
           height: 40,
           borderRadius: "0 4px 4px 0",
           border: "1px solid var(--color-separator)",
