@@ -1,5 +1,6 @@
-import { Send as SendIcon, Settings as SettingsIcon, Bot, User, X, Trash2, MessageSquare, Loader2 } from "lucide-react"
+import { Send as SendIcon, Bot, User, X, Trash2, MessageSquare, Loader2 } from "lucide-react"
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
+import ReactMarkdown from "react-markdown"
 
 import { EmptyState } from "@/components/EmptyState"
 
@@ -16,9 +17,6 @@ import {
   type ModelInfo,
   type ChatApiResponse,
   type ChatSessionSummary,
-  type ChatCompletionResponse,
-  type AnthropicResponse,
-  type ResponsesResponse
 } from "@/api"
 
 import { createLogger } from "@/lib/logger"
@@ -35,28 +33,21 @@ interface MessageWithId extends ChatMessage {
   id: string
 }
 
-// Helper function to extract message content from different API response formats
-function extractMessageContent(response: ChatApiResponse, apiShape: ApiShape): string {
-  // Check if it's an OpenAI-style response
-  if ('choices' in response && response.choices && response.choices.length > 0) {
+function extractMessageContent(response: ChatApiResponse, _apiShape: ApiShape): string {
+  if ("choices" in response && response.choices && response.choices.length > 0) {
     return response.choices[0].message.content || ""
   }
-
-  // Check if it's an Anthropic-style response
-  if ('content' in response && Array.isArray(response.content)) {
-    const textBlocks = response.content.filter(block => block.type === "text")
-    return textBlocks.map(block => block.text || "").join("")
+  if ("content" in response && Array.isArray(response.content)) {
+    const textBlocks = response.content.filter((block) => block.type === "text")
+    return textBlocks.map((block) => block.text || "").join("")
   }
-
-  // Check if it's a Responses API response
-  if ('output' in response && Array.isArray(response.output)) {
-    const messageItems = response.output.filter(item => item.type === "message")
+  if ("output" in response && Array.isArray(response.output)) {
+    const messageItems = response.output.filter((item) => item.type === "message")
     if (messageItems.length > 0 && messageItems[0].content) {
-      const textBlocks = messageItems[0].content.filter(block => block.type === "output_text")
-      return textBlocks.map(block => block.text || "").join("")
+      const textBlocks = messageItems[0].content.filter((block) => block.type === "output_text")
+      return textBlocks.map((block) => block.text || "").join("")
     }
   }
-
   return ""
 }
 
@@ -83,6 +74,35 @@ function formatChatError(error: unknown): string {
   return "An unexpected error occurred. Please try again."
 }
 
+// ─── Message avatar ───────────────────────────────────────────────────────────
+
+function MessageAvatar({ role }: { role: "user" | "assistant" | "system" }) {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: "var(--radius-md)",
+        background: role === "user" ? "var(--color-blue)" : "var(--color-green)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        boxShadow: "var(--shadow-btn)",
+      }}
+    >
+      {role === "user" ? (
+        <User size={16} style={{ color: "white" }} />
+      ) : (
+        <Bot size={16} style={{ color: "white" }} />
+      )}
+    </div>
+  )
+}
+
+// ─── ChatPage ─────────────────────────────────────────────────────────────────
+
 export function ChatPage({ showToast }: ChatPageProps) {
   const [models, setModels] = useState<Array<ModelInfo>>([])
   const [selectedModel, setSelectedModel] = useState<string>("")
@@ -95,28 +115,27 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false)
+
   const unavailableModelToastRef = useRef<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+
   const availableModels = useMemo(
     () => models.filter((model) => !model.api_shape || model.api_shape === apiShape),
-    [models, apiShape]
+    [models, apiShape],
   )
 
-  // Load sessions and models on component mount
+  // Load sessions and models on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [modelsRes, sessionsRes] = await Promise.all([
-          getModels(),
-          listChatSessions()
-        ])
+        const [modelsRes, sessionsRes] = await Promise.all([getModels(), listChatSessions()])
         const loadedModels = modelsRes.data || []
         setModels(loadedModels)
-        const initialModels = loadedModels.filter((model) => !model.api_shape || model.api_shape === apiShape)
-        if (initialModels.length > 0) {
-          setSelectedModel(initialModels[0].id)
-        }
+        const initialModels = loadedModels.filter(
+          (model) => !model.api_shape || model.api_shape === apiShape,
+        )
+        if (initialModels.length > 0) setSelectedModel(initialModels[0].id)
         setSessions(sessionsRes)
       } catch (error) {
         showToast(`Failed to load data: ${error}`, "error")
@@ -125,81 +144,72 @@ export function ChatPage({ showToast }: ChatPageProps) {
         setSessionsLoading(false)
       }
     }
-
     loadData()
-  }, [showToast])
+  }, [showToast]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep selected model valid when apiShape or models change
   useEffect(() => {
     if (modelsLoading) return
-
     if (availableModels.length === 0) {
-      if (selectedModel) {
-        setSelectedModel("")
-      }
+      if (selectedModel) setSelectedModel("")
       return
     }
-
     if (!selectedModel) {
       setSelectedModel(availableModels[0].id)
       return
     }
-
-    if (!availableModels.some((model) => model.id === selectedModel)) {
-      const fallbackModel = availableModels[0]
-      setSelectedModel(fallbackModel.id)
+    if (!availableModels.some((m) => m.id === selectedModel)) {
+      const fallback = availableModels[0]
+      setSelectedModel(fallback.id)
       if (unavailableModelToastRef.current !== selectedModel) {
         unavailableModelToastRef.current = selectedModel
         showToast(
-          `Model "${selectedModel}" is unavailable for the current provider list; switched to ${fallbackModel.display_name || fallbackModel.id}`,
-          "error"
+          `Model "${selectedModel}" is unavailable; switched to ${fallback.display_name || fallback.id}`,
+          "error",
         )
       }
       return
     }
-
     unavailableModelToastRef.current = null
   }, [availableModels, modelsLoading, selectedModel, showToast])
 
-  // Load chat session when selected
+  // Load session messages when switching sessions
   useEffect(() => {
     if (!currentSessionId) return
-
     const loadSession = async () => {
       try {
         const session = await getChatSession(currentSessionId)
-        setMessages(session.messages.map(msg => ({
-          id: generateUUID(),
-          role: msg.role as "user" | "assistant" | "system",
-          content: msg.content
-        })))
+        setMessages(
+          session.messages.map((msg) => ({
+            id: generateUUID(),
+            role: msg.role as "user" | "assistant" | "system",
+            content: msg.content,
+          })),
+        )
         setSelectedModel(session.session.model_id)
         setApiShape(session.session.api_shape as ApiShape)
       } catch (error) {
         showToast(`Failed to load session: ${error}`, "error")
       }
     }
-
     loadSession()
   }, [currentSessionId, showToast])
 
-  // Auto-scroll to bottom only when user is already at the bottom
+  // Auto-scroll only when already near bottom
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
-
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50
-    if (isAtBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }
+    if (isAtBottom) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     if (!inputValue.trim() || !selectedModel || isLoading) return
 
     const userMessage: MessageWithId = {
       id: generateUUID(),
       role: "user",
-      content: inputValue.trim()
+      content: inputValue.trim(),
     }
 
     const newMessages = [...messages, userMessage]
@@ -208,22 +218,24 @@ export function ChatPage({ showToast }: ChatPageProps) {
     setIsLoading(true)
 
     try {
-      // Create session if not exists
       let sessionId = currentSessionId
       if (!sessionId) {
         sessionId = generateUUID()
         const title = inputValue.substring(0, 50) + (inputValue.length > 50 ? "..." : "")
         try {
-          const createdSession = await createChatSession({
+          const created = await createChatSession({
             session_id: sessionId,
-            title: title,
+            title,
             model_id: selectedModel,
-            api_shape: apiShape
+            api_shape: apiShape,
           })
-          sessionId = createdSession.session_id || sessionId
+          sessionId = created.session_id || sessionId
           setCurrentSessionId(sessionId)
-        } catch (sessionError) {
-          showToast(`Failed to create chat session: ${sessionError instanceof Error ? sessionError.message : String(sessionError)}`, "error")
+        } catch (err) {
+          showToast(
+            `Failed to create chat session: ${err instanceof Error ? err.message : String(err)}`,
+            "error",
+          )
           setMessages(messages)
           setInputValue(userMessage.content)
           setIsLoading(false)
@@ -231,41 +243,28 @@ export function ChatPage({ showToast }: ChatPageProps) {
         }
       }
 
-      // Add user message to DB
       await addChatMessage(sessionId, {
         message_id: generateUUID(),
         role: "user",
-        content: userMessage.content
+        content: userMessage.content,
       })
 
-      // Get AI response
-      const response = await createChatCompletion({
-        model: selectedModel,
-        messages: newMessages.map(({ id: _, ...msg }) => msg),
-        stream: false,
-      }, apiShape)
+      const response = await createChatCompletion(
+        { model: selectedModel, messages: newMessages.map(({ id: _, ...msg }) => msg), stream: false },
+        apiShape,
+      )
 
       if (response && !(response instanceof ReadableStream)) {
-        const messageContent = extractMessageContent(response as ChatApiResponse, apiShape)
-        if (messageContent) {
-          const assistantMessage: MessageWithId = {
-            id: generateUUID(),
-            role: "assistant",
-            content: messageContent
-          }
-          const finalMessages = [...newMessages, assistantMessage]
-          setMessages(finalMessages)
-
-          // Add assistant message to DB
+        const content = extractMessageContent(response as ChatApiResponse, apiShape)
+        if (content) {
+          const assistantMsg: MessageWithId = { id: generateUUID(), role: "assistant", content }
+          setMessages([...newMessages, assistantMsg])
           await addChatMessage(sessionId, {
             message_id: generateUUID(),
             role: "assistant",
-            content: messageContent
+            content,
           })
-
-          // Refresh sessions list
-          const updatedSessions = await listChatSessions()
-          setSessions(updatedSessions)
+          setSessions(await listChatSessions())
         } else {
           throw new Error("No content in response")
         }
@@ -273,34 +272,31 @@ export function ChatPage({ showToast }: ChatPageProps) {
         throw new Error("No response received")
       }
     } catch (error) {
-      const friendlyMessage = formatChatError(error)
-      showToast(`Chat error: ${friendlyMessage}`, "error")
+      showToast(`Chat error: ${formatChatError(error)}`, "error")
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [inputValue, selectedModel, isLoading, messages, currentSessionId, apiShape, showToast])
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSendMessage()
+      void handleSendMessage()
     }
   }
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     setCurrentSessionId(null)
     setMessages([])
     setInputValue("")
-  }
+  }, [])
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     try {
       await deleteChatSession(sessionId)
-      setSessions(sessions.filter(s => s.session_id !== sessionId))
-      if (currentSessionId === sessionId) {
-        handleNewChat()
-      }
+      setSessions((prev) => prev.filter((s) => s.session_id !== sessionId))
+      if (currentSessionId === sessionId) handleNewChat()
       showToast("Chat deleted", "success")
     } catch (error) {
       showToast(`Failed to delete chat: ${error}`, "error")
@@ -320,44 +316,18 @@ export function ChatPage({ showToast }: ChatPageProps) {
     }
   }
 
-  const clearChat = () => {
-    handleNewChat()
-  }
-
   return (
-    <div style={{
-      height: "calc(100dvh - 64px)",
-      display: "flex",
-      background: "var(--color-bg)",
-      padding: "20px 20px 0 20px",
-    }}>
-      {/* Left Sidebar */}
-      <div className="panel" style={{
-        width: 280,
-        height: "calc(100% - 20px)",
-        display: "flex",
-        flexDirection: "column",
-        padding: "20px",
-        gap: "12px",
-        marginRight: "20px",
-        marginBottom: "20px"
-      }}>
-        {/* New Chat Button */}
-        <button
-          onClick={handleNewChat}
-          className="btn btn-primary"
-          style={{ width: "100%", marginBottom: "8px" }}
-        >
+    <div className="chat-layout">
+      {/* ── Left Sidebar ─────────────────────────────────── */}
+      <div className="panel chat-sidebar">
+        {/* New Chat */}
+        <button onClick={handleNewChat} className="btn btn-primary" style={{ width: "100%" }}>
           + New Chat
         </button>
 
-        {/* API Shape Selector */}
+        {/* API Endpoint */}
         <div>
-          <label htmlFor="api-shape-select" className="sys-label" style={{
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontSize: "11px"
-          }}>
+          <label htmlFor="api-shape-select" className="sys-label" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11 }}>
             API Endpoint
           </label>
           <select
@@ -365,7 +335,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
             value={apiShape}
             onChange={(e) => setApiShape(e.target.value as ApiShape)}
             className="sys-select"
-            style={{ background: "var(--color-surface-2)", fontSize: "13px" }}
+            style={{ background: "var(--color-surface-2)", fontSize: 13 }}
           >
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
@@ -373,27 +343,28 @@ export function ChatPage({ showToast }: ChatPageProps) {
           </select>
         </div>
 
-        {/* Model Selector */}
+        {/* Model */}
         <div>
-          <label htmlFor="model-select" className="sys-label" style={{
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontSize: "11px"
-          }}>
+          <label htmlFor="model-select" className="sys-label" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11 }}>
             Model
           </label>
           {modelsLoading ? (
             <div
               aria-live="polite"
               style={{
-              padding: "10px 12px",
-              border: "1px solid var(--color-separator)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-surface)",
-              color: "var(--color-text-secondary)",
-              fontSize: 12,
-            }}>
-              Loading...
+                padding: "10px 12px",
+                border: "1px solid var(--color-separator)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-surface)",
+                color: "var(--color-text-secondary)",
+                fontSize: 12,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span className="spinner" aria-hidden="true" />
+              Loading models…
             </div>
           ) : (
             <select
@@ -401,7 +372,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               className="sys-select"
-              style={{ background: "var(--color-surface-2)", fontSize: "13px" }}
+              style={{ background: "var(--color-surface-2)", fontSize: 13 }}
             >
               {availableModels.map((model) => (
                 <option key={`${model.owned_by ?? ""}-${model.id}`} value={model.id}>
@@ -413,47 +384,15 @@ export function ChatPage({ showToast }: ChatPageProps) {
         </div>
 
         {/* Chat History */}
-        <div style={{ marginTop: "16px" }}>
-          <div style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "8px"
-          }}>
-            <label className="sys-label" style={{
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              fontSize: "11px",
-              margin: 0
-            }}>
+        <div className="chat-history-section" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div className="chat-history-header">
+            <label className="sys-label" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11, margin: 0 }}>
               History
             </label>
             {sessions.length > 0 && (
               <button
                 onClick={() => setShowDeleteAllConfirm(true)}
-                style={{
-                  height: 32,
-                  minWidth: 32,
-                  background: "none",
-                  border: "none",
-                  color: "var(--color-text-secondary)",
-                  cursor: "pointer",
-                  padding: "4px 8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  fontSize: "11px",
-                  borderRadius: "var(--radius-sm)",
-                  transition: "color 0.2s, background 0.2s"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "var(--color-red)"
-                  e.currentTarget.style.background = "var(--color-red-fill)"
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "var(--color-text-secondary)"
-                  e.currentTarget.style.background = "none"
-                }}
+                className="btn btn-icon btn-icon-ghost btn-icon-danger"
                 aria-label="Delete all chat history"
               >
                 <Trash2 size={14} />
@@ -461,189 +400,93 @@ export function ChatPage({ showToast }: ChatPageProps) {
             )}
           </div>
 
-          {/* Delete All Confirmation Dialog */}
-          {showDeleteAllConfirm && (
-            <div
-              role="group"
-              aria-label="Confirm delete all chats"
-              style={{
-                position: "absolute",
-                zIndex: 200,
-                inset: 0,
-                background: "var(--color-bg-elevated)",
-                border: "1px solid var(--color-separator)",
-                borderRadius: "var(--radius-lg)",
-                padding: "16px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-                boxShadow: "var(--shadow-modal)"
-              }}
-            >
-              <p style={{
-                fontSize: "14px",
-                color: "var(--color-text)",
-                margin: 0,
-                fontWeight: 500
-              }}>
-                Delete all chat history?
-              </p>
-              <p style={{
-                fontSize: "12px",
-                color: "var(--color-text-secondary)",
-                margin: 0
-              }}>
-                This action cannot be undone.
-              </p>
-              <div style={{
-                display: "flex",
-                gap: "8px",
-                marginTop: "auto"
-              }}>
-                <button
-                  onClick={() => setShowDeleteAllConfirm(false)}
-                  className="btn btn-ghost"
-                  style={{ flex: 1 }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteAllSessions}
-                  className="btn btn-danger"
-                  style={{ flex: 1 }}
-                >
-                  Delete All
-                </button>
-              </div>
-            </div>
-          )}
-
           {sessionsLoading ? (
-            <div style={{
-              padding: "12px",
-              color: "var(--color-text-secondary)",
-              fontSize: "12px",
-              textAlign: "center"
-            }}>
-              Loading...
+            <div className="chat-history-state">
+              <span className="spinner" aria-hidden="true" />
+              Loading…
             </div>
           ) : sessions.length === 0 ? (
-            <div style={{
-              padding: "12px",
-              color: "var(--color-text-secondary)",
-              fontSize: "12px",
-              textAlign: "center"
-            }}>
-              No chat history
+            <div className="chat-history-state chat-history-empty">
+              <EmptyState
+                icon={<MessageSquare size={20} />}
+                title="No history yet"
+                description="Start a conversation to save it here."
+              />
             </div>
           ) : (
             <div className="scrollable-list">
-              {sessions.map((session) => (
-                <div
-                  key={session.session_id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Open chat: ${session.title}`}
-                  onClick={() => setCurrentSessionId(session.session_id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      setCurrentSessionId(session.session_id)
-                    }
-                  }}
-                  className="list-item-interactive"
-                  style={{
-                    background: currentSessionId === session.session_id
-                      ? "var(--color-blue-fill)"
-                      : "var(--color-surface-2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "8px",
-                  }}
-                >
-                  <div style={{
-                    flex: 1,
-                    overflow: "hidden"
-                  }}>
-                    <div style={{
-                      fontSize: "12px",
-                      color: currentSessionId === session.session_id
-                        ? "white"
-                        : "var(--color-text)",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis"
-                    }}>
-                      {session.title}
-                    </div>
-                    <div style={{
-                      fontSize: "11px",
-                      color: currentSessionId === session.session_id
-                        ? "rgba(255,255,255,0.7)"
-                        : "var(--color-text-secondary)",
-                      marginTop: "2px"
-                    }}>
-                      {new Date(session.updated_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteSession(session.session_id, e)}
+              {sessions.map((session) => {
+                const isActive = currentSessionId === session.session_id
+                return (
+                  <div
+                    key={session.session_id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open chat: ${session.title}`}
+                    aria-pressed={isActive}
+                    onClick={() => setCurrentSessionId(session.session_id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
+                        setCurrentSessionId(session.session_id)
+                      }
+                    }}
+                    className="list-item-interactive"
                     style={{
-                      height: 32,
-                      width: 32,
-                      background: "none",
-                      border: "none",
-                      color: "var(--color-text-secondary)",
-                      cursor: "pointer",
-                      padding: 0,
+                      background: isActive ? "var(--color-blue-fill)" : "var(--color-surface-2)",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      borderRadius: "var(--radius-sm)",
-                      transition: "color 0.2s, background 0.2s"
+                      justifyContent: "space-between",
+                      gap: 8,
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = "var(--color-red)"
-                      e.currentTarget.style.background = "var(--color-red-fill)"
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = "var(--color-text-secondary)"
-                      e.currentTarget.style.background = "none"
-                    }}
-                    aria-label={`Delete chat: ${session.title}`}
                   >
-                    <X size={16} />
-                  </button>
-                </div>
-              ))}
+                    <div style={{ flex: 1, overflow: "hidden" }}>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: isActive ? "white" : "var(--color-text)",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {session.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: isActive ? "rgba(255,255,255,0.7)" : "var(--color-text-secondary)",
+                          marginTop: 2,
+                        }}
+                      >
+                        {new Date(session.updated_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteSession(session.session_id, e)}
+                      className="btn btn-icon btn-icon-ghost btn-icon-danger"
+                      aria-label={`Delete chat: ${session.title}`}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
 
-        {/* Clear Current Chat */}
-        <div style={{ marginTop: "auto", borderTop: "1px solid var(--color-separator)", paddingTop: "12px" }}>
-          <button
-            onClick={clearChat}
-            className="btn btn-ghost"
-            style={{ width: "100%", fontSize: "13px" }}
-          >
+        {/* Clear current */}
+        <div style={{ borderTop: "1px solid var(--color-separator)", paddingTop: 12 }}>
+          <button onClick={handleNewChat} className="btn btn-ghost" style={{ width: "100%", fontSize: 13 }}>
             Clear Current
           </button>
         </div>
       </div>
 
-      {/* Chat Area */}
-      <div className="panel" style={{
-        flex: 1,
-        height: "calc(100% - 20px)",
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--color-bg-elevated)",
-        marginBottom: "20px"
-      }}>
-        {/* Messages Container */}
+      {/* ── Chat Main ─────────────────────────────────────── */}
+      <div className="panel chat-main">
+        {/* Messages */}
         <div
           ref={messagesContainerRef}
           role="log"
@@ -655,7 +498,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
             padding: "24px",
             display: "flex",
             flexDirection: "column",
-            gap: "20px",
+            gap: 20,
           }}
         >
           {messages.length === 0 ? (
@@ -674,56 +517,38 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 style={{
                   display: "flex",
                   justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-                  animationDelay: `${index * 0.1}s`
+                  animationDelay: `${Math.min(index * 0.05, 0.3)}s`,
                 }}
               >
-                <div style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: "12px",
-                  maxWidth: "75%",
-                  flexDirection: message.role === "user" ? "row-reverse" : "row"
-                }}>
-                  {/* Avatar */}
-                  <div
-                    aria-hidden="true"
-                    style={{
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "var(--radius-md)",
-                    background: message.role === "user"
-                      ? "var(--color-blue)"
-                      : "var(--color-green)",
+                <div
+                  style={{
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    boxShadow: "var(--shadow-btn)",
-                  }}>
-                    {message.role === "user" ?
-                      <User size={16} style={{ color: "white" }} /> :
-                      <Bot size={16} style={{ color: "white" }} />
-                    }
-                  </div>
-
-                  {/* Message Bubble */}
-                  <div style={{
-                    padding: "12px 16px",
-                    borderRadius: "var(--radius-lg)",
-                    background: message.role === "user"
-                      ? "var(--color-blue)"
-                      : "var(--color-surface)",
-                    color: message.role === "user"
-                      ? "white"
-                      : "var(--color-text)",
-                    fontSize: "14px",
-                    lineHeight: 1.6,
-                    whiteSpace: "pre-wrap",
-                    fontFamily: "var(--font-text)",
-                    border: message.role === "user" ? "none" : "1px solid var(--color-separator)",
-                    boxShadow: "var(--shadow-btn)"
-                  }}>
-                    {message.content}
+                    alignItems: "flex-start",
+                    gap: 12,
+                    maxWidth: "75%",
+                    flexDirection: message.role === "user" ? "row-reverse" : "row",
+                  }}
+                >
+                  <MessageAvatar role={message.role as "user" | "assistant" | "system"} />
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: "var(--radius-lg)",
+                      background: message.role === "user" ? "var(--color-blue)" : "var(--color-surface)",
+                      color: message.role === "user" ? "white" : "var(--color-text)",
+                      border: message.role === "user" ? "none" : "1px solid var(--color-separator)",
+                      boxShadow: "var(--shadow-btn)",
+                    }}
+                  >
+                    {message.role === "user" ? (
+                      <p className="chat-message-markdown" style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.6 }}>
+                        {message.content}
+                      </p>
+                    ) : (
+                      <div className="chat-message-markdown">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -731,48 +556,26 @@ export function ChatPage({ showToast }: ChatPageProps) {
           )}
 
           {isLoading && (
-            <div className="animate-slide-in" style={{
-              display: "flex",
-              justifyContent: "flex-start"
-            }}>
-              <div style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "12px",
-                maxWidth: "75%"
-              }}>
+            <div className="animate-slide-in" style={{ display: "flex", justifyContent: "flex-start" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, maxWidth: "75%" }}>
+                <MessageAvatar role="assistant" />
                 <div
-                  aria-hidden="true"
                   style={{
-                    width: "32px",
-                    height: "32px",
-                    borderRadius: "var(--radius-md)",
-                    background: "var(--color-green)",
+                    padding: "12px 16px",
+                    borderRadius: "var(--radius-lg)",
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-separator)",
+                    color: "var(--color-text-secondary)",
+                    fontSize: 14,
+                    fontStyle: "italic",
+                    boxShadow: "var(--shadow-btn)",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    boxShadow: "var(--shadow-btn)",
-                  }}>
-                  <Bot size={16} style={{ color: "white" }} />
-                </div>
-
-                <div style={{
-                  padding: "12px 16px",
-                  borderRadius: "var(--radius-lg)",
-                  background: "var(--color-surface)",
-                  border: "1px solid var(--color-separator)",
-                  color: "var(--color-text-secondary)",
-                  fontSize: "14px",
-                  fontFamily: "var(--font-text)",
-                  fontStyle: "italic",
-                  boxShadow: "var(--shadow-btn)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}>
-                  <span className="spinner" />
-                  Thinking...
+                    gap: 8,
+                  }}
+                >
+                  <span className="spinner" aria-hidden="true" />
+                  Thinking…
                 </div>
               </div>
             </div>
@@ -781,55 +584,57 @@ export function ChatPage({ showToast }: ChatPageProps) {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
-        <div style={{
-          padding: "20px 24px",
-          borderTop: "1px solid var(--color-separator)",
-          background: "var(--color-surface)",
-          borderBottomLeftRadius: "var(--radius-lg)",
-          borderBottomRightRadius: "var(--radius-lg)",
-        }}>
-          <div style={{
-            display: "flex",
-            gap: "12px",
-            alignItems: "flex-end",
-          }}>
+        {/* Input */}
+        <div
+          style={{
+            padding: "20px 24px",
+            borderTop: "1px solid var(--color-separator)",
+            background: "var(--color-surface)",
+            borderBottomLeftRadius: "var(--radius-lg)",
+            borderBottomRightRadius: "var(--radius-lg)",
+          }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
             <div style={{ flex: 1 }}>
-              <label htmlFor="chat-input" className="sr-only" style={{
-                position: "absolute",
-                width: "1px",
-                height: "1px",
-                padding: 0,
-                margin: "-1px",
-                overflow: "hidden",
-                clip: "rect(0, 0, 0, 0)",
-                whiteSpace: "nowrap",
-                border: 0
-              }}>
+              <label
+                htmlFor="chat-input"
+                style={{
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  padding: 0,
+                  margin: -1,
+                  overflow: "hidden",
+                  clip: "rect(0,0,0,0)",
+                  whiteSpace: "nowrap",
+                  border: 0,
+                }}
+              >
                 Chat message
               </label>
               <textarea
                 id="chat-input"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyPress}
-                placeholder="Chat with the model..."
+                onKeyDown={handleKeyDown}
+                placeholder="Chat with the model… (Shift+Enter for newline)"
                 disabled={!selectedModel || isLoading}
                 aria-describedby={!selectedModel ? "model-required-hint" : undefined}
+                className="chat-textarea"
                 style={{
                   width: "100%",
-                  minHeight: "44px",
-                  maxHeight: "120px",
+                  minHeight: 44,
+                  maxHeight: 120,
                   padding: "12px 16px",
                   border: "1px solid var(--color-separator)",
                   borderRadius: "var(--radius-lg)",
                   background: "var(--color-bg)",
                   color: "var(--color-text)",
-                  fontSize: "14px",
+                  fontSize: 14,
                   fontFamily: "var(--font-text)",
                   resize: "none",
-                  outline: "none",
-                  transition: "border-color 0.15s var(--ease), box-shadow 0.15s var(--ease)"
+                  lineHeight: 1.5,
+                  transition: "border-color 0.15s var(--ease), box-shadow 0.15s var(--ease)",
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.borderColor = "var(--color-blue)"
@@ -841,37 +646,64 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 }}
               />
             </div>
-
             <button
-              onClick={handleSendMessage}
+              onClick={() => void handleSendMessage()}
               disabled={!inputValue.trim() || !selectedModel || isLoading}
               className="btn btn-primary"
-              style={{
-                width: "44px",
-                height: "44px",
-                padding: "0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "var(--radius-lg)"
-              }}
-              aria-label={isLoading ? "Sending message..." : "Send message"}
+              style={{ width: 44, height: 44, padding: 0, flexShrink: 0, borderRadius: "var(--radius-lg)" }}
+              aria-label={isLoading ? "Sending message…" : "Send message"}
             >
-              {isLoading ? <Loader2 size={18} className="spinner" /> : <SendIcon size={18} />}
+              {isLoading ? <Loader2 size={18} className="animate-spin" /> : <SendIcon size={18} />}
             </button>
           </div>
           {!selectedModel && (
-            <span id="model-required-hint" style={{
-              fontSize: "12px",
-              color: "var(--color-text-tertiary)",
-              marginTop: "8px",
-              display: "block"
-            }}>
+            <span
+              id="model-required-hint"
+              style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 8, display: "block" }}
+            >
               No model available for this API shape.
             </span>
           )}
         </div>
       </div>
+
+      {/* ── Delete-All Confirmation Dialog ────────────────── */}
+      {showDeleteAllConfirm && (
+        <div
+          className="dialog-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-all-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDeleteAllConfirm(false)
+          }}
+        >
+          <div className="dialog-box" style={{ maxWidth: 380 }}>
+            <div className="dialog-header">
+              <span id="delete-all-title" style={{ fontWeight: 600, fontSize: 15 }}>
+                Delete all chat history?
+              </span>
+            </div>
+            <div className="dialog-body">
+              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+                This will permanently remove all sessions and cannot be undone.
+              </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+                <button
+                  onClick={() => setShowDeleteAllConfirm(false)}
+                  className="btn btn-ghost"
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button onClick={handleDeleteAllSessions} className="btn btn-danger" style={{ flex: 1 }}>
+                  Delete All
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

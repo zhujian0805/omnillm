@@ -244,10 +244,31 @@
   background: rgba(255,69,58,0.18);
 }
 
-.btn-sm {
-  padding: 5px 11px;
-  font-size: 12px;
+.btn-icon {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-sm);
+}
+
+.btn-icon-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: none;
+}
+
+.btn-icon-ghost:hover:not(:disabled) {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+
+.btn-icon-danger:hover:not(:disabled) {
+  background: var(--color-red-fill);
+  color: var(--color-red);
 }
 
 .btn-lime {
@@ -330,6 +351,28 @@
   margin-bottom: 6px;
 }
 
+/* ─── Provider type picker button (accent color driven via --provider-accent) */
+
+.provider-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+  width: 100%;
+  color: var(--color-text);
+}
+
+.provider-type-btn:hover {
+  background: color-mix(in srgb, var(--provider-accent) 6%, transparent);
+  border-color: color-mix(in srgb, var(--provider-accent) 20%, transparent);
+}
+
 /* ─── Panel / card ──────────────────────────────────────────────────────── */
 
 .panel {
@@ -339,9 +382,111 @@
   box-shadow: var(--shadow-card);
 }
 
-.panel-active {
-  border-color: var(--color-green);
-  box-shadow: var(--shadow-card), 0 0 0 1px var(--color-green);
+.app-shell {
+  width: 100%;
+}
+
+.app-main {
+  min-width: 0;
+}
+
+.chat-layout {
+  height: calc(100dvh - 64px);
+  display: flex;
+  gap: 20px;
+  background: var(--color-bg);
+  padding: 20px 20px 0;
+}
+
+.chat-sidebar {
+  width: 280px;
+  height: calc(100% - 20px);
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  height: calc(100% - 20px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-elevated);
+  margin-bottom: 20px;
+}
+
+.chat-history-section {
+  margin-top: 16px;
+  position: relative;
+}
+
+.chat-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.chat-history-state {
+  padding: 16px 12px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.chat-history-empty {
+  min-height: 160px;
+}
+
+.chat-message-markdown {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.chat-message-markdown > * + * {
+  margin-top: 0.75em;
+}
+
+.chat-message-markdown p {
+  margin: 0;
+}
+
+.chat-message-markdown ul,
+.chat-message-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.chat-message-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: rgba(148,163,184,0.16);
+  border-radius: var(--radius-sm);
+  padding: 0.15em 0.35em;
+}
+
+.chat-message-markdown pre {
+  overflow-x: auto;
+  background: rgba(15,23,42,0.35);
+  border: 1px solid var(--color-separator);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.chat-message-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.chat-message-markdown a {
+  color: inherit;
 }
 
 /* ─── Toggle switch ─────────────────────────────────────────────────────── */
@@ -537,7 +682,54 @@ header :focus-visible {
   background: var(--color-surface-3);
 }
 
-.list-item-interactive:focus-visible {
-  outline: 2px solid var(--color-blue);
-  outline-offset: -2px;
+@media (max-width: 960px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .app-sidebar {
+    position: sticky !important;
+    width: 100% !important;
+    height: auto;
+    max-height: none;
+  }
+
+  .app-main {
+    margin-left: 0 !important;
+  }
+
+  .chat-layout {
+    height: auto;
+    min-height: calc(100dvh - 56px);
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .chat-sidebar,
+  .chat-main {
+    width: 100%;
+    height: auto;
+    margin-bottom: 0;
+  }
+
+  .chat-sidebar {
+    padding: 16px;
+  }
+
+  .scrollable-list {
+    max-height: 240px;
+  }
+}
+
+@media (max-width: 640px) {
+  .toast-container {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+  }
+
+  .toast {
+    min-width: 0;
+  }
 }

@@ -14,14 +14,9 @@ import { MuiThemeWrapper } from "@/components/MuiThemeWrapper"
 import { useToast, ToastContainer } from "@/components/Toast"
 import { ChatPage } from "@/pages/ChatPage"
 import { LoggingPage } from "@/pages/LoggingPage"
-import { MaterialLoggingPageComplete } from "@/pages/MaterialLoggingPageComplete"
-import { MaterialProvidersPageComplete } from "@/pages/MaterialProvidersPageComplete"
-import { MaterialAboutPageComplete } from "@/pages/MaterialSettingsPageComplete"
 import { ProvidersPage } from "@/pages/ProvidersPage"
 import { AboutPage } from "@/pages/SettingsPage"
 import { VmodelPage } from "@/pages/VmodelPage"
-// Import Material Design overlay styles
-import "@/styles/material-overlay.css"
 
 import { createLogger } from "@/lib/logger"
 
@@ -29,7 +24,6 @@ const log = createLogger("app")
 
 type Tab = "providers" | "chat" | "logging" | "vmodel" | "about"
 type Theme = "dark" | "light"
-type DesignSystem = "default" | "material"
 
 const NAV_ITEMS = [
   { id: "providers" as const, label: "Providers", icon: Database },
@@ -40,15 +34,6 @@ const NAV_ITEMS = [
 ]
 
 const SIDEBAR_WIDTH = 260
-
-function loadDesignSystem(): DesignSystem {
-  try {
-    const stored = localStorage.getItem("olp-design-system")
-    return stored === "material" ? "material" : "default"
-  } catch {
-    return "default"
-  }
-}
 
 function loadTheme(): Theme {
   try {
@@ -91,7 +76,6 @@ function loadTab(): Tab {
 function saveTab(tab: Tab) {
   try {
     localStorage.setItem("olp-current-tab", tab)
-    // Also update URL hash for immediate refresh support
     globalThis.location.hash = tab
   } catch {
     // ignore
@@ -103,7 +87,6 @@ function applyTheme(theme: Theme) {
   else delete document.documentElement.dataset.theme
 }
 
-// Apply before first render
 applyTheme(loadTheme())
 
 // eslint-disable-next-line max-lines-per-function
@@ -112,8 +95,6 @@ export default function AppComponent() {
   const { showToast } = useToast()
   const [info, setInfo] = useState<ServerInfo | null>(null)
   const [theme, setTheme] = useState<Theme>(loadTheme())
-  const [designSystem, setDesignSystem] =
-    useState<DesignSystem>(loadDesignSystem())
 
   useEffect(() => {
     log.info("initializing", { hostname: globalThis.location.hostname, port: globalThis.location.port })
@@ -127,7 +108,6 @@ export default function AppComponent() {
       })
   }, [])
 
-  // Handle browser back/forward navigation
   useEffect(() => {
     const handleHashChange = () => {
       const newTab = loadTab()
@@ -141,17 +121,6 @@ export default function AppComponent() {
   const handleTabChange = (newTab: Tab) => {
     setTab(newTab)
     saveTab(newTab)
-  }
-
-  const toggleDesignSystem = () => {
-    const next: DesignSystem =
-      designSystem === "default" ? "material" : "default"
-    setDesignSystem(next)
-    try {
-      localStorage.setItem("olp-design-system", next)
-    } catch {
-      /* ignore */
-    }
   }
 
   const toggleTheme = () => {
@@ -170,15 +139,15 @@ export default function AppComponent() {
 
   return (
     <div
+      className="app-shell"
       style={{
         minHeight: "100vh",
         display: "flex",
         background: "var(--color-bg)",
       }}
-      data-design-system={designSystem}
     >
-      {/* Sidebar */}
       <aside
+        className="app-sidebar"
         style={{
           width: SIDEBAR_WIDTH,
           flexShrink: 0,
@@ -193,7 +162,6 @@ export default function AppComponent() {
           zIndex: 40,
         }}
       >
-        {/* Sidebar Header: Logo */}
         <div
           style={{
             padding: "20px 20px 16px",
@@ -247,13 +215,12 @@ export default function AppComponent() {
                   letterSpacing: "-0.01em",
                 }}
               >
-                {designSystem === "material" ? "Material Design" : "Intelligent LLM Router"}
+                Intelligent LLM Router
               </div>
             </div>
           </div>
         </div>
 
-        {/* Nav Items */}
         <nav aria-label="Main navigation" style={{ flex: 1, padding: "12px 10px" }}>
           <div
             style={{
@@ -301,14 +268,12 @@ export default function AppComponent() {
           })}
         </nav>
 
-        {/* Sidebar Footer: Status + Theme */}
         <div
           style={{
             padding: "16px 16px",
             borderTop: "1px solid var(--color-separator)",
           }}
         >
-          {/* Status */}
           <div
             style={{
               display: "flex",
@@ -342,7 +307,6 @@ export default function AppComponent() {
             )}
           </div>
 
-          {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
             title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
@@ -365,13 +329,13 @@ export default function AppComponent() {
             }}
           >
             {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-            {theme === "dark" ? "Light" : "Dark"} mode
+            Switch to {theme === "dark" ? "light" : "dark"}
           </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div
+        className="app-main"
         style={{
           flex: 1,
           marginLeft: SIDEBAR_WIDTH,
@@ -380,7 +344,6 @@ export default function AppComponent() {
           minHeight: "100vh",
         }}
       >
-        {/* Top Bar */}
         <header
           style={{
             background: "var(--color-bg)",
@@ -415,13 +378,12 @@ export default function AppComponent() {
           </div>
         </header>
 
-        {/* Page Content */}
         <MuiThemeWrapper isDark={theme === "dark"}>
           <main
             style={{
               flex: 1,
-              padding: designSystem === "material" ? "0" : (tab === "chat" ? "0" : "32px 32px 40px"),
-              maxWidth: designSystem === "material" ? "none" : 1440,
+              padding: tab === "chat" ? "0" : "32px 32px 40px",
+              maxWidth: 1440,
               width: "100%",
               margin: "0 auto",
             }}
@@ -429,36 +391,22 @@ export default function AppComponent() {
             <div
               className="animate-slide-in"
               style={{
-                padding: designSystem === "material" ? "32px 24px 40px" : (tab === "chat" ? "0" : "0"),
-                minHeight:
-                  designSystem === "material" ? "calc(100dvh - 56px)" : (tab === "chat" ? "calc(100dvh - 56px)" : "auto"),
+                padding: tab === "chat" ? "0" : "0",
+                minHeight: tab === "chat" ? "calc(100dvh - 56px)" : "auto",
               }}
             >
               <div
                 style={{
-                  maxWidth: designSystem === "material" ? 1280 : 1200,
+                  maxWidth: 1200,
                   margin: "0 auto",
                   width: "100%",
                 }}
               >
-                {designSystem === "material" ?
-                  // Use Material Design pages
-                  <>
-                    {tab === "providers" && <MaterialProvidersPageComplete showToast={showToast} />}
-                    {tab === "chat" && <ChatPage showToast={showToast} />}
-                    {tab === "logging" && <MaterialLoggingPageComplete showToast={showToast} />}
-                    {tab === "vmodel" && <VmodelPage showToast={showToast} />}
-                    {tab === "about" && <MaterialAboutPageComplete showToast={showToast} />}
-                  </>
-                  // Default versions
-                : <>
-                    {tab === "providers" && <ProvidersPage showToast={showToast} />}
-                    {tab === "chat" && <ChatPage showToast={showToast} />}
-                    {tab === "logging" && <LoggingPage showToast={showToast} />}
-                    {tab === "vmodel" && <VmodelPage showToast={showToast} />}
-                    {tab === "about" && <AboutPage showToast={showToast} />}
-                  </>
-                }
+                {tab === "providers" && <ProvidersPage showToast={showToast} />}
+                {tab === "chat" && <ChatPage showToast={showToast} />}
+                {tab === "logging" && <LoggingPage showToast={showToast} />}
+                {tab === "vmodel" && <VmodelPage showToast={showToast} />}
+                {tab === "about" && <AboutPage showToast={showToast} />}
               </div>
             </div>
           </main>

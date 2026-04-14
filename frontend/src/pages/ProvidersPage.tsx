@@ -2086,32 +2086,8 @@ function AddProviderFlow({
                   setSelectedType(pt.id)
                   setStep("configure")
                 }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: "14px 16px",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid var(--color-separator)",
-                  borderRadius: "var(--radius-md)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "all 0.15s var(--ease)",
-                  width: "100%",
-                  color: "var(--color-text)",
-                }}
-                onMouseEnter={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.background =
-                    `${accent}10`
-                  ;(e.currentTarget as HTMLButtonElement).style.borderColor =
-                    `${accent}30`
-                }}
-                onMouseLeave={(e) => {
-                  ;(e.currentTarget as HTMLButtonElement).style.background =
-                    "rgba(255,255,255,0.04)"
-                  ;(e.currentTarget as HTMLButtonElement).style.borderColor =
-                    "var(--color-separator)"
-                }}
+                className="provider-type-btn"
+                style={{ "--provider-accent": accent } as React.CSSProperties}
               >
                 <div
                   style={{
@@ -2937,36 +2913,8 @@ function AddProviderModal({
                         onAdd(pt.id)
                         setOpen(false)
                       }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 14,
-                        padding: "14px 16px",
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid var(--color-separator)",
-                        borderRadius: "var(--radius-md)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        transition: "all 0.15s var(--ease)",
-                        width: "100%",
-                        color: "var(--color-text)",
-                      }}
-                      onMouseEnter={(e) => {
-                        ;(
-                          e.currentTarget as HTMLButtonElement
-                        ).style.background = `${accent}10`
-                        ;(
-                          e.currentTarget as HTMLButtonElement
-                        ).style.borderColor = `${accent}30`
-                      }}
-                      onMouseLeave={(e) => {
-                        ;(
-                          e.currentTarget as HTMLButtonElement
-                        ).style.background = "rgba(255,255,255,0.04)"
-                        ;(
-                          e.currentTarget as HTMLButtonElement
-                        ).style.borderColor = "var(--color-separator)"
-                      }}
+                      className="provider-type-btn"
+                      style={{ "--provider-accent": accent } as React.CSSProperties}
                     >
                       <div
                         style={{
