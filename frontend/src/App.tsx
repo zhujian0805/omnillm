@@ -382,6 +382,35 @@ export default function AppComponent() {
         )}
       </aside>
 
+      <button
+        onClick={toggleSidebar}
+        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: sidebarCollapsed ? 0 : SIDEBAR_WIDTH - 16,
+          transform: "translateY(-50%)",
+          width: 32,
+          height: 48,
+          borderRadius: "0 var(--radius-md) var(--radius-md) 0",
+          border: "1px solid var(--color-separator)",
+          borderLeft: "none",
+          background: "var(--color-surface)",
+          color: "var(--color-text-secondary)",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "left 0.2s ease",
+          zIndex: 41,
+        }}
+      >
+        {sidebarCollapsed ?
+          <PanelLeftOpen size={16} />
+        : <PanelLeftClose size={16} />}
+      </button>
+
       <div
         className="app-main"
         style={{
@@ -411,28 +440,6 @@ export default function AppComponent() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button
-              onClick={toggleSidebar}
-              title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-              aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: "var(--radius-md)",
-                border: "none",
-                background: "transparent",
-                color: "var(--color-text-secondary)",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                transition: "all 0.15s var(--ease)",
-              }}
-            >
-              {sidebarCollapsed ?
-                <PanelLeftOpen size={18} />
-              : <PanelLeftClose size={18} />}
-            </button>
             <Icon
               size={18}
               style={{ color: "var(--color-blue)", flexShrink: 0 }}
