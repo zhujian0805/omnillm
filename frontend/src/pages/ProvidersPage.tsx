@@ -636,7 +636,8 @@ function ModelsDialog({
     setLoading(true)
     setError(null)
     try {
-      setModels((await getProviderModels(provider.id)).models)
+      const resp = await getProviderModels(provider.id)
+      setModels(resp?.models ?? [])
       // Also update deployments from current config
       if (provider.type === "azure-openai") {
         setDeployments(provider.config?.deployments || [])
@@ -826,7 +827,7 @@ function ModelsDialog({
                     setError(null)
                     try {
                       const resp = await refreshProviderModels(provider.id)
-                      setModels(resp.models)
+                      setModels(resp?.models ?? [])
                       onModelsChanged?.()
                     } catch (e) {
                       setError(
@@ -1752,7 +1753,8 @@ function ModelsMenuItem({
     setLoading(true)
     setError(null)
     try {
-      setModels((await getProviderModels(provider.id)).models)
+      const resp = await getProviderModels(provider.id)
+      setModels(resp?.models ?? [])
       if (provider.type === "azure-openai") {
         setDeployments(provider.config?.deployments || [])
       }
@@ -1940,7 +1942,7 @@ function ModelsMenuItem({
                     setError(null)
                     try {
                       const resp = await refreshProviderModels(provider.id)
-                      setModels(resp.models)
+                      setModels(resp?.models ?? [])
                       onModelsChanged?.()
                     } catch (e) {
                       setError(
@@ -2499,6 +2501,15 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
       <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+}
+
+const TYPE_NAMES: Record<string, string> = {
+  "github-copilot": "GitHub Copilot",
+  antigravity: "Antigravity (Google)",
+  alibaba: "Alibaba DashScope",
+  "azure-openai": "Azure OpenAI",
+  google: "Google Gemini",
+  kimi: "Kimi (Moonshot)",
 }
 
 function ProviderCard({
@@ -4191,14 +4202,6 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
     "google",
     "kimi",
   ]
-  const TYPE_NAMES: Record<string, string> = {
-    "github-copilot": "GitHub Copilot",
-    antigravity: "Antigravity (Google)",
-    alibaba: "Alibaba DashScope",
-    "azure-openai": "Azure OpenAI",
-    google: "Google Gemini",
-    kimi: "Kimi (Moonshot)",
-  }
 
   const providerGroups = providers.reduce<Record<string, Array<Provider>>>(
     (g, p) => {
