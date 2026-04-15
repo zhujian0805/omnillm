@@ -11,12 +11,12 @@ import (
 // Anthropic streaming types
 
 type AnthropicStreamState struct {
-	MessageStartSent         bool
-	NextContentBlockIndex    int
-	ContentBlockOpen         bool
-	CurrentBlockProviderIdx  *int
-	CurrentBlockAnthropicIdx *int
-	CurrentBlockType         *string
+	MessageStartSent      bool
+	NextContentBlockIndex int
+	ContentBlockOpen      bool
+	CurrentBlockProviderIdx int
+	CurrentBlockAnthropicIdx int
+	CurrentBlockType      string
 	// SuppressThinkingBlocks drops thinking content blocks from the stream.
 	// This must be set when the client did not opt in to the
 	// interleaved-thinking beta, otherwise the Anthropic SDK fails to parse
@@ -25,11 +25,15 @@ type AnthropicStreamState struct {
 	SuppressThinkingBlocks bool
 	// SuppressedProviderIdx is the provider-side index of a thinking block
 	// currently being suppressed (set while SuppressThinkingBlocks is true).
-	SuppressedProviderIdx *int
+	SuppressedProviderIdx int
 }
 
 func CreateAnthropicStreamState() *AnthropicStreamState {
-	return &AnthropicStreamState{}
+	return &AnthropicStreamState{
+		CurrentBlockProviderIdx:  -1,
+		CurrentBlockAnthropicIdx: -1,
+		SuppressedProviderIdx:    -1,
+	}
 }
 
 // ConvertCIFEventToAnthropicSSE converts CIF stream events to Anthropic SSE events
@@ -41,9 +45,10 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		state.MessageStartSent = true
 		state.NextContentBlockIndex = 0
 		state.ContentBlockOpen = false
-		state.CurrentBlockProviderIdx = nil
-		state.CurrentBlockAnthropicIdx = nil
-		state.CurrentBlockType = nil
+		state.CurrentBlockProviderIdx = -1
+		state.CurrentBlockAnthropicIdx = -1
+		state.CurrentBlockType = ""
+		state.SuppressedProviderIdx = -1
 
 		messageStart := map[string]interface{}{
 			"type": "message_start",
@@ -65,29 +70,24 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 
 	case cif.CIFContentDelta:
 		// Drop thinking blocks entirely when the client did not opt in to the
-		// interleaved-thinking beta.  Forwarding unexpected thinking blocks to the
+		// interleaved-thinking beta. Forwarding unexpected thinking blocks to the
 		// Anthropic SDK causes it to silently stop processing the stream, which
 		// means any tool_use block that follows never gets executed.
 		if state.SuppressThinkingBlocks {
 			if e.ContentBlock != nil {
 				if _, isThinking := e.ContentBlock.(cif.CIFThinkingPart); isThinking {
-					// Mark this provider index as a suppressed thinking block so
-					// that subsequent deltas for the same block are also dropped.
-					provIdx := e.Index
-					state.SuppressedProviderIdx = &provIdx
+					state.SuppressedProviderIdx = e.Index
 					return events, nil
 				}
 			}
-			if state.SuppressedProviderIdx != nil && *state.SuppressedProviderIdx == e.Index {
+			if state.SuppressedProviderIdx == e.Index {
 				if _, isThinkingDelta := e.Delta.(cif.ThinkingDelta); isThinkingDelta {
 					return events, nil
 				}
-				// Non-thinking delta for the suppressed index — clear suppression.
-				state.SuppressedProviderIdx = nil
+				state.SuppressedProviderIdx = -1
 			}
 		}
 
-		// Handle new content blocks
 		if e.ContentBlock != nil {
 			blockType := getBlockType(e.ContentBlock)
 			if blockType == "" {
@@ -95,15 +95,14 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 			}
 
 			needsNewBlock := !state.ContentBlockOpen ||
-				state.CurrentBlockProviderIdx == nil || *state.CurrentBlockProviderIdx != e.Index ||
-				state.CurrentBlockType == nil || *state.CurrentBlockType != blockType
+				state.CurrentBlockProviderIdx != e.Index ||
+				state.CurrentBlockType != blockType
 
 			if needsNewBlock {
-				// Close previous block if open
-				if state.ContentBlockOpen && state.CurrentBlockAnthropicIdx != nil {
+				if state.ContentBlockOpen {
 					events = append(events, map[string]interface{}{
 						"type":  "content_block_stop",
-						"index": *state.CurrentBlockAnthropicIdx,
+						"index": state.CurrentBlockAnthropicIdx,
 					})
 				}
 
@@ -116,23 +115,21 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 				}
 
 				state.ContentBlockOpen = true
-				provIdx := e.Index
-				state.CurrentBlockProviderIdx = &provIdx
-				state.CurrentBlockAnthropicIdx = &anthropicIdx
-				state.CurrentBlockType = &blockType
+				state.CurrentBlockProviderIdx = e.Index
+				state.CurrentBlockAnthropicIdx = anthropicIdx
+				state.CurrentBlockType = blockType
 			}
 		}
 
-		if !state.ContentBlockOpen || state.CurrentBlockAnthropicIdx == nil {
+		if !state.ContentBlockOpen {
 			return events, nil
 		}
 
-		// Send delta event
 		switch d := e.Delta.(type) {
 		case cif.TextDelta:
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": *state.CurrentBlockAnthropicIdx,
+				"index": state.CurrentBlockAnthropicIdx,
 				"delta": map[string]interface{}{
 					"type": "text_delta",
 					"text": d.Text,
@@ -141,7 +138,7 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		case cif.ThinkingDelta:
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": *state.CurrentBlockAnthropicIdx,
+				"index": state.CurrentBlockAnthropicIdx,
 				"delta": map[string]interface{}{
 					"type":     "thinking_delta",
 					"thinking": d.Thinking,
@@ -150,7 +147,7 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		case cif.ToolArgumentsDelta:
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_delta",
-				"index": *state.CurrentBlockAnthropicIdx,
+				"index": state.CurrentBlockAnthropicIdx,
 				"delta": map[string]interface{}{
 					"type":         "input_json_delta",
 					"partial_json": d.PartialJSON,
@@ -159,28 +156,26 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 		}
 
 	case cif.CIFContentBlockStop:
-		if state.ContentBlockOpen && state.CurrentBlockAnthropicIdx != nil {
+		if state.ContentBlockOpen {
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_stop",
-				"index": *state.CurrentBlockAnthropicIdx,
+				"index": state.CurrentBlockAnthropicIdx,
 			})
 			state.ContentBlockOpen = false
-			state.CurrentBlockProviderIdx = nil
-			state.CurrentBlockAnthropicIdx = nil
-			state.CurrentBlockType = nil
+			state.CurrentBlockProviderIdx = -1
+			state.CurrentBlockAnthropicIdx = -1
+			state.CurrentBlockType = ""
 		}
 
 	case cif.CIFStreamEnd:
-		// Close any open content block
-		if state.ContentBlockOpen && state.CurrentBlockAnthropicIdx != nil {
+		if state.ContentBlockOpen {
 			events = append(events, map[string]interface{}{
 				"type":  "content_block_stop",
-				"index": *state.CurrentBlockAnthropicIdx,
+				"index": state.CurrentBlockAnthropicIdx,
 			})
 			state.ContentBlockOpen = false
 		}
 
-		// Send message delta with stop reason
 		messageDelta := map[string]interface{}{
 			"type": "message_delta",
 			"delta": map[string]interface{}{
@@ -200,11 +195,7 @@ func ConvertCIFEventToAnthropicSSE(event cif.CIFStreamEvent, state *AnthropicStr
 			}
 		}
 		events = append(events, messageDelta)
-
-		// Send message stop
-		events = append(events, map[string]interface{}{
-			"type": "message_stop",
-		})
+		events = append(events, map[string]interface{}{"type": "message_stop"})
 
 	case cif.CIFStreamError:
 		events = append(events, map[string]interface{}{
@@ -336,14 +327,14 @@ func SerializeToResponses(response *cif.CanonicalResponse) (*ResponsesResponse, 
 		}
 	}
 
-	// Add message item if we have content blocks
 	if len(contentBlocks) > 0 {
-		outputItems = append([]ResponsesOutputItem{{
+		messageItem := ResponsesOutputItem{
 			Type:    "message",
 			ID:      fmt.Sprintf("%s-message", response.ID),
 			Role:    "assistant",
 			Content: contentBlocks,
-		}}, outputItems...)
+		}
+		outputItems = append([]ResponsesOutputItem{messageItem}, outputItems...)
 	}
 
 	resp := &ResponsesResponse{

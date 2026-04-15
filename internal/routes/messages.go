@@ -230,27 +230,7 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 
-	// Wrap upstream channel so it exits when client disconnects.
 	ctx := c.Request.Context()
-	wrappedCh := make(chan cif.CIFStreamEvent, cap(eventCh))
-	go func() {
-		defer close(wrappedCh)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-eventCh:
-				if !ok {
-					return
-				}
-				select {
-				case wrappedCh <- ev:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
 
 	state := serialization.CreateAnthropicStreamState()
 	// Suppress thinking blocks unless the client explicitly opted in to the
@@ -265,75 +245,79 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	toolCallTracker := newToolLoopCallTracker()
 
 	c.Stream(func(w io.Writer) bool {
-		event, ok := <-wrappedCh
-		if !ok {
+		select {
+		case <-ctx.Done():
 			return false
-		}
-		toolCallTracker.Observe(event)
-
-		sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
-		if err != nil {
-			log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Anthropic SSE")
-			return false
-		}
-
-		for _, sseEvent := range sseEvents {
-			eventType, _ := sseEvent["type"].(string)
-			formatted, err := serialization.FormatAnthropicSSEData(eventType, sseEvent)
-			if err != nil {
-				log.Error().Err(err).Str("request_id", requestID).Msg("Failed to format Anthropic SSE event")
+		case event, ok := <-eventCh:
+			if !ok {
 				return false
 			}
-			fmt.Fprint(w, formatted)
-		}
+			toolCallTracker.Observe(event)
 
-		if flusher != nil {
-			flusher.Flush()
-		}
-
-		if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
-			inputTokens := 0
-			outputTokens := 0
-			if endEvt.Usage != nil {
-				inputTokens = endEvt.Usage.InputTokens
-				outputTokens = endEvt.Usage.OutputTokens
+			sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
+			if err != nil {
+				log.Error().Err(err).Str("request_id", requestID).Msg("Failed to convert CIF event to Anthropic SSE")
+				return false
 			}
 
-			if endEvt.StopReason == cif.StopReasonToolUse {
-				logAnthropicToolLoopResponse(requestID, originalModel, modelUsed, providerID, true, toolCallTracker.Entries())
+			for _, sseEvent := range sseEvents {
+				eventType, _ := sseEvent["type"].(string)
+				formatted, err := serialization.FormatAnthropicSSEData(eventType, sseEvent)
+				if err != nil {
+					log.Error().Err(err).Str("request_id", requestID).Msg("Failed to format Anthropic SSE event")
+					return false
+				}
+				fmt.Fprint(w, formatted)
 			}
 
-			log.Info().
-				Str("request_id", requestID).
-				Str("api_shape", "anthropic").
-				Str("model_requested", originalModel).
-				Str("model_used", modelUsed).
-				Str("provider", providerID).
-				Str("stop_reason", string(endEvt.StopReason)).
-				Bool("stream", true).
-				Int("input_tokens", inputTokens).
-				Int("output_tokens", outputTokens).
-				Int64("latency_ms", time.Since(startTime).Milliseconds()).
-				Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
-			return false
-		}
+			if flusher != nil {
+				flusher.Flush()
+			}
 
-		if errEvt, isErr := event.(cif.CIFStreamError); isErr {
-			log.Warn().
-				Str("request_id", requestID).
-				Str("api_shape", "anthropic").
-				Str("model_requested", originalModel).
-				Str("model_used", modelUsed).
-				Str("provider", providerID).
-				Str("error_type", errEvt.Error.Type).
-				Str("error_message", errEvt.Error.Message).
-				Bool("stream", true).
-				Int64("latency_ms", time.Since(startTime).Milliseconds()).
-				Msg("Anthropic stream ended with error")
-			return false
-		}
+			if endEvt, isEnd := event.(cif.CIFStreamEnd); isEnd {
+				inputTokens := 0
+				outputTokens := 0
+				if endEvt.Usage != nil {
+					inputTokens = endEvt.Usage.InputTokens
+					outputTokens = endEvt.Usage.OutputTokens
+				}
 
-		return true
+				if endEvt.StopReason == cif.StopReasonToolUse {
+					logAnthropicToolLoopResponse(requestID, originalModel, modelUsed, providerID, true, toolCallTracker.Entries())
+				}
+
+				log.Info().
+					Str("request_id", requestID).
+					Str("api_shape", "anthropic").
+					Str("model_requested", originalModel).
+					Str("model_used", modelUsed).
+					Str("provider", providerID).
+					Str("stop_reason", string(endEvt.StopReason)).
+					Bool("stream", true).
+					Int("input_tokens", inputTokens).
+					Int("output_tokens", outputTokens).
+					Int64("latency_ms", time.Since(startTime).Milliseconds()).
+					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
+				return false
+			}
+
+			if errEvt, isErr := event.(cif.CIFStreamError); isErr {
+				log.Warn().
+					Str("request_id", requestID).
+					Str("api_shape", "anthropic").
+					Str("model_requested", originalModel).
+					Str("model_used", modelUsed).
+					Str("provider", providerID).
+					Str("error_type", errEvt.Error.Type).
+					Str("error_message", errEvt.Error.Message).
+					Bool("stream", true).
+					Int64("latency_ms", time.Since(startTime).Milliseconds()).
+					Msg("Anthropic stream ended with error")
+				return false
+			}
+
+			return true
+		}
 	})
 
 	return nil
