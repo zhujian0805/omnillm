@@ -45,6 +45,7 @@ export function ProviderBadge({ label, variant, icon }: ProviderBadgeProps) {
         fontWeight: 600,
         letterSpacing: "0.02em",
         whiteSpace: "nowrap",
+        transition: "background 0.15s var(--ease), color 0.15s var(--ease)",
       }}
     >
       <span

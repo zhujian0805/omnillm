@@ -33,7 +33,7 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 bg-gruvbox-bg border border-gruvbox-bg-light-2 p-6 shadow-lg",
+        "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 bg-[var(--color-bg-elevated)] border border-[var(--color-separator)] p-6 rounded-[var(--radius-xl)] shadow-[var(--shadow-modal)]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
@@ -43,7 +43,7 @@ const DialogContent = React.forwardRef<
     >
       {children}
       <DialogClose className="absolute right-4 top-4 opacity-60 hover:opacity-100 transition-opacity">
-        <X className="h-4 w-4 text-gruvbox-fg-medium" />
+        <X className="h-4 w-4 text-[var(--color-text-secondary)]" />
         <span className="sr-only">Close</span>
       </DialogClose>
     </DialogPrimitive.Content>
@@ -66,7 +66,7 @@ const DialogTitle = React.forwardRef<
   <DialogPrimitive.Title
     ref={ref}
     className={cn(
-      "text-base font-semibold text-gruvbox-fg-lightest",
+      "text-lg font-semibold text-[var(--color-text)]",
       className,
     )}
     {...props}
@@ -74,10 +74,35 @@ const DialogTitle = React.forwardRef<
 ))
 DialogTitle.displayName = DialogPrimitive.Title.displayName
 
+const DialogDescription = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Description>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Description
+    ref={ref}
+    className={cn("text-sm text-[var(--color-text-secondary)]", className)}
+    {...props}
+  />
+))
+DialogDescription.displayName = DialogPrimitive.Description.displayName
+
+const DialogFooter = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn("flex flex-row gap-2 justify-end", className)}
+    {...props}
+  />
+)
+DialogFooter.displayName = "DialogFooter"
+
 export {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogPortal,
   DialogTitle,

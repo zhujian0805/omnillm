@@ -1557,6 +1557,850 @@ function PriorityModal({
   )
 }
 
+// ─── Stats Bar ──────────────────────────────────────────────────────────────────
+
+function StatsBar({
+  providers,
+  totalActive,
+}: {
+  providers: Array<Provider>
+  totalActive: number
+}) {
+  const totalModels = providers.reduce(
+    (sum, p) => sum + (p.totalModelCount ?? 0),
+    0,
+  )
+  const enabledModels = providers.reduce(
+    (sum, p) => sum + (p.enabledModelCount ?? 0),
+    0,
+  )
+  const authCount = providers.filter(
+    (p) => p.authStatus === "authenticated",
+  ).length
+
+  const stats = [
+    {
+      label: "Active",
+      value: totalActive,
+      color: "var(--color-green)",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+          <polyline points="22 4 12 14.08 9 11.08" />
+        </svg>
+      ),
+    },
+    {
+      label: "Instances",
+      value: providers.length,
+      color: "var(--color-blue)",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <line x1="8" y1="21" x2="16" y2="21" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+        </svg>
+      ),
+    },
+    {
+      label: "Models",
+      value: enabledModels,
+      suffix: totalModels > 0 ? ` / ${totalModels}` : "",
+      color: "var(--color-orange)",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z" />
+          <path d="M2 17l10 5 10-5" />
+          <path d="M2 12l10 5 10-5" />
+        </svg>
+      ),
+    },
+    {
+      label: "Authenticated",
+      value: authCount,
+      color: "var(--color-text-secondary)",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+      ),
+    },
+  ]
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+        gap: 12,
+        marginBottom: 28,
+      }}
+    >
+      {stats.map((stat) => (
+        <div
+          key={stat.label}
+          style={{
+            background: "var(--color-bg-elevated)",
+            border: "1px solid var(--color-separator)",
+            borderRadius: "var(--radius-lg)",
+            padding: "14px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            transition: "border-color 0.15s var(--ease)",
+          }}
+        >
+          <div
+            style={{
+              color: stat.color,
+              display: "flex",
+              alignItems: "center",
+              opacity: 0.8,
+            }}
+          >
+            {stat.icon}
+          </div>
+          <div>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 20,
+                fontWeight: 700,
+                color: stat.color,
+                lineHeight: 1,
+              }}
+            >
+              {stat.value}
+              {stat.suffix && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 400,
+                    color: "var(--color-text-tertiary)",
+                    marginLeft: 2,
+                  }}
+                >
+                  {stat.suffix}
+                </span>
+              )}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                marginTop: 3,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                fontWeight: 500,
+              }}
+            >
+              {stat.label}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Menu Item Wrappers for Models & Usage Dialogs ─────────────────────────────
+
+function ModelsMenuItem({
+  provider,
+  onModelsChanged,
+}: {
+  provider: Provider
+  onModelsChanged?: () => void
+}) {
+  const [models, setModels] = useState<Array<Model> | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const [configLoading, setConfigLoading] = useState(false)
+  const [newDeployment, setNewDeployment] = useState("")
+  const [deployments, setDeployments] = useState<Array<string>>(
+    provider.config?.deployments || [],
+  )
+
+  const load = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setModels((await getProviderModels(provider.id)).models)
+      if (provider.type === "azure-openai") {
+        setDeployments(provider.config?.deployments || [])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOpen = () => {
+    setOpen(true)
+    if (models === null && !loading) load()
+    setNewDeployment("")
+  }
+
+  const handleToggle = async (model: Model) => {
+    const newEnabled = !model.enabled
+    setModels((prev) =>
+      prev ?
+        prev.map((m) => (m.id === model.id ? { ...m, enabled: newEnabled } : m))
+      : prev,
+    )
+    try {
+      await toggleProviderModel(provider.id, model.id, newEnabled)
+      onModelsChanged?.()
+    } catch {
+      setModels((prev) =>
+        prev ?
+          prev.map((m) =>
+            m.id === model.id ? { ...m, enabled: model.enabled } : m,
+          )
+        : prev,
+      )
+    }
+  }
+
+  const handleAddDeployment = async () => {
+    if (!newDeployment.trim() || provider.type !== "azure-openai") return
+    const deploymentName = newDeployment.trim()
+    if (deployments.includes(deploymentName)) {
+      setError("Deployment already exists")
+      return
+    }
+    setConfigLoading(true)
+    setError(null)
+    try {
+      const newDeployments = [...deployments, deploymentName]
+      await updateProviderConfig(provider.id, {
+        endpoint: provider.config?.endpoint,
+        apiVersion: provider.config?.apiVersion || "2024-02-01",
+        deployments: newDeployments,
+      })
+      setDeployments(newDeployments)
+      setNewDeployment("")
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleRemoveDeployment = async (deploymentName: string) => {
+    if (provider.type !== "azure-openai") return
+    setConfigLoading(true)
+    setError(null)
+    try {
+      const newDeployments = deployments.filter((d) => d !== deploymentName)
+      await updateProviderConfig(provider.id, {
+        endpoint: provider.config?.endpoint,
+        apiVersion: provider.config?.apiVersion || "2024-02-01",
+        deployments: newDeployments,
+      })
+      setDeployments(newDeployments)
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleSelectAll = async () => {
+    if (!models) return
+    const toToggle = models.filter((m) => !m.enabled)
+    setModels((prev) =>
+      prev ? prev.map((m) => ({ ...m, enabled: true })) : prev,
+    )
+    try {
+      await Promise.all(
+        toToggle.map((m) => toggleProviderModel(provider.id, m.id, true)),
+      )
+      onModelsChanged?.()
+    } catch {
+      await load()
+    }
+  }
+
+  const handleDeselectAll = async () => {
+    if (!models) return
+    const toToggle = models.filter((m) => m.enabled)
+    setModels((prev) =>
+      prev ? prev.map((m) => ({ ...m, enabled: false })) : prev,
+    )
+    try {
+      await Promise.all(
+        toToggle.map((m) => toggleProviderModel(provider.id, m.id, false)),
+      )
+      onModelsChanged?.()
+    } catch {
+      await load()
+    }
+  }
+
+  const filtered =
+    models ?
+      models.filter((m) => m.id.toLowerCase().includes(search.toLowerCase()))
+    : []
+  const enabledCount = models ? models.filter((m) => m.enabled).length : null
+
+  return (
+    <>
+      <button
+        className="btn btn-ghost btn-sm"
+        style={{
+          width: "100%",
+          justifyContent: "flex-start",
+          border: "none",
+          borderRadius: "var(--radius-sm)",
+          padding: "6px 10px",
+          height: 32,
+        }}
+        onClick={handleOpen}
+      >
+        Models
+        {provider.totalModelCount != null && provider.totalModelCount > 0 && (
+          <span
+            style={{
+              color: "var(--color-blue)",
+              fontSize: 11,
+              fontWeight: 600,
+              marginLeft: 4,
+            }}
+          >
+            {provider.enabledModelCount}/{provider.totalModelCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="dialog-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setOpen(false)
+          }}
+        >
+          <div className="dialog-box">
+            <div className="dialog-header">
+              <div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 600,
+                    fontSize: 15,
+                    color: "var(--color-text)",
+                  }}
+                >
+                  {provider.name} — Models
+                </div>
+                {enabledCount !== null && models && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--color-text-secondary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    <span style={{ color: "var(--color-green)" }}>
+                      {enabledCount}
+                    </span>{" "}
+                    of {models.length} enabled
+                  </div>
+                )}
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setOpen(false)}
+              >
+                Done
+              </button>
+            </div>
+            <div className="dialog-body">
+              {loading && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "32px 0",
+                    justifyContent: "center",
+                    color: "var(--color-text-secondary)",
+                    fontSize: 14,
+                  }}
+                >
+                  <Spin /> Loading models…
+                </div>
+              )}
+              {error && (
+                <div
+                  style={{
+                    color: "var(--color-red)",
+                    fontSize: 13,
+                    padding: "12px 0",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+              {models && !loading && (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 14 }}
+                >
+                  {provider.type === "azure-openai" && (
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        background: "rgba(10,132,255,0.06)",
+                        border: "1px solid rgba(10,132,255,0.18)",
+                        borderRadius: "var(--radius-lg)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--color-blue)",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Deployment Management
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <input
+                          className="sys-input"
+                          placeholder="Add deployment name..."
+                          value={newDeployment}
+                          onChange={(e) => setNewDeployment(e.target.value)}
+                          disabled={configLoading}
+                          style={{ flex: 1, fontSize: 13 }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault()
+                              handleAddDeployment()
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={handleAddDeployment}
+                          disabled={configLoading || !newDeployment.trim()}
+                          style={{ minWidth: 32, padding: "6px 8px" }}
+                        >
+                          {configLoading ?
+                            <Spin size={12} />
+                          : "+"}
+                        </button>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--color-text-tertiary)",
+                        }}
+                      >
+                        Enter deployment names from your Azure OpenAI resource.
+                        Each deployment becomes a model.
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <input
+                      className="sys-input"
+                      placeholder="Filter models…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleSelectAll}
+                    >
+                      All On
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={handleDeselectAll}
+                    >
+                      All Off
+                    </button>
+                  </div>
+                  <div
+                    style={{
+                      borderRadius: "var(--radius-lg)",
+                      overflow: "hidden",
+                      border: "1px solid var(--color-separator)",
+                    }}
+                  >
+                    {filtered.map((m, i) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "10px 14px",
+                          borderBottom:
+                            i < filtered.length - 1 ?
+                              "1px solid var(--color-separator)"
+                            : "none",
+                          background:
+                            m.enabled ? "rgba(48,209,88,0.04)" : "transparent",
+                          transition: "background 0.12s",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            flex: 1,
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 13,
+                                color:
+                                  m.enabled ? "var(--color-text)" : (
+                                    "var(--color-text-secondary)"
+                                  ),
+                              }}
+                            >
+                              {m.id}
+                            </div>
+                            {m.name && m.name !== m.id && (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--color-text-tertiary)",
+                                  marginTop: 1,
+                                }}
+                              >
+                                {m.name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          {provider.type === "azure-openai"
+                            && deployments.includes(m.id) && (
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => handleRemoveDeployment(m.id)}
+                                disabled={configLoading}
+                                style={{
+                                  minWidth: 32,
+                                  padding: "4px 6px",
+                                  color: "var(--color-red)",
+                                }}
+                                title={`Remove deployment ${m.id}`}
+                              >
+                                {configLoading ?
+                                  <Spin size={10} />
+                                : "−"}
+                              </button>
+                            )}
+                          <div
+                            className={`toggle-track ${m.enabled ? "on" : ""}`}
+                            onClick={() => handleToggle(m)}
+                          >
+                            <div className="toggle-thumb" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+function UsageMenuItem({ provider }: { provider: Provider }) {
+  const [data, setData] = useState<UsageData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setData(await getProviderUsage(provider.id))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOpen = () => {
+    setOpen(true)
+    if (data === null && !loading) load()
+  }
+
+  const getBarColor = (pct: number) =>
+    pct > 90 ? "var(--color-red)"
+    : pct > 75 ? "var(--color-orange)"
+    : "var(--color-green)"
+
+  return (
+    <>
+      <button
+        className="btn btn-ghost btn-sm"
+        style={{
+          width: "100%",
+          justifyContent: "flex-start",
+          border: "none",
+          borderRadius: "var(--radius-sm)",
+          padding: "6px 10px",
+          height: 32,
+        }}
+        onClick={handleOpen}
+      >
+        Usage
+      </button>
+
+      {open && (
+        <div
+          className="dialog-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setOpen(false)
+          }}
+        >
+          <div className="dialog-box">
+            <div className="dialog-header">
+              <div
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 600,
+                  fontSize: 15,
+                  color: "var(--color-text)",
+                }}
+              >
+                {provider.name} — Usage
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={load}
+                  disabled={loading}
+                >
+                  Refresh
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            <div className="dialog-body">
+              {loading && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "32px 0",
+                    justifyContent: "center",
+                    color: "var(--color-text-secondary)",
+                    fontSize: 14,
+                  }}
+                >
+                  <Spin /> Fetching usage data…
+                </div>
+              )}
+              {error && (
+                <div
+                  style={{
+                    color: "var(--color-red)",
+                    fontSize: 13,
+                    padding: "12px 0",
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+              {data && !loading && (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 20 }}
+                >
+                  {(
+                    data.quota_snapshots
+                    && Object.keys(data.quota_snapshots).length > 0
+                  ) ?
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 18,
+                      }}
+                    >
+                      {Object.entries(data.quota_snapshots).map(
+                        ([key, value]) => {
+                          const { entitlement, percent_remaining, unlimited } =
+                            value
+                          const remaining =
+                            value.quota_remaining ?? value.remaining
+                          const pctUsed =
+                            unlimited ? 0 : 100 - percent_remaining
+                          const used =
+                            unlimited ? "N/A" : (
+                              (entitlement - remaining).toLocaleString()
+                            )
+                          const barColor =
+                            unlimited ? "var(--color-blue)" : (
+                              getBarColor(pctUsed)
+                            )
+                          return (
+                            <div key={key}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  marginBottom: 8,
+                                  alignItems: "baseline",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    textTransform: "capitalize",
+                                    color: "var(--color-text)",
+                                  }}
+                                >
+                                  {key.replaceAll("_", " ")}
+                                </span>
+                                {unlimited ?
+                                  <span
+                                    style={{
+                                      fontSize: 11,
+                                      padding: "2px 8px",
+                                      background: "var(--color-blue-fill)",
+                                      borderRadius: "var(--radius-pill)",
+                                      color: "var(--color-blue)",
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    Unlimited
+                                  </span>
+                                : <span
+                                    style={{
+                                      fontSize: 12,
+                                      fontFamily: "var(--font-mono)",
+                                      color:
+                                        pctUsed > 75 ? barColor : (
+                                          "var(--color-text-secondary)"
+                                        ),
+                                    }}
+                                  >
+                                    {pctUsed.toFixed(1)}% used
+                                  </span>
+                                }
+                              </div>
+                              <div className="progress-track">
+                                <div
+                                  className="progress-bar"
+                                  style={{
+                                    width: `${unlimited ? 100 : pctUsed}%`,
+                                    background: barColor,
+                                  }}
+                                />
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  marginTop: 5,
+                                  fontSize: 12,
+                                  color: "var(--color-text-secondary)",
+                                  fontFamily: "var(--font-mono)",
+                                }}
+                              >
+                                <span>
+                                  {used} /{" "}
+                                  {unlimited ?
+                                    "∞"
+                                  : entitlement.toLocaleString()}
+                                </span>
+                                <span>
+                                  {unlimited ? "∞" : remaining.toLocaleString()}{" "}
+                                  remaining
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        },
+                      )}
+                    </div>
+                  : <div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "var(--color-text-secondary)",
+                          marginBottom: 10,
+                        }}
+                      >
+                        Raw Data
+                      </div>
+                      <pre
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "var(--font-mono)",
+                          color: "var(--color-text-secondary)",
+                          background: "rgba(255,255,255,0.04)",
+                          border: "1px solid var(--color-separator)",
+                          borderRadius: "var(--radius-md)",
+                          padding: 14,
+                          overflow: "auto",
+                          maxHeight: 280,
+                        }}
+                      >
+                        {JSON.stringify(data, null, 2)}
+                      </pre>
+                    </div>
+                  }
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 // ─── Provider Card ────────────────────────────────────────────────────────────
 
 const PROVIDER_ACCENT: Record<string, string> = {
@@ -1650,6 +2494,7 @@ function ProviderCard({
   multiProvider: boolean
 }) {
   const [showAuthForm, setShowAuthForm] = useState(false)
+  const [showActionsMenu, setShowActionsMenu] = useState(false)
   const accent = PROVIDER_ACCENT[provider.type] ?? "#0a84ff"
 
   const handleAuthSubmit = async (body: Record<string, string>) => {
@@ -1825,7 +2670,6 @@ function ProviderCard({
         <div
           style={{
             display: "flex",
-            flexWrap: "wrap",
             gap: 8,
             alignItems: "center",
           }}
@@ -1858,15 +2702,66 @@ function ProviderCard({
               : "Activate"}
             </button>
           }
-          <button
-            className="btn btn-ghost btn-sm"
-            disabled={isFlowRunning}
-            onClick={() => setShowAuthForm((v) => !v)}
-          >
-            {showAuthForm ? "Cancel" : "Authorize"}
-          </button>
-          <ModelsDialog provider={provider} onModelsChanged={onModelsChanged} />
-          <UsageDialog provider={provider} />
+
+          {/* Kebab actions menu */}
+          <div style={{ position: "relative" }}>
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{ minWidth: 28, padding: "4px 6px" }}
+              disabled={isFlowRunning}
+              onClick={() => setShowActionsMenu((v) => !v)}
+              title="More actions"
+            >
+              ⋯
+            </button>
+            {showActionsMenu && (
+              <>
+                <div
+                  style={{ position: "fixed", inset: 0, zIndex: 50 }}
+                  onClick={() => setShowActionsMenu(false)}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "calc(100% + 4px)",
+                    right: 0,
+                    zIndex: 60,
+                    background: "var(--color-bg-elevated)",
+                    border: "1px solid var(--color-separator)",
+                    borderRadius: "var(--radius-md)",
+                    boxShadow: "var(--shadow-modal)",
+                    padding: "4px",
+                    minWidth: 160,
+                    animation: "slide-up 0.12s var(--ease) both",
+                  }}
+                >
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{
+                      width: "100%",
+                      justifyContent: "flex-start",
+                      border: "none",
+                      borderRadius: "var(--radius-sm)",
+                      padding: "6px 10px",
+                      height: 32,
+                    }}
+                    onClick={() => {
+                      setShowAuthForm((v) => !v)
+                      setShowActionsMenu(false)
+                    }}
+                  >
+                    {showAuthForm ? "Close" : "Authorize"}
+                  </button>
+                  <ModelsMenuItem
+                    provider={provider}
+                    onModelsChanged={onModelsChanged}
+                  />
+                  <UsageMenuItem provider={provider} />
+                </div>
+              </>
+            )}
+          </div>
+
           <div style={{ flex: 1 }} />
           <button
             className="btn btn-danger btn-sm"
@@ -3352,6 +4247,9 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
           </button>
         </div>
       </div>
+
+      {/* Quick stats */}
+      <StatsBar providers={providers} totalActive={totalActive} />
 
       {/* Provider groups */}
       <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>

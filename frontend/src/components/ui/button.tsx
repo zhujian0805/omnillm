@@ -10,14 +10,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-gruvbox-blue text-gruvbox-bg-darkest hover:bg-gruvbox-blue-accent",
+          "bg-[var(--color-blue)] text-white hover:bg-[var(--color-blue-dim)]",
         secondary:
-          "bg-gruvbox-bg-light-2 text-gruvbox-fg-medium hover:bg-gruvbox-bg-light-3",
-        destructive: "bg-gruvbox-red text-gruvbox-fg-lightest hover:opacity-90",
-        ghost: "hover:bg-gruvbox-bg-light-1 text-gruvbox-fg-medium",
+          "bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]",
+        destructive: "bg-[var(--color-red)] text-white hover:opacity-90",
+        ghost: "hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)]",
       },
       size: {
-        default: "h-8 px-3.5 py-1.5 text-xs",
+        default: "h-9 px-4 py-2 text-sm",
         sm: "h-7 px-2.5 text-xs",
         icon: "h-8 w-8",
       },

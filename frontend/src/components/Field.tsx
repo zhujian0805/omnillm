@@ -16,7 +16,9 @@ export function Field({ label, htmlFor, children, description, error, required }
         htmlFor={htmlFor}
         className="sys-label"
         style={{
-          display: "block",
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
           marginBottom: 6,
           fontSize: 12,
           fontWeight: 500,
@@ -36,6 +38,7 @@ export function Field({ label, htmlFor, children, description, error, required }
             color: "var(--color-text-tertiary)",
             marginTop: 4,
             marginBottom: 0,
+            lineHeight: 1.4,
           }}
         >
           {description}
@@ -49,6 +52,8 @@ export function Field({ label, htmlFor, children, description, error, required }
             color: "var(--color-red)",
             marginTop: 4,
             marginBottom: 0,
+            fontWeight: 500,
+            lineHeight: 1.4,
           }}
         >
           {error}

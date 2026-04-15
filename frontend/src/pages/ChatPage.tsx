@@ -617,33 +617,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Chat with the model… (Shift+Enter for newline)"
+                placeholder="Chat with the model…"
                 disabled={!selectedModel || isLoading}
                 aria-describedby={!selectedModel ? "model-required-hint" : undefined}
                 className="chat-textarea"
-                style={{
-                  width: "100%",
-                  minHeight: 44,
-                  maxHeight: 120,
-                  padding: "12px 16px",
-                  border: "1px solid var(--color-separator)",
-                  borderRadius: "var(--radius-lg)",
-                  background: "var(--color-bg)",
-                  color: "var(--color-text)",
-                  fontSize: 14,
-                  fontFamily: "var(--font-text)",
-                  resize: "none",
-                  lineHeight: 1.5,
-                  transition: "border-color 0.15s var(--ease), box-shadow 0.15s var(--ease)",
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = "var(--color-blue)"
-                  e.currentTarget.style.boxShadow = "0 0 0 3px var(--color-blue-fill)"
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = "var(--color-separator)"
-                  e.currentTarget.style.boxShadow = "none"
-                }}
               />
             </div>
             <button
