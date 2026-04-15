@@ -3910,6 +3910,7 @@ function GroupHeader({
 }) {
   const [hovered, setHovered] = useState(false)
   const clickable = typeProviders.length > 0
+  const activeCount = typeProviders.filter((p) => p.isActive).length
 
   return (
     <div
@@ -3978,6 +3979,21 @@ function GroupHeader({
             >
               {typeProviders.length}{" "}
               {typeProviders.length === 1 ? "account" : "accounts"}
+            </span>
+          )}
+          {isCollapsed && activeCount > 0 && (
+            <span
+              style={{
+                marginLeft: 6,
+                fontSize: 11,
+                fontWeight: 600,
+                color: "var(--color-success)",
+                background: "rgba(48, 209, 88, 0.12)",
+                padding: "2px 7px",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
+              {activeCount} active
             </span>
           )}
         </div>
