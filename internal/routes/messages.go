@@ -79,6 +79,7 @@ func handleMessages(c *gin.Context) {
 		Int("tools", len(canonicalRequest.Tools)).
 		Bool("stream", canonicalRequest.Stream).
 		Msg("\x1b[33m-->\x1b[0m REQUEST")
+	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
 
 	// Resolve providers
 	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
@@ -181,6 +182,10 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		return fmt.Errorf("adapter execute failed: %w", err)
 	}
 
+	if response.StopReason == cif.StopReasonToolUse {
+		logAnthropicToolLoopResponse(requestID, originalModel, response.Model, providerID, false, extractToolCallLogEntriesFromResponse(response))
+	}
+
 	anthropicResp, err := serialization.SerializeToAnthropic(response)
 	if err != nil {
 		return fmt.Errorf("serialization failed: %w", err)
@@ -250,12 +255,14 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	state := serialization.CreateAnthropicStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
+	toolCallTracker := newToolLoopCallTracker()
 
 	c.Stream(func(w io.Writer) bool {
 		event, ok := <-wrappedCh
 		if !ok {
 			return false
 		}
+		toolCallTracker.Observe(event)
 
 		sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
 		if err != nil {
@@ -283,6 +290,10 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 			if endEvt.Usage != nil {
 				inputTokens = endEvt.Usage.InputTokens
 				outputTokens = endEvt.Usage.OutputTokens
+			}
+
+			if endEvt.StopReason == cif.StopReasonToolUse {
+				logAnthropicToolLoopResponse(requestID, originalModel, modelUsed, providerID, true, toolCallTracker.Entries())
 			}
 
 			log.Info().
