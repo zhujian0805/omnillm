@@ -95,6 +95,7 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	// Instance-specific routes (all :id routes before :type routes)
 	router.DELETE("/providers/:id", handleDeleteProvider)
 	router.GET("/providers/:id/models", handleListProviderModels)
+	router.POST("/providers/:id/models/refresh", handleRefreshProviderModels)
 	router.POST("/providers/:id/models/toggle", handleToggleProviderModel)
 	router.GET("/providers/:id/models/:modelId/version", handleGetModelVersion)
 	router.PUT("/providers/:id/models/:modelId/version", handleSetModelVersion)
@@ -246,9 +247,15 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 	}
 }
 
-func loadProviderModels(provider types.Provider) ([]providerModelView, error) {
+// loadProviderModels returns the model list for a provider, using a database
+// cache with a 24h TTL. When forceRefresh is true, it bypasses the cache and
+// always calls the provider's external API.
+func loadProviderModels(provider types.Provider, forceRefresh bool) ([]providerModelView, error) {
+	instanceID := provider.GetInstanceID()
+	cacheStore := database.NewProviderModelsCacheStore()
 	stateStore := database.NewModelStateStore()
-	states, err := stateStore.GetAllByInstance(provider.GetInstanceID())
+
+	states, err := stateStore.GetAllByInstance(instanceID)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +265,23 @@ func loadProviderModels(provider types.Provider) ([]providerModelView, error) {
 		stateByID[state.ModelID] = state
 	}
 
+	// Check cache first (unless force refresh)
+	if !forceRefresh {
+		if cached, err := cacheStore.Get(instanceID, database.DefaultCacheTTL); err == nil && cached != nil {
+			var models []providerModelView
+			if err := json.Unmarshal([]byte(cached.ModelsData), &models); err == nil {
+				// Re-apply enabled states from DB (may have changed since cache)
+				for i := range models {
+					if state, ok := stateByID[models[i].ID]; ok {
+						models[i].Enabled = state.Enabled
+					}
+				}
+				return models, nil
+			}
+		}
+	}
+
+	// Cache miss or force refresh — call external API
 	modelsResp, err := provider.GetModels()
 	if err != nil {
 		if len(states) == 0 {
@@ -308,6 +332,13 @@ func loadProviderModels(provider types.Provider) ([]providerModelView, error) {
 			Name:    state.ModelID,
 			Enabled: state.Enabled,
 		})
+	}
+
+	// Save to cache
+	if modelsJSON, err := json.Marshal(models); err == nil {
+		if err := cacheStore.Save(instanceID, string(modelsJSON)); err != nil {
+			log.Warn().Err(err).Str("provider", instanceID).Msg("Failed to cache provider models")
+		}
 	}
 
 	return models, nil
@@ -382,7 +413,7 @@ func handleGetProviders(c *gin.Context) {
 		}
 
 		if authStatus == "authenticated" {
-			models, err := loadProviderModels(provider)
+			models, err := loadProviderModels(provider, false)
 			if err != nil {
 				log.Warn().Err(err).Str("provider", provider.GetInstanceID()).Msg("Failed to load provider models")
 				providerInfo["totalModelCount"] = 0
@@ -921,7 +952,7 @@ func handleListProviderModels(c *gin.Context) {
 		return
 	}
 
-	models, err := loadProviderModels(provider)
+	models, err := loadProviderModels(provider, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -930,6 +961,30 @@ func handleListProviderModels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"models": models,
 		"total":  len(models),
+	})
+}
+
+func handleRefreshProviderModels(c *gin.Context) {
+	providerID := c.Param("id")
+
+	providerRegistry := registry.GetProviderRegistry()
+	provider, err := providerRegistry.GetProvider(providerID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Force refresh: bypass cache and call external API
+	models, err := loadProviderModels(provider, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"models": models,
+		"total":  len(models),
+		"cached": false,
 	})
 }
 
@@ -1084,6 +1139,15 @@ func handleProviderAuth(c *gin.Context) {
 				log.Error().Err(err).Str("provider", providerID).Msg("Failed to save Alibaba OAuth token")
 			}
 
+			// Invalidate model cache on re-auth
+			if cacheErr := database.NewProviderModelsCacheStore().Delete(providerID); cacheErr != nil {
+				log.Warn().Err(cacheErr).Str("provider", providerID).Msg("Failed to invalidate model cache")
+			}
+			// Also invalidate for the new instance ID if renamed
+			if newInstanceID != "" && newInstanceID != providerID {
+				_ = database.NewProviderModelsCacheStore().Delete(newInstanceID)
+			}
+
 			// Rename in registry: "alibaba-2" → "alibaba-oauth-china" etc.
 			if newInstanceID != "" && newInstanceID != providerID {
 				if err := alibabaReg.Rename(providerID, newInstanceID); err != nil {
@@ -1214,6 +1278,12 @@ func handleProviderAuth(c *gin.Context) {
 		if err := cop.SaveToDB(); err != nil {
 			log.Error().Err(err).Str("provider", providerID).Msg("Failed to save token to database")
 		}
+	}
+
+	// Invalidate model cache on re-auth
+	cacheStore := database.NewProviderModelsCacheStore()
+	if err := cacheStore.Delete(providerID); err != nil {
+		log.Warn().Err(err).Str("provider", providerID).Msg("Failed to invalidate model cache")
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1471,6 +1541,12 @@ func handleUpdateProviderConfig(c *gin.Context) {
 		Str("provider", providerID).
 		Msg("Provider config update requested")
 
+	// Invalidate model cache when config changes (may affect available models)
+	modelsCacheStore := database.NewProviderModelsCacheStore()
+	if err := modelsCacheStore.Delete(providerID); err != nil {
+		log.Warn().Err(err).Str("provider", providerID).Msg("Failed to invalidate model cache")
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": fmt.Sprintf("Configuration updated for %s", providerID),
@@ -1587,7 +1663,7 @@ func handleGetStatus(c *gin.Context) {
 			"name": activeProviders[0].GetName(),
 		}
 		for _, provider := range activeProviders {
-			if models, err := loadProviderModels(provider); err == nil {
+			if models, err := loadProviderModels(provider, false); err == nil {
 				modelCount += countEnabledModels(models)
 			}
 		}

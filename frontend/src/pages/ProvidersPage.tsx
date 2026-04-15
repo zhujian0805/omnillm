@@ -17,6 +17,7 @@ import {
   getProviderPriorities,
   setProviderPriorities,
   updateProviderConfig,
+  refreshProviderModels,
   type AuthFlow,
   type Model,
   type Provider,
@@ -817,12 +818,35 @@ function ModelsDialog({
                   </div>
                 )}
               </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setOpen(false)}
-              >
-                Done
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={async () => {
+                    setLoading(true)
+                    setError(null)
+                    try {
+                      const resp = await refreshProviderModels(provider.id)
+                      setModels(resp.models)
+                      onModelsChanged?.()
+                    } catch (e) {
+                      setError(
+                        e instanceof Error ? e.message : String(e),
+                      )
+                    } finally {
+                      setLoading(false)
+                    }
+                  }}
+                  disabled={loading}
+                >
+                  Refresh
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
             </div>
             <div className="dialog-body">
               {loading && (
@@ -1908,12 +1932,35 @@ function ModelsMenuItem({
                   </div>
                 )}
               </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setOpen(false)}
-              >
-                Done
-              </button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={async () => {
+                    setLoading(true)
+                    setError(null)
+                    try {
+                      const resp = await refreshProviderModels(provider.id)
+                      setModels(resp.models)
+                      onModelsChanged?.()
+                    } catch (e) {
+                      setError(
+                        e instanceof Error ? e.message : String(e),
+                      )
+                    } finally {
+                      setLoading(false)
+                    }
+                  }}
+                  disabled={loading}
+                >
+                  Refresh
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setOpen(false)}
+                >
+                  Done
+                </button>
+              </div>
             </div>
             <div className="dialog-body">
               {loading && (

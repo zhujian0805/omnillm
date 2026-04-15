@@ -92,6 +92,12 @@ type ModelConfigRecord struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type ProviderModelsCacheRecord struct {
+	InstanceID string    `json:"instance_id"`
+	ModelsData string    `json:"models_data"` // JSON array of cached models
+	CachedAt   time.Time `json:"cached_at"`
+}
+
 type ChatSessionRecord struct {
 	SessionID string    `json:"session_id"`
 	Title     string    `json:"title"`
@@ -237,6 +243,14 @@ func (db *Database) createTables() error {
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
+		// Provider models cache table
+		`CREATE TABLE IF NOT EXISTS provider_models_cache (
+			instance_id TEXT PRIMARY KEY,
+			models_data TEXT NOT NULL,
+			cached_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
+		)`,
+
 		// Chat sessions table
 		`CREATE TABLE IF NOT EXISTS chat_sessions (
 			session_id TEXT PRIMARY KEY,
@@ -307,6 +321,7 @@ func (db *Database) createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_model_configs_model_id ON model_configs (model_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages (session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_vmodel_id ON virtual_model_upstreams (virtual_model_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_models_cache_cached_at ON provider_models_cache (cached_at)`,
 	}
 
 	for _, indexQuery := range indexes {
@@ -865,6 +880,64 @@ func (mcs *ModelConfigStore) Delete(instanceID, modelID string) error {
 		"DELETE FROM model_configs WHERE instance_id = ? AND model_id = ?",
 		instanceID, modelID,
 	)
+	return err
+}
+
+// ─── Provider models cache operations ─────────────────────────────────────────
+
+// DefaultCacheTTL is the default time-to-live for cached model lists (24 hours).
+const DefaultCacheTTL = 24 * time.Hour
+
+type ProviderModelsCacheStore struct {
+	db *Database
+}
+
+func NewProviderModelsCacheStore() *ProviderModelsCacheStore {
+	return &ProviderModelsCacheStore{db: GetDatabase()}
+}
+
+// Get returns the cached model list if it exists and is still valid (not expired).
+// Returns nil, nil if no cache entry exists or it has expired.
+func (cs *ProviderModelsCacheStore) Get(instanceID string, ttl time.Duration) (*ProviderModelsCacheRecord, error) {
+	var record ProviderModelsCacheRecord
+	var cachedAtStr string
+	err := cs.db.db.QueryRow(`
+		SELECT instance_id, models_data, cached_at
+		FROM provider_models_cache WHERE instance_id = ?
+	`, instanceID).Scan(&record.InstanceID, &record.ModelsData, &cachedAtStr)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	record.CachedAt = parseTime(cachedAtStr)
+
+	// Check if cache has expired
+	if time.Since(record.CachedAt) > ttl {
+		return nil, nil
+	}
+
+	return &record, nil
+}
+
+// Save stores the model list in the cache.
+func (cs *ProviderModelsCacheStore) Save(instanceID string, modelsData string) error {
+	_, err := cs.db.db.Exec(`
+		INSERT INTO provider_models_cache (instance_id, models_data, cached_at)
+		VALUES (?, ?, datetime('now'))
+		ON CONFLICT(instance_id) DO UPDATE SET
+			models_data = excluded.models_data,
+			cached_at = datetime('now')
+	`, instanceID, modelsData)
+	return err
+}
+
+// Delete removes the cache entry for a provider instance.
+func (cs *ProviderModelsCacheStore) Delete(instanceID string) error {
+	_, err := cs.db.db.Exec("DELETE FROM provider_models_cache WHERE instance_id = ?", instanceID)
 	return err
 }
 

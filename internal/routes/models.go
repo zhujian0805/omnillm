@@ -33,7 +33,7 @@ func handleModels(c *gin.Context) {
 	seen := make(map[string]struct{})
 
 	for _, provider := range activeProviders {
-		modelsResponse, err := loadProviderModels(provider)
+		modelsResponse, err := loadProviderModels(provider, false)
 		if err != nil {
 			log.Warn().
 				Str("provider", provider.GetInstanceID()).

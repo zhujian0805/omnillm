@@ -356,6 +356,12 @@ export const switchProvider = (providerId: string) =>
 export const getProviderModels = (id: string) =>
   apiFetch<{ models: Array<Model> }>(`/api/admin/providers/${id}/models`)
 
+export const refreshProviderModels = (id: string) =>
+  apiFetch<{ models: Array<Model>; total: number }>(
+    `/api/admin/providers/${id}/models/refresh`,
+    { method: "POST" },
+  )
+
 export const activateProvider = (id: string) =>
   apiFetch<{ success?: boolean; provider?: { id: string; name: string } }>(
     `/api/admin/providers/${id}/activate`,
