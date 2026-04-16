@@ -1,8 +1,14 @@
-import { Send as SendIcon, Bot, User, X, Trash2, MessageSquare, Loader2 } from "lucide-react"
+import {
+  Send as SendIcon,
+  Bot,
+  User,
+  X,
+  Trash2,
+  MessageSquare,
+  Loader2,
+} from "lucide-react"
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import ReactMarkdown from "react-markdown"
-
-import { EmptyState } from "@/components/EmptyState"
 
 import {
   getModels,
@@ -14,11 +20,11 @@ import {
   deleteChatSession,
   deleteAllChatSessions,
   type ChatMessage,
-  type ModelInfo,
   type ChatApiResponse,
   type ChatSessionSummary,
 } from "@/api"
-
+import { EmptyState } from "@/components/EmptyState"
+import { ModelCombobox } from "@/components/ModelCombobox"
 import { createLogger } from "@/lib/logger"
 
 const _log = createLogger("chat-page")
@@ -33,8 +39,15 @@ interface MessageWithId extends ChatMessage {
   id: string
 }
 
-function extractMessageContent(response: ChatApiResponse, _apiShape: ApiShape): string {
-  if ("choices" in response && response.choices && response.choices.length > 0) {
+function extractMessageContent(
+  response: ChatApiResponse,
+  _apiShape: ApiShape,
+): string {
+  if (
+    "choices" in response
+    && response.choices
+    && response.choices.length > 0
+  ) {
     return response.choices[0].message.content || ""
   }
   if ("content" in response && Array.isArray(response.content)) {
@@ -42,9 +55,13 @@ function extractMessageContent(response: ChatApiResponse, _apiShape: ApiShape): 
     return textBlocks.map((block) => block.text || "").join("")
   }
   if ("output" in response && Array.isArray(response.output)) {
-    const messageItems = response.output.filter((item) => item.type === "message")
+    const messageItems = response.output.filter(
+      (item) => item.type === "message",
+    )
     if (messageItems.length > 0 && messageItems[0].content) {
-      const textBlocks = messageItems[0].content.filter((block) => block.type === "output_text")
+      const textBlocks = messageItems[0].content.filter(
+        (block) => block.type === "output_text",
+      )
       return textBlocks.map((block) => block.text || "").join("")
     }
   }
@@ -52,7 +69,7 @@ function extractMessageContent(response: ChatApiResponse, _apiShape: ApiShape): 
 }
 
 function generateUUID(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
 function formatChatError(error: unknown): string {
@@ -60,7 +77,10 @@ function formatChatError(error: unknown): string {
     if (error.message.includes("fetch") || error.message.includes("network")) {
       return "Network error. Please check your connection and try again."
     }
-    if (error.message.includes("401") || error.message.includes("unauthorized")) {
+    if (
+      error.message.includes("401")
+      || error.message.includes("unauthorized")
+    ) {
       return "Authentication failed. Please check your API key."
     }
     if (error.message.includes("429") || error.message.includes("rate limit")) {
@@ -84,7 +104,8 @@ function MessageAvatar({ role }: { role: "user" | "assistant" | "system" }) {
         width: 32,
         height: 32,
         borderRadius: "var(--radius-md)",
-        background: role === "user" ? "var(--color-blue)" : "var(--color-green)",
+        background:
+          role === "user" ? "var(--color-blue)" : "var(--color-green)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -92,11 +113,9 @@ function MessageAvatar({ role }: { role: "user" | "assistant" | "system" }) {
         boxShadow: "var(--shadow-btn)",
       }}
     >
-      {role === "user" ? (
+      {role === "user" ?
         <User size={16} style={{ color: "white" }} />
-      ) : (
-        <Bot size={16} style={{ color: "white" }} />
-      )}
+      : <Bot size={16} style={{ color: "white" }} />}
     </div>
   )
 }
@@ -121,7 +140,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   const availableModels = useMemo(
-    () => models.filter((model) => !model.api_shape || model.api_shape === apiShape),
+    () =>
+      models.filter(
+        (model) => !model.api_shape || model.api_shape === apiShape,
+      ),
     [models, apiShape],
   )
 
@@ -129,7 +151,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [modelsRes, sessionsRes] = await Promise.all([getModels(), listChatSessions()])
+        const [modelsRes, sessionsRes] = await Promise.all([
+          getModels(),
+          listChatSessions(),
+        ])
         const loadedModels = modelsRes.data || []
         setModels(loadedModels)
         const initialModels = loadedModels.filter(
@@ -199,8 +224,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
   useEffect(() => {
     const container = messagesContainerRef.current
     if (!container) return
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50
-    if (isAtBottom) messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 50
+    if (isAtBottom)
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
   const handleSendMessage = useCallback(async () => {
@@ -221,7 +248,8 @@ export function ChatPage({ showToast }: ChatPageProps) {
       let sessionId = currentSessionId
       if (!sessionId) {
         sessionId = generateUUID()
-        const title = inputValue.substring(0, 50) + (inputValue.length > 50 ? "..." : "")
+        const title =
+          inputValue.slice(0, 50) + (inputValue.length > 50 ? "..." : "")
         try {
           const created = await createChatSession({
             session_id: sessionId,
@@ -250,14 +278,22 @@ export function ChatPage({ showToast }: ChatPageProps) {
       })
 
       const response = await createChatCompletion(
-        { model: selectedModel, messages: newMessages.map(({ id: _, ...msg }) => msg), stream: false },
+        {
+          model: selectedModel,
+          messages: newMessages.map(({ id: _, ...msg }) => msg),
+          stream: false,
+        },
         apiShape,
       )
 
       if (response && !(response instanceof ReadableStream)) {
-        const content = extractMessageContent(response as ChatApiResponse, apiShape)
+        const content = extractMessageContent(response, apiShape)
         if (content) {
-          const assistantMsg: MessageWithId = { id: generateUUID(), role: "assistant", content }
+          const assistantMsg: MessageWithId = {
+            id: generateUUID(),
+            role: "assistant",
+            content,
+          }
           setMessages([...newMessages, assistantMsg])
           await addChatMessage(sessionId, {
             message_id: generateUUID(),
@@ -276,7 +312,15 @@ export function ChatPage({ showToast }: ChatPageProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [inputValue, selectedModel, isLoading, messages, currentSessionId, apiShape, showToast])
+  }, [
+    inputValue,
+    selectedModel,
+    isLoading,
+    messages,
+    currentSessionId,
+    apiShape,
+    showToast,
+  ])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -291,7 +335,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
     setInputValue("")
   }, [])
 
-  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+  const handleDeleteSession = async (
+    sessionId: string,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation()
     try {
       await deleteChatSession(sessionId)
@@ -321,13 +368,25 @@ export function ChatPage({ showToast }: ChatPageProps) {
       {/* ── Left Sidebar ─────────────────────────────────── */}
       <div className="panel chat-sidebar">
         {/* New Chat */}
-        <button onClick={handleNewChat} className="btn btn-primary" style={{ width: "100%" }}>
+        <button
+          onClick={handleNewChat}
+          className="btn btn-primary"
+          style={{ width: "100%" }}
+        >
           + New Chat
         </button>
 
         {/* API Endpoint */}
         <div>
-          <label htmlFor="api-shape-select" className="sys-label" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11 }}>
+          <label
+            htmlFor="api-shape-select"
+            className="sys-label"
+            style={{
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              fontSize: 11,
+            }}
+          >
             API Endpoint
           </label>
           <select
@@ -345,10 +404,17 @@ export function ChatPage({ showToast }: ChatPageProps) {
 
         {/* Model */}
         <div>
-          <label htmlFor="model-select" className="sys-label" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11 }}>
+          <label
+            className="sys-label"
+            style={{
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              fontSize: 11,
+            }}
+          >
             Model
           </label>
-          {modelsLoading ? (
+          {modelsLoading ?
             <div
               aria-live="polite"
               style={{
@@ -366,27 +432,34 @@ export function ChatPage({ showToast }: ChatPageProps) {
               <span className="spinner" aria-hidden="true" />
               Loading models…
             </div>
-          ) : (
-            <select
-              id="model-select"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="sys-select"
-              style={{ background: "var(--color-surface-2)", fontSize: 13 }}
-            >
-              {availableModels.map((model) => (
-                <option key={`${model.owned_by ?? ""}-${model.id}`} value={model.id}>
-                  {model.display_name || model.id}
-                </option>
-              ))}
-            </select>
-          )}
+          : <ModelCombobox
+              models={availableModels}
+              selectedModel={selectedModel}
+              onSelect={setSelectedModel}
+            />
+          }
         </div>
 
         {/* Chat History */}
-        <div className="chat-history-section" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <div
+          className="chat-history-section"
+          style={{
+            flex: 1,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           <div className="chat-history-header">
-            <label className="sys-label" style={{ textTransform: "uppercase", letterSpacing: "0.05em", fontSize: 11, margin: 0 }}>
+            <label
+              className="sys-label"
+              style={{
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontSize: 11,
+                margin: 0,
+              }}
+            >
               History
             </label>
             {sessions.length > 0 && (
@@ -400,12 +473,12 @@ export function ChatPage({ showToast }: ChatPageProps) {
             )}
           </div>
 
-          {sessionsLoading ? (
+          {sessionsLoading ?
             <div className="chat-history-state">
               <span className="spinner" aria-hidden="true" />
               Loading…
             </div>
-          ) : sessions.length === 0 ? (
+          : sessions.length === 0 ?
             <div className="chat-history-state chat-history-empty">
               <EmptyState
                 icon={<MessageSquare size={20} />}
@@ -413,8 +486,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 description="Start a conversation to save it here."
               />
             </div>
-          ) : (
-            <div className="scrollable-list">
+          : <div className="scrollable-list">
               {sessions.map((session) => {
                 const isActive = currentSessionId === session.session_id
                 return (
@@ -433,7 +505,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
                     }}
                     className="list-item-interactive"
                     style={{
-                      background: isActive ? "var(--color-blue-fill)" : "var(--color-surface-2)",
+                      background:
+                        isActive ?
+                          "var(--color-blue-fill)"
+                        : "var(--color-surface-2)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
@@ -455,7 +530,10 @@ export function ChatPage({ showToast }: ChatPageProps) {
                       <div
                         style={{
                           fontSize: 11,
-                          color: isActive ? "rgba(255,255,255,0.7)" : "var(--color-text-secondary)",
+                          color:
+                            isActive ?
+                              "rgba(255,255,255,0.7)"
+                            : "var(--color-text-secondary)",
                           marginTop: 2,
                         }}
                       >
@@ -463,7 +541,9 @@ export function ChatPage({ showToast }: ChatPageProps) {
                       </div>
                     </div>
                     <button
-                      onClick={(e) => handleDeleteSession(session.session_id, e)}
+                      onClick={(e) =>
+                        handleDeleteSession(session.session_id, e)
+                      }
                       className="btn btn-icon btn-icon-ghost btn-icon-danger"
                       aria-label={`Delete chat: ${session.title}`}
                     >
@@ -473,12 +553,21 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 )
               })}
             </div>
-          )}
+          }
         </div>
 
         {/* Clear current */}
-        <div style={{ borderTop: "1px solid var(--color-separator)", paddingTop: 12 }}>
-          <button onClick={handleNewChat} className="btn btn-ghost" style={{ width: "100%", fontSize: 13 }}>
+        <div
+          style={{
+            borderTop: "1px solid var(--color-separator)",
+            paddingTop: 12,
+          }}
+        >
+          <button
+            onClick={handleNewChat}
+            className="btn btn-ghost"
+            style={{ width: "100%", fontSize: 13 }}
+          >
             Clear Current
           </button>
         </div>
@@ -501,14 +590,13 @@ export function ChatPage({ showToast }: ChatPageProps) {
             gap: 20,
           }}
         >
-          {messages.length === 0 ? (
+          {messages.length === 0 ?
             <EmptyState
               icon={<MessageSquare size={24} />}
               title="Start a conversation"
               description="Select a model and send your first message to begin chatting."
             />
-          ) : (
-            messages.map((message, index) => (
+          : messages.map((message, index) => (
               <div
                 key={message.id}
                 className="animate-slide-in"
@@ -516,7 +604,8 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 aria-label={`${message.role === "user" ? "You" : "Assistant"} said`}
                 style={{
                   display: "flex",
-                  justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+                  justifyContent:
+                    message.role === "user" ? "flex-end" : "flex-start",
                   animationDelay: `${Math.min(index * 0.05, 0.3)}s`,
                 }}
               >
@@ -526,38 +615,63 @@ export function ChatPage({ showToast }: ChatPageProps) {
                     alignItems: "flex-start",
                     gap: 12,
                     maxWidth: "75%",
-                    flexDirection: message.role === "user" ? "row-reverse" : "row",
+                    flexDirection:
+                      message.role === "user" ? "row-reverse" : "row",
                   }}
                 >
-                  <MessageAvatar role={message.role as "user" | "assistant" | "system"} />
+                  <MessageAvatar role={message.role} />
                   <div
                     style={{
                       padding: "12px 16px",
                       borderRadius: "var(--radius-lg)",
-                      background: message.role === "user" ? "var(--color-blue)" : "var(--color-surface)",
-                      color: message.role === "user" ? "white" : "var(--color-text)",
-                      border: message.role === "user" ? "none" : "1px solid var(--color-separator)",
+                      background:
+                        message.role === "user" ?
+                          "var(--color-blue)"
+                        : "var(--color-surface)",
+                      color:
+                        message.role === "user" ? "white" : "var(--color-text)",
+                      border:
+                        message.role === "user" ?
+                          "none"
+                        : "1px solid var(--color-separator)",
                       boxShadow: "var(--shadow-btn)",
                     }}
                   >
-                    {message.role === "user" ? (
-                      <p className="chat-message-markdown" style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.6 }}>
+                    {message.role === "user" ?
+                      <p
+                        className="chat-message-markdown"
+                        style={{
+                          margin: 0,
+                          whiteSpace: "pre-wrap",
+                          fontSize: 14,
+                          lineHeight: 1.6,
+                        }}
+                      >
                         {message.content}
                       </p>
-                    ) : (
-                      <div className="chat-message-markdown">
+                    : <div className="chat-message-markdown">
                         <ReactMarkdown>{message.content}</ReactMarkdown>
                       </div>
-                    )}
+                    }
                   </div>
                 </div>
               </div>
             ))
-          )}
+          }
 
           {isLoading && (
-            <div className="animate-slide-in" style={{ display: "flex", justifyContent: "flex-start" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, maxWidth: "75%" }}>
+            <div
+              className="animate-slide-in"
+              style={{ display: "flex", justifyContent: "flex-start" }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 12,
+                  maxWidth: "75%",
+                }}
+              >
                 <MessageAvatar role="assistant" />
                 <div
                   style={{
@@ -619,7 +733,9 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 onKeyDown={handleKeyDown}
                 placeholder="Chat with the model…"
                 disabled={!selectedModel || isLoading}
-                aria-describedby={!selectedModel ? "model-required-hint" : undefined}
+                aria-describedby={
+                  !selectedModel ? "model-required-hint" : undefined
+                }
                 className="chat-textarea"
               />
             </div>
@@ -627,16 +743,29 @@ export function ChatPage({ showToast }: ChatPageProps) {
               onClick={() => void handleSendMessage()}
               disabled={!inputValue.trim() || !selectedModel || isLoading}
               className="btn btn-primary"
-              style={{ width: 44, height: 44, padding: 0, flexShrink: 0, borderRadius: "var(--radius-lg)" }}
+              style={{
+                width: 44,
+                height: 44,
+                padding: 0,
+                flexShrink: 0,
+                borderRadius: "var(--radius-lg)",
+              }}
               aria-label={isLoading ? "Sending message…" : "Send message"}
             >
-              {isLoading ? <Loader2 size={18} className="animate-spin" /> : <SendIcon size={18} />}
+              {isLoading ?
+                <Loader2 size={18} className="animate-spin" />
+              : <SendIcon size={18} />}
             </button>
           </div>
           {!selectedModel && (
             <span
               id="model-required-hint"
-              style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 8, display: "block" }}
+              style={{
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                marginTop: 8,
+                display: "block",
+              }}
             >
               No model available for this API shape.
             </span>
@@ -657,12 +786,21 @@ export function ChatPage({ showToast }: ChatPageProps) {
         >
           <div className="dialog-box" style={{ maxWidth: 380 }}>
             <div className="dialog-header">
-              <span id="delete-all-title" style={{ fontWeight: 600, fontSize: 15 }}>
+              <span
+                id="delete-all-title"
+                style={{ fontWeight: 600, fontSize: 15 }}
+              >
                 Delete all chat history?
               </span>
             </div>
             <div className="dialog-body">
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: "var(--color-text-secondary)",
+                  margin: 0,
+                }}
+              >
                 This will permanently remove all sessions and cannot be undone.
               </p>
               <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
@@ -673,7 +811,11 @@ export function ChatPage({ showToast }: ChatPageProps) {
                 >
                   Cancel
                 </button>
-                <button onClick={handleDeleteAllSessions} className="btn btn-danger" style={{ flex: 1 }}>
+                <button
+                  onClick={handleDeleteAllSessions}
+                  className="btn btn-danger"
+                  style={{ flex: 1 }}
+                >
                   Delete All
                 </button>
               </div>
