@@ -20,6 +20,7 @@ import (
 	"omnimodel/internal/database"
 	"omnimodel/internal/ingestion"
 	"omnimodel/internal/lib/modelrouting"
+	"omnimodel/internal/providers/shared"
 	"omnimodel/internal/providers/types"
 	"omnimodel/internal/serialization"
 	ghservice "omnimodel/internal/services/github"
@@ -1480,7 +1481,7 @@ func (a *CopilotAdapter) convertCIFToOpenAI(request *cif.CanonicalRequest, toolN
 				"type": "function",
 				"function": map[string]interface{}{
 					"name":       toolNameMapper.toUpstream(tool.Name),
-					"parameters": tool.ParametersSchema,
+					"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
 				},
 			}
 			if tool.Description != nil {
@@ -1723,7 +1724,7 @@ func (a *CopilotAdapter) convertCIFToolsToResponses(tools []cif.CIFTool, toolNam
 		responseTool := map[string]interface{}{
 			"type":       "function",
 			"name":       toolNameMapper.toUpstream(tool.Name),
-			"parameters": tool.ParametersSchema,
+			"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
 		}
 		if tool.Description != nil && *tool.Description != "" {
 			responseTool["description"] = *tool.Description

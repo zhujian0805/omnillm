@@ -752,7 +752,7 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 				"type": "function",
 				"function": map[string]interface{}{
 					"name":       tool.Name,
-					"parameters": tool.ParametersSchema,
+					"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
 				},
 			}
 			if tool.Description != nil {

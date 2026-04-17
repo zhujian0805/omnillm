@@ -42,10 +42,14 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 				case cif.CIFTextPart:
 					parts = append(parts, map[string]interface{}{"type": "text", "text": p.Text})
 				case cif.CIFToolResultPart:
+					content := p.Content
+					if p.IsError != nil && *p.IsError && content == "" {
+						content = "Error: tool call failed"
+					}
 					result = append(result, map[string]interface{}{
 						"role":         "tool",
 						"tool_call_id": p.ToolCallID,
-						"content":      p.Content,
+						"content":      content,
 					})
 					continue
 				case cif.CIFImagePart:
@@ -598,4 +602,18 @@ func ShortTokenSuffix(token string) string {
 		return "token"
 	}
 	return trimmed
+}
+
+// NormalizeToolParameters ensures tool parameters are never nil.
+// The OpenAI-compatible API (used by Qwen/DashScope, Azure, etc.) expects
+// "parameters" to be a JSON Schema object, defaulting to {}. Serialising nil
+// produces "parameters": null which some providers reject.
+func NormalizeToolParameters(schema map[string]interface{}) map[string]interface{} {
+	if schema == nil {
+		return map[string]interface{}{
+			"type":       "object",
+			"properties": map[string]interface{}{},
+		}
+	}
+	return schema
 }

@@ -647,7 +647,7 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 				"type": "function",
 				"function": map[string]interface{}{
 					"name":       tool.Name,
-					"parameters": tool.ParametersSchema,
+					"parameters": shared.NormalizeToolParameters(tool.ParametersSchema),
 				},
 			}
 			if tool.Description != nil {
