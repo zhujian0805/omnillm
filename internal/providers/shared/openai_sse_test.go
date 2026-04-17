@@ -211,7 +211,42 @@ data: [DONE]
 	t.Error("expected first thinking delta to carry a ContentBlock for block-start signalling")
 }
 
-// ─── tool call delta accumulation ────────────────────────────────────────────
+func TestParseOpenAISSE_ReasoningContentWithSignature(t *testing.T) {
+	stream := `data: {"id":"r6sig","model":"qwen3","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Let me think...","reasoning_signature":"sig-123"},"finish_reason":null}]}
+
+data: {"id":"r6sig","model":"qwen3","choices":[{"index":0,"delta":{"reasoning_content":" about this."},"finish_reason":null}]}
+
+data: {"id":"r6sig","model":"qwen3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	events := collectSSE(sseBody(stream))
+
+	var firstThinking *cif.CIFContentDelta
+	for _, e := range events {
+		delta, ok := e.(cif.CIFContentDelta)
+		if !ok {
+			continue
+		}
+		if _, isThinking := delta.Delta.(cif.ThinkingDelta); isThinking {
+			if delta.ContentBlock != nil {
+				firstThinking = &delta
+				break
+			}
+		}
+	}
+	if firstThinking == nil {
+		t.Fatal("expected first thinking delta with ContentBlock")
+	}
+	thinking, ok := firstThinking.ContentBlock.(cif.CIFThinkingPart)
+	if !ok {
+		t.Fatalf("expected CIFThinkingPart, got %T", firstThinking.ContentBlock)
+	}
+	if thinking.Signature == nil || *thinking.Signature != "sig-123" {
+		t.Fatalf("expected signature sig-123, got %#v", thinking.Signature)
+	}
+}
+
 
 // TestParseOpenAISSE_ToolCallDeltaEvents verifies that tool call chunks are
 // correctly emitted as CIFContentDelta events with CIFToolCallPart blocks.
@@ -440,6 +475,53 @@ func TestCollectStream_ThinkingDeltaPreserved(t *testing.T) {
 
 // TestCollectStream_NoThinkingWhenAbsent verifies that when no ThinkingDelta events
 // arrive, the response contains no CIFThinkingPart.
+func TestCollectStream_PreservesIndexedOrder(t *testing.T) {
+	ch := make(chan cif.CIFStreamEvent, 10)
+	sig := "sig-ordered"
+	ch <- cif.CIFStreamStart{Type: "stream_start", ID: "ordered", Model: "qwen3.6-plus"}
+	ch <- cif.CIFContentDelta{
+		Type:         "content_delta",
+		Index:        1,
+		ContentBlock: cif.CIFToolCallPart{Type: "tool_call", ToolCallID: "call_1", ToolName: "Glob", ToolArguments: map[string]interface{}{}},
+		Delta:        cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: `{"pattern":"**/*.go"}`},
+	}
+	ch <- cif.CIFContentDelta{
+		Type:         "content_delta",
+		Index:        -1,
+		ContentBlock: cif.CIFThinkingPart{Type: "thinking", Thinking: "", Signature: &sig},
+		Delta:        cif.ThinkingDelta{Type: "thinking_delta", Thinking: "think first"},
+	}
+	ch <- cif.CIFContentDelta{
+		Type:         "content_delta",
+		Index:        0,
+		ContentBlock: cif.CIFTextPart{Type: "text", Text: ""},
+		Delta:        cif.TextDelta{Type: "text_delta", Text: "then text"},
+	}
+	ch <- cif.CIFStreamEnd{Type: "stream_end", StopReason: cif.StopReasonToolUse}
+	close(ch)
+
+	resp, err := CollectStream(ch)
+	if err != nil {
+		t.Fatalf("CollectStream returned error: %v", err)
+	}
+	if len(resp.Content) != 3 {
+		t.Fatalf("expected 3 content parts, got %d: %#v", len(resp.Content), resp.Content)
+	}
+	if _, ok := resp.Content[0].(cif.CIFThinkingPart); !ok {
+		t.Fatalf("expected first content part to be thinking, got %T", resp.Content[0])
+	}
+	if _, ok := resp.Content[1].(cif.CIFTextPart); !ok {
+		t.Fatalf("expected second content part to be text, got %T", resp.Content[1])
+	}
+	tool, ok := resp.Content[2].(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected third content part to be tool call, got %T", resp.Content[2])
+	}
+	if tool.ToolName != "Glob" {
+		t.Fatalf("expected tool name Glob, got %q", tool.ToolName)
+	}
+}
+
 func TestCollectStream_NoThinkingWhenAbsent(t *testing.T) {
 	ch := make(chan cif.CIFStreamEvent, 5)
 	ch <- cif.CIFStreamStart{Type: "stream_start", ID: "test-id-2", Model: "qwen3-max"}

@@ -97,6 +97,46 @@ func TestParseAnthropicSSEUsesMessageDeltaUsageWhenPresent(t *testing.T) {
 	}
 }
 
+func TestParseAnthropicSSEThinkingSignature(t *testing.T) {
+	sse := strings.Join([]string{
+		"event: message_start",
+		"data: {\"message\":{\"id\":\"msg_sig\",\"model\":\"qwen3.6-plus\"}}",
+		"",
+		"event: content_block_start",
+		"data: {\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"sig-abc\"}}",
+		"",
+		"event: content_block_delta",
+		"data: {\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"Let me think\"}}",
+		"",
+		"event: content_block_stop",
+		"data: {\"index\":0}",
+		"",
+		"event: message_delta",
+		"data: {\"delta\":{\"stop_reason\":\"end_turn\"}}",
+		"",
+		"event: message_stop",
+		"data: {}",
+		"",
+	}, "\n")
+
+	events := collectAnthropicSSEEvents(t, sse)
+	for _, event := range events {
+		delta, ok := event.(cif.CIFContentDelta)
+		if !ok || delta.ContentBlock == nil {
+			continue
+		}
+		thinking, ok := delta.ContentBlock.(cif.CIFThinkingPart)
+		if !ok {
+			continue
+		}
+		if thinking.Signature == nil || *thinking.Signature != "sig-abc" {
+			t.Fatalf("expected signature sig-abc, got %#v", thinking.Signature)
+		}
+		return
+	}
+	t.Fatal("expected thinking content block with signature")
+}
+
 func TestParseAnthropicSSEReturnsNilUsageWhenAbsentEverywhere(t *testing.T) {
 	sse := strings.Join([]string{
 		"event: message_start",

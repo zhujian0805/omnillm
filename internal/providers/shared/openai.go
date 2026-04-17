@@ -3,6 +3,7 @@ package shared
 
 import (
 	"bufio"
+	"sort"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -70,6 +71,7 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 			openaiMsg := map[string]interface{}{"role": "assistant"}
 			var textBuf strings.Builder
 			var reasoningContent string
+			var reasoningSignature *string
 			var toolCalls []map[string]interface{}
 			for _, part := range m.Content {
 				switch p := part.(type) {
@@ -80,6 +82,10 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 					// from a prior turn is forwarded as reasoning_content so the model
 					// can continue reasoning coherently in multi-turn conversations.
 					reasoningContent = p.Thinking
+					if p.Signature != nil && strings.TrimSpace(*p.Signature) != "" {
+						sig := *p.Signature
+						reasoningSignature = &sig
+					}
 				case cif.CIFToolCallPart:
 					args, _ := json.Marshal(p.ToolArguments)
 					toolCalls = append(toolCalls, map[string]interface{}{
@@ -97,6 +103,9 @@ func CIFMessagesToOpenAI(messages []cif.CIFMessage) []map[string]interface{} {
 			}
 			if reasoningContent != "" {
 				openaiMsg["reasoning_content"] = reasoningContent
+				if reasoningSignature != nil {
+					openaiMsg["reasoning_signature"] = *reasoningSignature
+				}
 			}
 			if len(toolCalls) > 0 {
 				openaiMsg["tool_calls"] = toolCalls
@@ -270,11 +279,16 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 
 		// Handle Qwen3 reasoning_content (thinking) deltas.
 		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
+			var signature *string
+			if rawSig, ok := delta["reasoning_signature"].(string); ok && strings.TrimSpace(rawSig) != "" {
+				sig := rawSig
+				signature = &sig
+			}
 			if !thinkingBlockOpen {
 				eventCh <- cif.CIFContentDelta{
 					Type:         "content_delta",
 					Index:        thinkingBlockIndex,
-					ContentBlock: cif.CIFThinkingPart{Type: "thinking", Thinking: ""},
+					ContentBlock: cif.CIFThinkingPart{Type: "thinking", Thinking: "", Signature: signature},
 					Delta:        cif.ThinkingDelta{Type: "thinking_delta", Thinking: reasoning},
 				}
 				thinkingBlockOpen = true
@@ -521,8 +535,9 @@ func ConvertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {
 // CollectStream assembles a CanonicalResponse from a CIF stream channel.
 func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error) {
 	response := &cif.CanonicalResponse{StopReason: cif.StopReasonEndTurn}
-	var textBuf strings.Builder
-	var thinkingBuf strings.Builder
+	textParts := make(map[int]*strings.Builder)
+	thinkingParts := make(map[int]*strings.Builder)
+	thinkingSignatures := make(map[int]*string)
 	toolCalls := make(map[int]*cif.CIFToolCallPart)
 	toolArgBufs := make(map[int]*strings.Builder)
 
@@ -532,21 +547,33 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 			response.ID = e.ID
 			response.Model = e.Model
 		case cif.CIFContentDelta:
+			if e.ContentBlock != nil {
+				switch cb := e.ContentBlock.(type) {
+				case cif.CIFThinkingPart:
+					if cb.Signature != nil {
+						thinkingSignatures[e.Index] = cb.Signature
+					}
+				case cif.CIFToolCallPart:
+					toolCopy := cb
+					toolCalls[e.Index] = &toolCopy
+				}
+			}
 			switch d := e.Delta.(type) {
 			case cif.TextDelta:
-				textBuf.WriteString(d.Text)
+				if textParts[e.Index] == nil {
+					textParts[e.Index] = &strings.Builder{}
+				}
+				textParts[e.Index].WriteString(d.Text)
 			case cif.ThinkingDelta:
-				thinkingBuf.WriteString(d.Thinking)
+				if thinkingParts[e.Index] == nil {
+					thinkingParts[e.Index] = &strings.Builder{}
+				}
+				thinkingParts[e.Index].WriteString(d.Thinking)
 			case cif.ToolArgumentsDelta:
 				if toolArgBufs[e.Index] == nil {
 					toolArgBufs[e.Index] = &strings.Builder{}
 				}
 				toolArgBufs[e.Index].WriteString(d.PartialJSON)
-				if e.ContentBlock != nil {
-					if tc, ok := e.ContentBlock.(cif.CIFToolCallPart); ok {
-						toolCalls[e.Index] = &tc
-					}
-				}
 			}
 		case cif.CIFStreamEnd:
 			response.StopReason = e.StopReason
@@ -556,20 +583,40 @@ func CollectStream(ch <-chan cif.CIFStreamEvent) (*cif.CanonicalResponse, error)
 		}
 	}
 
-	// Assemble response content. Thinking goes first (matching Anthropic ordering),
-	// followed by text, then tool calls.
-	if thinkingBuf.Len() > 0 {
-		response.Content = append(response.Content, cif.CIFThinkingPart{Type: "thinking", Thinking: thinkingBuf.String()})
+	indicesSet := make(map[int]struct{})
+	for idx := range thinkingParts {
+		indicesSet[idx] = struct{}{}
 	}
-	if textBuf.Len() > 0 {
-		response.Content = append(response.Content, cif.CIFTextPart{Type: "text", Text: textBuf.String()})
+	for idx := range textParts {
+		indicesSet[idx] = struct{}{}
 	}
-	for idx, tc := range toolCalls {
-		finalTC := *tc
-		if buf, ok := toolArgBufs[idx]; ok {
-			json.Unmarshal([]byte(buf.String()), &finalTC.ToolArguments) //nolint:errcheck
+	for idx := range toolCalls {
+		indicesSet[idx] = struct{}{}
+	}
+	indices := make([]int, 0, len(indicesSet))
+	for idx := range indicesSet {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+
+	for _, idx := range indices {
+		if buf, ok := thinkingParts[idx]; ok && buf.Len() > 0 {
+			response.Content = append(response.Content, cif.CIFThinkingPart{
+				Type:      "thinking",
+				Thinking:  buf.String(),
+				Signature: thinkingSignatures[idx],
+			})
 		}
-		response.Content = append(response.Content, finalTC)
+		if buf, ok := textParts[idx]; ok && buf.Len() > 0 {
+			response.Content = append(response.Content, cif.CIFTextPart{Type: "text", Text: buf.String()})
+		}
+		if tc, ok := toolCalls[idx]; ok {
+			finalTC := *tc
+			if buf, ok := toolArgBufs[idx]; ok {
+				json.Unmarshal([]byte(buf.String()), &finalTC.ToolArguments) //nolint:errcheck
+			}
+			response.Content = append(response.Content, finalTC)
+		}
 	}
 
 	return response, nil

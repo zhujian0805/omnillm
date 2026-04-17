@@ -522,10 +522,11 @@ func parseAnthropicSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 				var start struct {
 					Index        int `json:"index"`
 					ContentBlock struct {
-						Type  string                 `json:"type"`
-						ID    string                 `json:"id,omitempty"`
-						Name  string                 `json:"name,omitempty"`
-						Input map[string]interface{} `json:"input,omitempty"`
+						Type      string                 `json:"type"`
+						ID        string                 `json:"id,omitempty"`
+						Name      string                 `json:"name,omitempty"`
+						Input     map[string]interface{} `json:"input,omitempty"`
+						Signature *string                `json:"signature,omitempty"`
 					} `json:"content_block"`
 				}
 				if err := json.Unmarshal([]byte(payload), &start); err != nil {
@@ -550,6 +551,15 @@ func parseAnthropicSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 						ContentBlock: toolCall,
 						Delta:        cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: ""},
 					}
+				} else if start.ContentBlock.Type == "thinking" {
+					thinking := cif.CIFThinkingPart{Type: "thinking", Thinking: "", Signature: start.ContentBlock.Signature}
+					eventCh <- cif.CIFContentDelta{
+						Type:         "content_delta",
+						Index:        start.Index,
+						ContentBlock: thinking,
+						Delta:        cif.ThinkingDelta{Type: "thinking_delta", Thinking: ""},
+					}
+					state.sawDelta = true
 				}
 				blocks[start.Index] = state
 			case "content_block_delta":
