@@ -226,7 +226,7 @@ const PROVIDER_TYPES = [
   {
     id: "alibaba",
     name: "Alibaba DashScope",
-    desc: "Qwen models via API key or OAuth",
+    desc: "Qwen models via API key",
   },
   {
     id: "azure-openai",
@@ -306,82 +306,72 @@ function MaterialAuthForm({
       case "alibaba": {
         return (
           <>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Only API key authentication is supported for Alibaba DashScope.
+            </Alert>
             <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Auth Method</InputLabel>
+              <InputLabel>API Mode</InputLabel>
               <Select
-                value={values.method || "api-key"}
+                value={values.plan || "standard"}
                 onChange={(e) =>
-                  setValues({ ...values, method: e.target.value })
+                  setValues({ ...values, plan: e.target.value })
                 }
-                label="Auth Method"
+                label="API Mode"
               >
-                <MenuItem value="api-key">API Key</MenuItem>
-                <MenuItem value="oauth">OAuth (device flow)</MenuItem>
+                <MenuItem value="standard">
+                  Standard (pay-as-you-go, recommended for qwen3.6-plus)
+                </MenuItem>
+                <MenuItem value="coding-plan">Coding Plan</MenuItem>
               </Select>
             </FormControl>
-            {values.method === "api-key" && (
-              <>
-                <FormControl fullWidth sx={{ mb: 2 }}>
-                  <InputLabel>API Mode</InputLabel>
-                  <Select
-                    value={values.plan || "standard"}
-                    onChange={(e) =>
-                      setValues({ ...values, plan: e.target.value })
-                    }
-                    label="API Mode"
-                  >
-                    <MenuItem value="standard">
-                      Standard (pay-as-you-go, recommended for qwen3.6-plus)
-                    </MenuItem>
-                    <MenuItem value="coding-plan">Coding Plan</MenuItem>
-                  </Select>
-                </FormControl>
-                <FormControl fullWidth sx={{ mb: 2 }}>
-                  <InputLabel>Region</InputLabel>
-                  <Select
-                    value={values.region || "global"}
-                    onChange={(e) =>
-                      setValues({ ...values, region: e.target.value })
-                    }
-                    label="Region"
-                  >
-                    <MenuItem value="global">
-                      Global (dashscope-intl.aliyuncs.com)
-                    </MenuItem>
-                    <MenuItem value="china">
-                      China (dashscope.aliyuncs.com)
-                    </MenuItem>
-                  </Select>
-                </FormControl>
-                <TextField
-                  fullWidth
-                  label="Base URL (optional)"
-                  placeholder={
-                    values.plan === "coding-plan" ?
-                      "https://coding-intl.dashscope.aliyuncs.com/v1"
-                    : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-                  }
-                  value={values.endpoint || ""}
-                  onChange={(e) =>
-                    setValues({ ...values, endpoint: e.target.value })
-                  }
-                  sx={{ mb: 2 }}
-                />
-                <TextField
-                  fullWidth
-                  label="DashScope API Key"
-                  type="password"
-                  placeholder={
-                    values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"
-                  }
-                  value={values.apiKey || ""}
-                  onChange={(e) =>
-                    setValues({ ...values, apiKey: e.target.value })
-                  }
-                  sx={{ mb: 2 }}
-                />
-              </>
-            )}
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>Region</InputLabel>
+              <Select
+                value={values.region || "global"}
+                onChange={(e) =>
+                  setValues({ ...values, region: e.target.value })
+                }
+                label="Region"
+              >
+                <MenuItem value="global">
+                  Global (dashscope-intl.aliyuncs.com)
+                </MenuItem>
+                <MenuItem value="china">
+                  China (dashscope.aliyuncs.com)
+                </MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Base URL (optional)"
+              placeholder={
+                values.plan === "coding-plan" ?
+                  "https://coding-intl.dashscope.aliyuncs.com/v1"
+                : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+              }
+              value={values.endpoint || ""}
+              onChange={(e) =>
+                setValues({ ...values, endpoint: e.target.value })
+              }
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label="DashScope API Key"
+              type="password"
+              placeholder={
+                values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"
+              }
+              value={values.apiKey || ""}
+              onChange={(e) =>
+                setValues({
+                  ...values,
+                  method: "api-key",
+                  apiKey: e.target.value
+                })
+              }
+              sx={{ mb: 2 }}
+            />
           </>
         )
       }

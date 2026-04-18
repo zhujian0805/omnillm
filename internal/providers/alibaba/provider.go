@@ -1,11 +1,8 @@
 // Package alibaba provides Alibaba DashScope / Qwen provider implementation.
 // This package contains auth, header, model, and adapter logic specific to Alibaba.
-// The OAuth 2.0 device-code flow is implemented in auth.go (sibling file).
 package alibaba
 
 import (
-	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,6 +17,16 @@ import (
 )
 
 const UserAgent = "QwenCode/0.13.2 (darwin; arm64)"
+
+// API mode constants
+const (
+	AlibabaAPIModeOpenAICompatible = "openai-compatible"
+	AlibabaAPIModeAnthropic        = "anthropic"
+	AlibabaAPIModeCodingPlan       = "coding-plan"
+)
+
+// AnthropicBaseURL is the DashScope endpoint that speaks the Anthropic Messages API.
+const AnthropicBaseURL = "https://dashscope.aliyuncs.com/apps/anthropic/v1"
 
 // Model catalog for Alibaba DashScope.
 var Models = []types.Model{
@@ -36,12 +43,25 @@ var Models = []types.Model{
 	{ID: "qwen-turbo", Name: "Qwen Turbo", MaxTokens: 1000000, Provider: "alibaba"},
 }
 
-// OAuthSupportedModels lists model IDs available to OAuth-authenticated users.
+// OAuthSupportedModels is the set of model IDs available to OAuth (portal.qwen.ai) users.
 var OAuthSupportedModels = map[string]bool{
-	"qwen3-coder-flash": true,
-	"qwen3-coder-next":  true,
-	"qwen3-coder-plus":  true,
+	"qwen3.6-plus":             true,
+	"qwen3-coder-next":         true,
+	"qwen3-coder-plus":         true,
+	"qwen3-coder-flash":        true,
+	"qwen3-max":                true,
+	"qwen3-max-preview":        true,
+	"qwen3-32b":                true,
+	"qwen3-235b-a22b-instruct": true,
 }
+
+// AnthropicModels lists Claude models served via the DashScope Anthropic-compatible endpoint.
+var AnthropicModels = []types.Model{
+	{ID: "claude-opus-4.5", Name: "Claude Opus 4.5", MaxTokens: 32768, Provider: "alibaba"},
+	{ID: "claude-sonnet-4.5", Name: "Claude Sonnet 4.5", MaxTokens: 200000, Provider: "alibaba"},
+	{ID: "claude-haiku-4.5", Name: "Claude Haiku 4.5", MaxTokens: 200000, Provider: "alibaba"},
+}
+
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -52,28 +72,25 @@ func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, base
 		return "", "", "", nil, fmt.Errorf("alibaba: API key is required")
 	}
 
-	// Anthropic-compatible API mode — store api_format, skip plan/region.
-	if strings.EqualFold(strings.TrimSpace(options.APIFormat), "anthropic") {
+	// Anthropic-compatible mode: completely different routing, no plan/region.
+	if strings.ToLower(strings.TrimSpace(options.APIFormat)) == "anthropic" {
+		cfg := map[string]interface{}{"api_format": "anthropic"}
+		if endpoint := strings.TrimSpace(options.Endpoint); endpoint != "" {
+			cfg["base_url"] = endpoint
+		}
+
 		tokenStore := database.NewTokenStore()
 		tokenData := map[string]interface{}{"access_token": options.APIKey}
 		if err := tokenStore.Save(instanceID, "alibaba", tokenData); err != nil {
 			return "", "", "", nil, fmt.Errorf("failed to save alibaba token: %w", err)
 		}
-		cfg := map[string]interface{}{
-			"auth_type":  "api-key",
-			"api_format": "anthropic",
-		}
-		if endpoint := strings.TrimSpace(options.Endpoint); endpoint != "" {
-			cfg["base_url"] = endpoint
-		}
 		configStore := database.NewProviderConfigStore()
 		if err := configStore.Save(instanceID, cfg); err != nil {
 			return "", "", "", nil, fmt.Errorf("failed to save alibaba config: %w", err)
 		}
+
 		resolvedURL := NormalizeBaseURL(cfg)
-		resolvedName := APIKeyProviderName(cfg)
-		log.Info().Str("provider", instanceID).Str("api_format", "anthropic").Msg("Alibaba authenticated via API key (Anthropic mode)")
-		return options.APIKey, resolvedURL, resolvedName, cfg, nil
+		return options.APIKey, resolvedURL, "Alibaba Anthropic API", cfg, nil
 	}
 
 	region := strings.TrimSpace(options.Region)
@@ -132,131 +149,46 @@ func LoadTokenFromDB(instanceID string) (token, baseURL string, config map[strin
 	}
 
 	cfg := map[string]interface{}{
-		"auth_type":    td.AuthType,
-		"base_url":     td.BaseURL,
-		"resource_url": td.ResourceURL,
+		"auth_type": td.AuthType,
+		"base_url":  td.BaseURL,
 	}
 	resolvedURL := NormalizeBaseURL(cfg)
 	return td.AccessToken, resolvedURL, cfg, nil
 }
 
-// SaveOAuthToken persists a completed OAuth token for the given provider instance.
-// It derives the canonical instance ID from the JWT email or token suffix and
-// returns it so the caller can rename the provider in the registry.
-func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, baseURL string, err error) {
-	cfg := map[string]interface{}{
-		"auth_type":    td.AuthType,
-		"base_url":     td.BaseURL,
-		"resource_url": td.ResourceURL,
-	}
-	resolvedURL := NormalizeBaseURL(cfg)
-
-	// Determine region
-	region := "china"
-	if td.ResourceURL != "" && strings.Contains(strings.ToLower(td.ResourceURL), "dashscope-intl") {
-		region = "global"
-	} else if resolvedURL != "" && strings.Contains(strings.ToLower(resolvedURL), "dashscope-intl") {
-		region = "global"
-	}
-
-	// Derive display name and canonical instance ID
-	email := ExtractEmailFromJWT(td.AccessToken)
-	if email != "" {
-		safe := strings.ReplaceAll(email, "@", "-")
-		safe = strings.ReplaceAll(safe, ".", "-")
-		newInstanceID = "alibaba-oauth-" + region + "-" + safe
-		name = "Alibaba (" + email + ")"
-	} else {
-		suffix := ShortTokenSuffix(td.AccessToken)
-		newInstanceID = "alibaba-oauth-" + region + "-" + suffix
-		name = "Alibaba OAuth (" + suffix + ")"
-	}
-
-	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save(newInstanceID, "alibaba", td); err != nil {
-		return "", "", "", fmt.Errorf("alibaba: failed to save OAuth token: %w", err)
-	}
-
-	// Remove old temporary record (best-effort)
-	if instanceID != newInstanceID {
-		_ = tokenStore.Delete(instanceID)
-	}
-
-	log.Info().
-		Str("instanceID", newInstanceID).
-		Str("name", name).
-		Str("resource_url", td.ResourceURL).
-		Msg("Alibaba OAuth token saved")
-
-	return newInstanceID, name, resolvedURL, nil
-}
-
-// EnsureFreshToken refreshes the OAuth token if it is about to expire.
-// Returns the current (possibly refreshed) access token.
-// Errors are logged but not propagated so callers always get a token to try.
+// EnsureFreshToken returns the current token since we only support API keys (no refresh needed)
 func EnsureFreshToken(instanceID, currentToken string) string {
-	tokenStore := database.NewTokenStore()
-	record, err := tokenStore.Get(instanceID)
-	if err != nil || record == nil {
-		return currentToken
-	}
-
-	var td TokenData
-	if err := json.Unmarshal([]byte(record.TokenData), &td); err != nil {
-		return currentToken
-	}
-
-	if !IsExpiringSoon(&td) {
-		return td.AccessToken
-	}
-
-	if td.RefreshToken == "" {
-		log.Warn().Str("provider", instanceID).Msg("Alibaba OAuth token expiring but no refresh token available")
-		return currentToken
-	}
-
-	refreshed, err := RefreshToken(context.Background(), td.RefreshToken)
-	if err != nil {
-		log.Warn().Err(err).Str("provider", instanceID).Msg("Alibaba OAuth token refresh failed")
-		return currentToken
-	}
-
-	// Persist refreshed token (best-effort)
-	_, _, _, saveErr := SaveOAuthToken(instanceID, refreshed)
-	if saveErr != nil {
-		log.Warn().Err(saveErr).Str("provider", instanceID).Msg("Failed to persist refreshed Alibaba token")
-	}
-
-	return refreshed.AccessToken
+	return currentToken
 }
+
+// SaveOAuthToken is a stub that returns an error since OAuth is no longer supported
+func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, baseURL string, err error) {
+	return "", "", "", fmt.Errorf("oauth authentication is no longer supported for Alibaba DashScope - please use API key authentication")
+}
+
 
 // ─── Headers ──────────────────────────────────────────────────────────────────
 
 // Headers returns the HTTP headers required for Alibaba API requests.
 // When stream is true, Accept is set to text/event-stream.
-// config must contain auth_type to determine OAuth vs API-key header sets.
+// OAuth auth_type adds DashScope-specific headers and User-Agent.
 func Headers(token string, stream bool, config map[string]interface{}) map[string]string {
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 		"Accept":        "application/json",
 	}
-	if stream {
-		headers["Accept"] = "text/event-stream"
+
+	if config != nil {
+		if authType, ok := config["auth_type"].(string); ok && strings.ToLower(authType) == "oauth" {
+			headers["User-Agent"] = UserAgent
+			headers["X-DashScope-AuthType"] = "qwen-oauth"
+			headers["X-DashScope-CacheControl"] = "enable"
+		}
 	}
 
-	if authType, _ := shared.FirstString(config, "auth_type", "authType"); authType == "oauth" {
-		headers["User-Agent"] = UserAgent
-		headers["X-DashScope-UserAgent"] = UserAgent
-		headers["X-DashScope-AuthType"] = "qwen-oauth"
-		headers["X-DashScope-CacheControl"] = "enable"
-		headers["X-Stainless-Runtime"] = "node"
-		headers["X-Stainless-Runtime-Version"] = "v22.17.0"
-		headers["X-Stainless-Lang"] = "js"
-		headers["X-Stainless-Arch"] = "arm64"
-		headers["X-Stainless-Os"] = "MacOS"
-		headers["X-Stainless-Package-Version"] = "5.11.0"
-		headers["X-Stainless-Retry-Count"] = "0"
+	if stream {
+		headers["Accept"] = "text/event-stream"
 	}
 	return headers
 }
@@ -270,137 +202,35 @@ func ChatURL(baseURL string) string {
 	return base + "/chat/completions"
 }
 
-const (
-	AlibabaAPIModeOpenAICompatible = "openai-compatible"
-	AlibabaAPIModeCodingPlan       = "coding-plan"
-	AlibabaAPIModeAnthropic        = "anthropic"
-)
-
-// IsAnthropicMode reports whether the provider config selects the Anthropic-compatible API.
-// This is enabled by setting api_format = "anthropic" in the provider config.
-func IsAnthropicMode(config map[string]interface{}) bool {
-	return AlibabaAPIMode(config) == AlibabaAPIModeAnthropic
-}
-
-// AlibabaAPIMode returns the canonical Alibaba API mode for a provider config.
-func AlibabaAPIMode(config map[string]interface{}) string {
-	apiFormat, _ := shared.FirstString(config, "api_format", "apiFormat")
-	if strings.EqualFold(strings.TrimSpace(apiFormat), AlibabaAPIModeAnthropic) {
-		return AlibabaAPIModeAnthropic
-	}
-
-	plan, _ := shared.FirstString(config, "plan")
-	if NormalizeAPIPlan(plan) == AlibabaAPIModeCodingPlan {
-		return AlibabaAPIModeCodingPlan
-	}
-
-	return AlibabaAPIModeOpenAICompatible
-}
-
-// AnthropicMessagesURL returns the messages endpoint for the Alibaba Anthropic-compatible API.
-func AnthropicMessagesURL(baseURL string) string {
-	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if base == "" {
-		base = AnthropicBaseURL
-	}
-	return base + "/messages"
-}
-
 // ─── Models ───────────────────────────────────────────────────────────────────
 
-// AnthropicModels lists the Claude models available via the Alibaba Anthropic-compatible API
-// (https://dashscope.aliyuncs.com/apps/anthropic). Used when api_format=anthropic.
-var AnthropicModels = []types.Model{
-	{ID: "claude-opus-4.5", Name: "Claude Opus 4.5", MaxTokens: 32000, Provider: "alibaba"},
-	{ID: "claude-sonnet-4.5", Name: "Claude Sonnet 4.5", MaxTokens: 64000, Provider: "alibaba"},
-	{ID: "claude-haiku-4.5", Name: "Claude Haiku 4.5", MaxTokens: 32000, Provider: "alibaba"},
-}
-
-var anthropicAliasTargets = map[string][]string{
-	"opus": {
-		"qwen3-max",
-		"qwen3-max-preview",
-		"qwen3.6-plus",
-	},
-	"sonnet": {
-		"qwen3.6-plus",
-		"qwen3-coder-plus",
-		"qwen3-coder-next",
-		"qwen-plus",
-	},
-	"haiku": {
-		"qwen3-coder-flash",
-		"qwen3.6-plus",
-		"qwen3-coder-next",
-		"qwen-turbo",
-	},
-}
-
-// GetModelsAnthropicMode returns the hardcoded Claude model list for Anthropic-mode providers.
-func GetModelsAnthropicMode(instanceID string) *types.ModelsResponse {
-	result := make([]types.Model, len(AnthropicModels))
-	for i, m := range AnthropicModels {
-		result[i] = withAlibabaAPIModes(m, instanceID, AlibabaAPIModeAnthropic)
-	}
-	return &types.ModelsResponse{Data: result, Object: "list"}
-}
-
-// RemapModel translates Anthropic Claude aliases to supported Alibaba upstream
-// models. Non-Claude model IDs are returned unchanged.
+// RemapModel maps Claude model IDs to their Qwen equivalents for Anthropic mode,
+// and returns all other model IDs unchanged.
 func RemapModel(modelID string) string {
-	trimmed := strings.TrimSpace(modelID)
-	if trimmed == "" {
-		return modelID
-	}
-
-	normalized := strings.ToLower(trimmed)
-	if !strings.HasPrefix(normalized, "claude-") {
-		return trimmed
-	}
-
+	m := strings.TrimSpace(modelID)
+	lower := strings.ToLower(m)
 	switch {
-	case strings.Contains(normalized, "opus"):
-		if mapped, ok := firstAvailableModel(anthropicAliasTargets["opus"]); ok {
-			return mapped
-		}
-	case strings.Contains(normalized, "sonnet"):
-		if mapped, ok := firstAvailableModel(anthropicAliasTargets["sonnet"]); ok {
-			return mapped
-		}
-	case strings.Contains(normalized, "haiku"):
-		if mapped, ok := firstAvailableModel(anthropicAliasTargets["haiku"]); ok {
-			return mapped
-		}
+	case strings.HasPrefix(lower, "claude-opus"):
+		return "qwen3-max"
+	case strings.HasPrefix(lower, "claude-sonnet"):
+		return "qwen3.6-plus"
+	case strings.HasPrefix(lower, "claude-haiku"):
+		return "qwen3-coder-flash"
+	default:
+		return m
 	}
-
-	return trimmed
-}
-
-func firstAvailableModel(candidates []string) (string, bool) {
-	for _, candidate := range candidates {
-		if _, ok := ModelMetadata(candidate); ok {
-			return candidate, true
-		}
-	}
-	return "", false
 }
 
 // GetModels returns the available models for this Alibaba instance.
-// For OAuth providers it returns a filtered hardcoded list; for API-key it tries
-// live discovery then falls back to the hardcoded catalog.
+// For Anthropic mode it returns the fixed Claude catalog.
+// For API-key authentication it tries live discovery then falls back to the hardcoded catalog.
 func GetModels(instanceID, token, baseURL string, config map[string]interface{}) (*types.ModelsResponse, error) {
 	if token == "" {
 		return nil, fmt.Errorf("alibaba: not authenticated (set access_token via admin UI)")
 	}
 
-	// Anthropic-compatible mode: return Claude model catalog directly.
 	if IsAnthropicMode(config) {
 		return GetModelsAnthropicMode(instanceID), nil
-	}
-
-	authType, _ := shared.FirstString(config, "auth_type", "authType")
-	if authType == "oauth" {
-		return GetModelsHardcoded(instanceID, config), nil
 	}
 
 	resp, err := FetchModelsFromAPI(instanceID, token, baseURL, config)
@@ -413,27 +243,46 @@ func GetModels(instanceID, token, baseURL string, config map[string]interface{})
 }
 
 // GetModelsHardcoded returns the hardcoded model catalog for this Alibaba instance.
+// OAuth users receive only the subset listed in OAuthSupportedModels.
 func GetModelsHardcoded(instanceID string, config map[string]interface{}) *types.ModelsResponse {
-	models := Models
-	authType, _ := shared.FirstString(config, "auth_type", "authType")
-	if authType == "oauth" {
-		filtered := make([]types.Model, 0, len(models))
-		for _, model := range models {
-			if OAuthSupportedModels[model.ID] {
-				filtered = append(filtered, model)
+	var source []types.Model
+	if isOAuth(config) {
+		for _, m := range Models {
+			if OAuthSupportedModels[m.ID] {
+				source = append(source, m)
 			}
 		}
-		models = filtered
+	} else {
+		source = Models
 	}
-	if models == nil {
-		models = []types.Model{}
+	if source == nil {
+		source = []types.Model{}
 	}
-	mode := AlibabaAPIMode(config)
-	result := make([]types.Model, len(models))
-	for i, m := range models {
-		result[i] = withAlibabaAPIModes(m, instanceID, mode)
+	result := make([]types.Model, len(source))
+	for i, m := range source {
+		result[i] = m
+		result[i].Provider = instanceID
 	}
 	return &types.ModelsResponse{Data: result, Object: "list"}
+}
+
+// GetModelsAnthropicMode returns the Claude model catalog for Anthropic-compatible mode.
+func GetModelsAnthropicMode(instanceID string) *types.ModelsResponse {
+	result := make([]types.Model, len(AnthropicModels))
+	for i, m := range AnthropicModels {
+		result[i] = m
+		result[i].Provider = instanceID
+	}
+	return &types.ModelsResponse{Data: result, Object: "list"}
+}
+
+// isOAuth returns true when the config indicates oauth auth_type.
+func isOAuth(config map[string]interface{}) bool {
+	if config == nil {
+		return false
+	}
+	authType, _ := config["auth_type"].(string)
+	return strings.ToLower(authType) == "oauth"
 }
 
 // FetchModelsFromAPI fetches available models from the Alibaba DashScope API.
@@ -468,7 +317,6 @@ func FetchModelsFromAPI(instanceID, token, baseURL string, config map[string]int
 		return nil, fmt.Errorf("failed to decode alibaba models response: %w", err)
 	}
 
-	mode := AlibabaAPIMode(config)
 	models := make([]types.Model, 0, len(payload.Data))
 	for _, model := range payload.Data {
 		if model.ID == "" {
@@ -490,7 +338,7 @@ func FetchModelsFromAPI(instanceID, token, baseURL string, config map[string]int
 			result.Capabilities = metadata.Capabilities
 			result.MaxTokens = metadata.MaxTokens
 		}
-		models = append(models, withAlibabaAPIModes(result, instanceID, mode))
+		models = append(models, result)
 	}
 	return &types.ModelsResponse{Data: models, Object: "list"}, nil
 }
@@ -523,63 +371,33 @@ func ModelMetadata(modelID string) (types.Model, bool) {
 	return types.Model{}, false
 }
 
-func withAlibabaAPIModes(model types.Model, instanceID string, modes ...string) types.Model {
-	model.Provider = instanceID
-	capabilities := make(map[string]interface{})
-	for key, value := range model.Capabilities {
-		capabilities[key] = value
-	}
-	if len(modes) > 0 {
-		apiModes := make([]string, 0, len(modes))
-		for _, mode := range modes {
-			if strings.TrimSpace(mode) == "" {
-				continue
-			}
-			apiModes = append(apiModes, mode)
-		}
-		capabilities["api_modes"] = apiModes
-	}
-	if len(capabilities) > 0 {
-		model.Capabilities = capabilities
-	}
-	return model
-}
 
 // ─── URL helpers ──────────────────────────────────────────────────────────────
 
 // NormalizeBaseURL derives the base URL from a provider config map.
 func NormalizeBaseURL(config map[string]interface{}) string {
-	authType, _ := shared.FirstString(config, "auth_type", "authType")
-
-	switch authType {
-	case "api-key":
-		// Anthropic-compatible mode: use the Anthropic base URL.
-		if IsAnthropicMode(config) {
-			if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok && baseURL != "" {
-				return EnsureBaseURL(baseURL, false)
-			}
-			return AnthropicBaseURL
-		}
+	// Anthropic mode: explicit base_url wins, otherwise the Anthropic endpoint.
+	if IsAnthropicMode(config) {
 		if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok {
 			return EnsureBaseURL(baseURL, false)
 		}
-		plan, _ := shared.FirstString(config, "plan")
-		region, _ := shared.FirstString(config, "region")
-		return DefaultAPIBaseURL(plan, region)
-	case "oauth":
-		if resourceURL, ok := shared.FirstString(config, "resource_url", "resourceUrl"); ok {
-			return EnsureBaseURL(resourceURL, true)
-		}
-		return "https://portal.qwen.ai/v1"
-	default:
-		if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok {
-			return EnsureBaseURL(baseURL, false)
-		}
-		if resourceURL, ok := shared.FirstString(config, "resource_url", "resourceUrl"); ok {
-			return EnsureBaseURL(resourceURL, true)
-		}
+		return AnthropicBaseURL
 	}
-	return EnsureBaseURL(BaseURLGlobal, false)
+
+	// OAuth mode: resource_url or base_url wins, otherwise the portal URL.
+	if isOAuth(config) {
+		if baseURL, ok := shared.FirstString(config, "resource_url", "base_url", "baseUrl"); ok {
+			return EnsureBaseURL(baseURL, true)
+		}
+		return EnsureBaseURL("", true)
+	}
+
+	if baseURL, ok := shared.FirstString(config, "base_url", "baseUrl"); ok {
+		return EnsureBaseURL(baseURL, false)
+	}
+	plan, _ := shared.FirstString(config, "plan")
+	region, _ := shared.FirstString(config, "region")
+	return DefaultAPIBaseURL(plan, region)
 }
 
 // NormalizeAPIPlan normalizes a plan string to "coding-plan" or "standard".
@@ -626,16 +444,45 @@ func APIKeyProviderName(config map[string]interface{}) string {
 	}
 }
 
+// IsAnthropicMode returns true when the config specifies api_format=anthropic.
+func IsAnthropicMode(config map[string]interface{}) bool {
+	if config == nil {
+		return false
+	}
+	format, _ := shared.FirstString(config, "api_format", "apiFormat")
+	return strings.ToLower(format) == "anthropic"
+}
+
+// AlibabaAPIMode returns the API mode string for the given config.
+func AlibabaAPIMode(config map[string]interface{}) string {
+	if IsAnthropicMode(config) {
+		return AlibabaAPIModeAnthropic
+	}
+	plan, _ := shared.FirstString(config, "plan")
+	if NormalizeAPIPlan(plan) == "coding-plan" {
+		return AlibabaAPIModeCodingPlan
+	}
+	return AlibabaAPIModeOpenAICompatible
+}
+
+// AnthropicMessagesURL returns the Anthropic Messages API endpoint for the given base URL.
+func AnthropicMessagesURL(baseURL string) string {
+	base := strings.TrimSpace(baseURL)
+	if base == "" {
+		base = AnthropicBaseURL
+	}
+	return strings.TrimRight(base, "/") + "/messages"
+}
+
 // EnsureBaseURL normalizes a base URL to have https scheme and /v1 suffix.
-// When forOAuth is true, portal.qwen.ai/v1 is used as the fallback.
+// When forOAuth is true and raw is empty, the Qwen portal URL is returned.
 func EnsureBaseURL(raw string, forOAuth bool) string {
 	baseURL := strings.TrimSpace(raw)
 	if baseURL == "" {
 		if forOAuth {
-			baseURL = "https://portal.qwen.ai/v1"
-		} else {
-			baseURL = BaseURLGlobal
+			return "https://portal.qwen.ai/v1"
 		}
+		baseURL = BaseURLGlobal
 	}
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
 		baseURL = "https://" + baseURL
@@ -647,126 +494,19 @@ func EnsureBaseURL(raw string, forOAuth bool) string {
 	return baseURL
 }
 
-// ─── JWT / token helpers ──────────────────────────────────────────────────────
 
-// IsJWT checks if a token has the format of a JWT (xxx.yyy.zzz).
-func IsJWT(token string) bool {
-	parts := strings.Split(token, ".")
-	return len(parts) == 3 && len(parts[0]) > 0 && len(parts[1]) > 0 && len(parts[2]) > 0
-}
 
-// ShortTokenSuffix returns the last 5 characters of a token for display purposes.
-func ShortTokenSuffix(token string) string {
-	trimmed := strings.TrimSpace(token)
-	if len(trimmed) >= 5 {
-		return trimmed[len(trimmed)-5:]
-	}
-	if trimmed == "" {
-		return "oauth"
-	}
-	return trimmed
-}
-
-// ExtractEmailFromJWT decodes the payload of a JWT and extracts the email claim.
-func ExtractEmailFromJWT(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return ""
-	}
-	payload := parts[1]
-	switch len(payload) % 4 {
-	case 2:
-		payload += "=="
-	case 3:
-		payload += "="
-	}
-	decoded, err := base64.URLEncoding.DecodeString(payload)
-	if err != nil {
-		return ""
-	}
-	var claims struct {
-		Email string `json:"email"`
-	}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
-		return ""
-	}
-	return claims.Email
-}
-
-// ─── Payload helpers ──────────────────────────────────────────────────────────
-
-// EnsureOAuthSystemMessage collapses all system messages into one starting with
-// "You are Qwen Code." — required by portal.qwen.ai OAuth chat completions.
-func EnsureOAuthSystemMessage(messages []map[string]interface{}) []map[string]interface{} {
-	systemParts := []string{"You are Qwen Code."}
-	nonSystemMessages := make([]map[string]interface{}, 0, len(messages))
-
-	for _, message := range messages {
-		role, _ := message["role"].(string)
-		if !strings.EqualFold(role, "system") {
-			nonSystemMessages = append(nonSystemMessages, message)
-			continue
-		}
-		text := strings.TrimSpace(openAIMessageContentText(message["content"]))
-		if text == "" || text == "You are Qwen Code." {
-			continue
-		}
-		systemParts = append(systemParts, text)
-	}
-
-	result := make([]map[string]interface{}, 0, len(nonSystemMessages)+1)
-	result = append(result, map[string]interface{}{
-		"role":    "system",
-		"content": strings.Join(systemParts, "\n\n"),
-	})
-	result = append(result, nonSystemMessages...)
-	return result
-}
-
-func openAIMessageContentText(content interface{}) string {
-	switch value := content.(type) {
-	case string:
-		return strings.TrimSpace(value)
-	case map[string]interface{}:
-		if text, ok := value["text"].(string); ok {
-			return strings.TrimSpace(text)
-		}
-		if nested, ok := value["content"]; ok {
-			return openAIMessageContentText(nested)
-		}
-	case []interface{}:
-		parts := make([]string, 0, len(value))
-		for _, item := range value {
-			text := openAIMessageContentText(item)
-			if text != "" {
-				parts = append(parts, text)
-			}
-		}
-		return strings.Join(parts, "\n\n")
-	}
-	return ""
-}
-
-// BuildOpenAIPayload builds the OpenAI-compatible request payload for Alibaba.
-// enableThinking should be true for DashScope China reasoning models (dashscope.aliyuncs.com)
-// to receive reasoning_content in the response. It has no effect on the international endpoint
-// or OAuth-based portal.qwen.ai requests.
-//
-// Important: DashScope China does not return tool_calls SSE deltas when enable_thinking=true
-// is active. When the request carries real tools, enable_thinking is omitted entirely so
-// the model can emit tool calls normally.
-func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest, isOAuth bool, enableThinking bool) map[string]interface{} {
-	if isOAuth {
-		messages = EnsureOAuthSystemMessage(messages)
-	}
-
+// BuildOpenAIPayload builds the OpenAI-compatible request payload for Alibaba DashScope.
+// forVision is reserved for future multimodal routing. enableThinking controls the
+// DashScope enable_thinking flag for Qwen3 reasoning models; it is suppressed when
+// real tools are present because DashScope rejects that combination.
+func BuildOpenAIPayload(model string, messages []map[string]interface{}, request *cif.CanonicalRequest, forVision bool, enableThinking bool) map[string]interface{} {
 	payload := map[string]interface{}{
 		"model":    model,
 		"messages": messages,
 	}
 
-	// Apply Qwen-recommended sampling defaults when the caller hasn't provided values.
-	// opencode uses temperature=0.55 and top_p=1 for all Qwen models.
+	// Apply sampling parameters; use LiteLLM-style defaults when nil.
 	if request.Temperature != nil {
 		payload["temperature"] = *request.Temperature
 	} else {
@@ -803,22 +543,6 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 			tools = append(tools, t)
 		}
 		payload["tools"] = tools
-	} else {
-		// Qwen3 requires at least one tool to be present in the payload, otherwise
-		// it returns an error.  Inject a dummy no-op tool and force tool_choice to
-		// "none" so the model never actually calls it.
-		payload["tools"] = []map[string]interface{}{{
-			"type": "function",
-			"function": map[string]interface{}{
-				"name":        "do_not_call_me",
-				"description": "Do not call this tool",
-				"parameters": map[string]interface{}{
-					"type":       "object",
-					"properties": map[string]interface{}{},
-				},
-			},
-		}}
-		payload["tool_choice"] = "none"
 	}
 
 	if request.ToolChoice != nil {
@@ -827,16 +551,54 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 		}
 	}
 
-	// DashScope China reasoning models require enable_thinking=true to return
-	// reasoning_content in the response.  This flag is a no-op on the
-	// international endpoint and OAuth portal.qwen.ai requests.
-	//
-	// However, DashScope China does not emit tool_calls SSE deltas when
-	// enable_thinking=true is set.  When the request carries real tools we
-	// omit enable_thinking entirely so the model can emit tool calls normally.
-	if enableThinking && len(request.Tools) == 0 {
+	// enable_thinking must be absent when real tools are present: DashScope rejects
+	// thinking_budget=0 and enable_thinking=true suppresses tool_calls SSE deltas.
+	if enableThinking && IsReasoningModel(model) && len(request.Tools) == 0 {
 		payload["enable_thinking"] = true
 	}
 
 	return payload
+}
+
+// EnsureOAuthSystemMessage ensures the Qwen Code system prompt is present as the
+// first message. If no system message exists one is injected. If one already exists,
+// the Qwen Code header is prepended (deduplication prevents double-prepending).
+func EnsureOAuthSystemMessage(messages []map[string]interface{}) []map[string]interface{} {
+	const header = "You are Qwen Code."
+
+	// Find first system message index.
+	sysIdx := -1
+	for i, m := range messages {
+		if role, _ := m["role"].(string); role == "system" {
+			sysIdx = i
+			break
+		}
+	}
+
+	if sysIdx == -1 {
+		// No system message — inject one at the front.
+		injected := map[string]interface{}{"role": "system", "content": header}
+		return append([]map[string]interface{}{injected}, messages...)
+	}
+
+	existing, _ := messages[sysIdx]["content"].(string)
+	if strings.HasPrefix(existing, header) {
+		// Already has the header — no change needed.
+		return messages
+	}
+
+	// Prepend header to existing system message content.
+	result := make([]map[string]interface{}, len(messages))
+	copy(result, messages)
+	updated := make(map[string]interface{})
+	for k, v := range messages[sysIdx] {
+		updated[k] = v
+	}
+	if existing == "" {
+		updated["content"] = header
+	} else {
+		updated["content"] = header + "\n\n" + existing
+	}
+	result[sysIdx] = updated
+	return result
 }

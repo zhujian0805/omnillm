@@ -208,6 +208,11 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 
 	var streamStartSent bool
 	var contentBlockIndex int
+	// providerToolIndexToContentIndex maps provider-side tool_call.index values to
+	// the local CIF content block index allocated for that tool call. DashScope /
+	// Qwen streams later argument deltas keyed only by provider index, so we must
+	// preserve this mapping across chunks.
+	providerToolIndexToContentIndex := map[int]int{}
 	// toolCallsSeen tracks tool call blocks by their provider-side index so we
 	// can correctly handle multi-tool streams and override the stop reason.
 	toolCallsSeen := map[int]bool{}
@@ -332,8 +337,10 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 				}
 
 				if id, ok := tcMap["id"].(string); ok && id != "" {
-					// New tool call: allocate a new content block index for it.
+					// New tool call: allocate a new content block index for it and
+					// remember the mapping from provider index -> local block index.
 					contentBlockIndex++
+					providerToolIndexToContentIndex[providerIdx] = contentBlockIndex
 					toolCallsSeen[providerIdx] = true
 					funcMap, _ := tcMap["function"].(map[string]interface{})
 					name, _ := funcMap["name"].(string)
@@ -361,10 +368,16 @@ func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 						}
 					}
 				} else if funcMap, ok := tcMap["function"].(map[string]interface{}); ok {
+					// Continuation chunk: route arguments to the original content block
+					// for this provider-side tool_call.index.
+					blockIndex, exists := providerToolIndexToContentIndex[providerIdx]
+					if !exists {
+						continue
+					}
 					if args, ok := funcMap["arguments"].(string); ok && args != "" {
 						eventCh <- cif.CIFContentDelta{
 							Type:  "content_delta",
-							Index: contentBlockIndex,
+							Index: blockIndex,
 							Delta: cif.ToolArgumentsDelta{Type: "tool_arguments_delta", PartialJSON: args},
 						}
 					}

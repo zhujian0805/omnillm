@@ -301,6 +301,70 @@ data: [DONE]
 	}
 }
 
+// TestParseOpenAISSE_InterleavedMultiToolCalls verifies that when a provider
+// streams multiple tool calls interleaved by provider-side tool_call.index,
+// continuation argument deltas are attached to the correct original tool block.
+// This matches DashScope/Qwen behavior and guards against using the latest local
+// contentBlockIndex for all continuation chunks.
+func TestParseOpenAISSE_InterleavedMultiToolCalls(t *testing.T) {
+	stream := `data: {"id":"r9","model":"qwen3","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"r9","model":"qwen3","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"first_tool","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"r9","model":"qwen3","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","type":"function","function":{"name":"second_tool","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"r9","model":"qwen3","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":\"/tmp/a\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"r9","model":"qwen3","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"query\":\"hello\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"r9","model":"qwen3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+`
+	events := collectSSE(sseBody(stream))
+
+	ch := make(chan cif.CIFStreamEvent, len(events))
+	for _, e := range events {
+		ch <- e
+	}
+	close(ch)
+
+	resp, err := CollectStream(ch)
+	if err != nil {
+		t.Fatalf("CollectStream returned error: %v", err)
+	}
+	if resp.StopReason != cif.StopReasonToolUse {
+		t.Fatalf("stop reason = %q, want %q", resp.StopReason, cif.StopReasonToolUse)
+	}
+
+	if len(resp.Content) != 2 {
+		t.Fatalf("expected 2 tool calls in response content, got %d: %#v", len(resp.Content), resp.Content)
+	}
+
+	first, ok := resp.Content[0].(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected first content part to be CIFToolCallPart, got %T", resp.Content[0])
+	}
+	second, ok := resp.Content[1].(cif.CIFToolCallPart)
+	if !ok {
+		t.Fatalf("expected second content part to be CIFToolCallPart, got %T", resp.Content[1])
+	}
+
+	if first.ToolCallID != "call_a" || first.ToolName != "first_tool" {
+		t.Fatalf("unexpected first tool call: %#v", first)
+	}
+	if second.ToolCallID != "call_b" || second.ToolName != "second_tool" {
+		t.Fatalf("unexpected second tool call: %#v", second)
+	}
+
+	if got := first.ToolArguments["path"]; got != "/tmp/a" {
+		t.Fatalf("first tool args path = %#v, want /tmp/a", got)
+	}
+	if got := second.ToolArguments["query"]; got != "hello" {
+		t.Fatalf("second tool args query = %#v, want hello", got)
+	}
+}
+
 // TestParseOpenAISSE_ToolCallSingleChunkWithArguments verifies that when a provider
 // (e.g. GLM/Zhipu) sends the tool call id, name, and complete arguments all in a
 // single SSE chunk (rather than streaming arguments separately), the arguments are

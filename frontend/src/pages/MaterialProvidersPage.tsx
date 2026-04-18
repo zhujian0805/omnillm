@@ -134,7 +134,7 @@ export function MaterialProvidersPage({
 }: MaterialProvidersPageProps) {
   const [providers, setProviders] = useState<Array<Provider>>([
     { id: 1, name: "OpenAI GPT-4", enabled: true, type: "OpenAI Compatible" },
-    { id: 2, name: "Claude 3.5", enabled: true, type: "Anthropic" },
+    { id: 2, name: "Qwen 3.6 Plus", enabled: true, type: "Alibaba DashScope" },
     { id: 3, name: "Llama 2", enabled: false, type: "Local" },
   ])
 

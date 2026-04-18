@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/database"
 	"omnimodel/internal/providers/types"
 	"omnimodel/internal/registry"
@@ -167,7 +166,8 @@ func ResolveProvidersForModel(requestedModel string, normalizedModel string, cac
 				continue
 			}
 			if provider.GetID() == string(types.ProviderAlibaba) && len(selectedModes) > 0 {
-				providerMode := alibabapkg.AlibabaAPIMode(providerConfig(provider))
+				// Always use openai-compatible mode since we simplified the provider
+				providerMode := "openai-compatible"
 				if !containsString(selectedModes, providerMode) {
 					continue
 				}

@@ -33,7 +33,7 @@ interface ChatPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
 }
 
-type ApiShape = "openai" | "anthropic" | "responses"
+type ApiShape = "openai" | "responses"
 
 interface MessageWithId extends ChatMessage {
   id: string
@@ -397,7 +397,6 @@ export function ChatPage({ showToast }: ChatPageProps) {
             style={{ background: "var(--color-surface-2)", fontSize: 13 }}
           >
             <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
             <option value="responses">Responses</option>
           </select>
         </div>

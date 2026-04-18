@@ -122,7 +122,7 @@ func (p *GenericProvider) SetupAuth(options *types.AuthOptions) error {
 
 func (p *GenericProvider) setupAlibabaAuth(options *types.AuthOptions) error {
 	switch options.Method {
-	case "api-key":
+	case "api-key", "":
 		token, baseURL, name, config, err := alibabapkg.SetupAPIKeyAuth(p.instanceID, options)
 		if err != nil {
 			return err
@@ -133,11 +133,8 @@ func (p *GenericProvider) setupAlibabaAuth(options *types.AuthOptions) error {
 		p.config = config
 		return nil
 
-	case "oauth":
-		return p.loadAlibabaTokenFromDB()
-
 	default:
-		return fmt.Errorf("alibaba: unsupported auth method: %s", options.Method)
+		return fmt.Errorf("alibaba: unsupported auth method: %s (only api-key is supported)", options.Method)
 	}
 }
 
@@ -159,24 +156,11 @@ func (p *GenericProvider) loadAlibabaTokenFromDB() error {
 	return nil
 }
 
-// SaveAlibabaOAuthToken persists a completed OAuth token and returns the new canonical instance ID.
-// This method is called by admin.go after a successful OAuth device code flow.
+// SaveAlibabaOAuthToken is a stub that returns an error since OAuth is no longer supported
 func (p *GenericProvider) SaveAlibabaOAuthToken(td *alibabapkg.TokenData) (newInstanceID string, err error) {
-	newID, name, baseURL, err := alibabapkg.SaveOAuthToken(p.instanceID, td)
-	if err != nil {
-		return "", err
-	}
-	p.token = td.AccessToken
-	p.name = name
-	p.baseURL = baseURL
-	p.instanceID = newID
-	p.applyConfig(map[string]interface{}{
-		"auth_type":    td.AuthType,
-		"base_url":     td.BaseURL,
-		"resource_url": td.ResourceURL,
-	})
-	return newID, nil
+	return "", fmt.Errorf("oauth authentication is no longer supported for Alibaba DashScope - please use API key authentication")
 }
+
 
 func (p *GenericProvider) setupAzureAuth(options *types.AuthOptions) error {
 	token, endpoint, cfg, err := azurepkg.SetupAuth(p.instanceID, options)
@@ -278,8 +262,8 @@ func (p *GenericProvider) AlibabaAPIMode() string {
 	if p.id != string(types.ProviderAlibaba) {
 		return ""
 	}
-	p.loadConfigFromDB()
-	return alibabapkg.AlibabaAPIMode(p.config)
+	// Always return OpenAI-compatible mode since we removed other modes
+	return "openai-compatible"
 }
 
 // ─── Config management ────────────────────────────────────────────────────────
@@ -360,10 +344,8 @@ func (p *GenericProvider) GetHeaders(forVision bool) map[string]string {
 	}
 }
 
-// ensureFreshAlibabaToken refreshes the OAuth token if it is about to expire.
+// ensureFreshAlibabaToken returns the current token without refresh since we only support API keys now.
 func (p *GenericProvider) ensureFreshAlibabaToken() string {
-	refreshed := alibabapkg.EnsureFreshToken(p.instanceID, p.token)
-	p.token = refreshed
 	return p.token
 }
 
@@ -440,31 +422,14 @@ func (p *GenericProvider) LoadFromDB() error {
 		p.loadConfigFromDB()
 
 		if p.id == "alibaba" && p.token != "" {
-			authType, _ := firstString(p.config, "auth_type", "authType")
-			if authType == "oauth" && alibabapkg.IsJWT(p.token) {
-				if email := alibabapkg.ExtractEmailFromJWT(p.token); email != "" {
-					p.name = "Alibaba (" + email + ")"
-					log.Info().Str("instanceID", p.instanceID).Str("extractedEmail", email).Str("newName", p.name).Msg("Updated Alibaba provider name from JWT email")
-				} else {
-					suffix := alibabapkg.ShortTokenSuffix(p.token)
-					p.name = "Alibaba OAuth (" + suffix + ")"
-					log.Warn().Str("instanceID", p.instanceID).Str("tokenSuffix", suffix).Msg("Failed to extract email from Alibaba JWT token; using token suffix")
-				}
-			} else if authType == "oauth" {
-				suffix := alibabapkg.ShortTokenSuffix(p.token)
-				p.name = "Alibaba OAuth (" + suffix + ")"
-				log.Info().Str("instanceID", p.instanceID).Str("tokenSuffix", suffix).Msg("Alibaba OAuth provider has non-JWT token; using token suffix")
-			} else {
-				p.name = alibabapkg.APIKeyProviderName(p.config)
-				log.Info().Str("instanceID", p.instanceID).Str("authType", authType).Str("newName", p.name).Msg("Updated Alibaba API key provider name")
-			}
+			p.name = alibabapkg.APIKeyProviderName(p.config)
+			log.Info().Str("instanceID", p.instanceID).Str("newName", p.name).Msg("Updated Alibaba API key provider name")
 		}
 	}
 
 	if p.id == "google" && p.token != "" {
 		p.baseURL = providerBaseURLs["google"]
-		suffix := alibabapkg.ShortTokenSuffix(p.token)
-		p.name = "Google Gemini (" + suffix + ")"
+		p.name = "Google Gemini"
 	}
 
 	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Loaded generic provider token")
@@ -489,17 +454,6 @@ func (a *GenericAdapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalR
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
-		mode := alibabapkg.AlibabaAPIMode(a.provider.config)
-		log.Debug().
-			Str("provider", a.provider.instanceID).
-			Str("provider_type", a.provider.id).
-			Str("resolved_alibaba_mode", mode).
-			Str("request_model", request.Model).
-			Bool("stream", false).
-			Msg("Resolved Alibaba API mode in adapter")
-		if mode == alibabapkg.AlibabaAPIModeAnthropic {
-			return a.executeAnthropic(request)
-		}
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
 			return nil, fmt.Errorf("alibaba model %s is realtime-only and is not supported by /v1/chat/completions", request.Model)
 		}
@@ -528,17 +482,6 @@ func (a *GenericAdapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan ci
 	a.provider.loadConfigFromDB()
 	switch a.provider.id {
 	case "alibaba":
-		mode := alibabapkg.AlibabaAPIMode(a.provider.config)
-		log.Debug().
-			Str("provider", a.provider.instanceID).
-			Str("provider_type", a.provider.id).
-			Str("resolved_alibaba_mode", mode).
-			Str("request_model", request.Model).
-			Bool("stream", true).
-			Msg("Resolved Alibaba API mode in adapter")
-		if mode == alibabapkg.AlibabaAPIModeAnthropic {
-			return a.streamAnthropic(request)
-		}
 		if !alibabapkg.IsChatCompletionsModel(a.RemapModel(request.Model)) {
 			return nil, fmt.Errorf("alibaba model %s is realtime-only and is not supported by /v1/chat/completions", request.Model)
 		}
@@ -630,14 +573,7 @@ func (a *GenericAdapter) buildOpenAIPayload(request *cif.CanonicalRequest) map[s
 	}
 
 	if a.provider.id == "alibaba" {
-		authType, _ := firstString(a.provider.config, "auth_type", "authType")
-		// Enable thinking for DashScope China reasoning models.
-		// The international endpoint (dashscope-intl) and OAuth portal do not need this flag.
-		baseURL := a.provider.baseURL
-		enableThinking := alibabapkg.IsReasoningModel(model) &&
-			strings.Contains(baseURL, "dashscope.aliyuncs.com") &&
-			!strings.Contains(baseURL, "dashscope-intl")
-		return alibabapkg.BuildOpenAIPayload(model, messages, request, authType == "oauth", enableThinking)
+		return alibabapkg.BuildOpenAIPayload(model, messages, request, false, false)
 	}
 
 	if a.provider.id == "azure-openai" {
@@ -865,17 +801,6 @@ func ensureAlibabaBaseURL(raw string, forOAuth bool) string {
 	return alibabapkg.EnsureBaseURL(raw, forOAuth)
 }
 
-func isJWT(token string) bool {
-	return alibabapkg.IsJWT(token)
-}
-
-func shortTokenSuffix(token string) string {
-	return alibabapkg.ShortTokenSuffix(token)
-}
-
-func extractEmailFromJWT(token string) string {
-	return alibabapkg.ExtractEmailFromJWT(token)
-}
 
 func (p *GenericProvider) detectRegion() string {
 	if strings.Contains(strings.ToLower(p.instanceID), "global") {
@@ -887,10 +812,6 @@ func (p *GenericProvider) detectRegion() string {
 	return "china"
 }
 
-// ensureAlibabaOAuthSystemMessage is kept as a private shim for the existing tests.
-func ensureAlibabaOAuthSystemMessage(messages []map[string]interface{}) []map[string]interface{} {
-	return alibabapkg.EnsureOAuthSystemMessage(messages)
-}
 
 // alibabaHeaders wraps the alibaba package header builder.
 func (p *GenericProvider) alibabaHeaders(stream bool) map[string]string {

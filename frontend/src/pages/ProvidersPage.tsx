@@ -404,55 +404,42 @@ function AlibabaAuthForm({
   onSubmit: (body: Record<string, string>) => Promise<void>
   onCancel: () => void
 }) {
-  const [method, setMethod] = useState("api-key")
   const [region, setRegion] = useState("global")
   const [apiKey, setApiKey] = useState("")
   const submit = async () => {
-    const body: Record<string, string> = { method }
-    if (method === "api-key") {
-      if (!apiKey.trim()) return
-      body.apiKey = apiKey.trim()
-      body.region = region
-    }
-    await onSubmit(body)
+    if (!apiKey.trim()) return
+    await onSubmit({
+      method: "api-key",
+      apiKey: apiKey.trim(),
+      region,
+    })
   }
   return (
     <AuthFormWrapper title="Authenticate Alibaba DashScope">
-      <FormRow label="Auth Method">
+      <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12 }}>
+        Only API key authentication is supported for Alibaba DashScope.
+      </div>
+      <FormRow label="Region">
         <select
           className="sys-select"
-          value={method}
-          onChange={(e) => setMethod(e.target.value)}
+          value={region}
+          onChange={(e) => setRegion(e.target.value)}
         >
-          <option value="api-key">API Key</option>
-          <option value="oauth">OAuth (device flow)</option>
+          <option value="global">
+            Global (dashscope-intl.aliyuncs.com)
+          </option>
+          <option value="china">China (dashscope.aliyuncs.com)</option>
         </select>
       </FormRow>
-      {method === "api-key" && (
-        <>
-          <FormRow label="Region">
-            <select
-              className="sys-select"
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-            >
-              <option value="global">
-                Global (dashscope-intl.aliyuncs.com)
-              </option>
-              <option value="china">China (dashscope.aliyuncs.com)</option>
-            </select>
-          </FormRow>
-          <FormRow label="DashScope API Key">
-            <input
-              className="sys-input"
-              type="password"
-              placeholder="sk-…"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </FormRow>
-        </>
-      )}
+      <FormRow label="DashScope API Key">
+        <input
+          className="sys-input"
+          type="password"
+          placeholder="sk-…"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+        />
+      </FormRow>
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit}>
           Submit
@@ -472,39 +459,22 @@ function CopilotAuthForm({
   onSubmit: (body: Record<string, string>) => Promise<void>
   onCancel: () => void
 }) {
-  const [method, setMethod] = useState("oauth")
   const [token, setToken] = useState("")
   const submit = async () => {
-    const body: Record<string, string> = { method }
-    if (method === "token") {
-      if (!token.trim()) return
-      body.token = token.trim()
-    }
-    await onSubmit(body)
+    if (!token.trim()) return
+    await onSubmit({ method: "token", token: token.trim() })
   }
   return (
     <AuthFormWrapper title="Authenticate GitHub Copilot">
-      <FormRow label="Auth Method">
-        <select
-          className="sys-select"
-          value={method}
-          onChange={(e) => setMethod(e.target.value)}
-        >
-          <option value="oauth">OAuth device flow (browser)</option>
-          <option value="token">Paste existing token</option>
-        </select>
+      <FormRow label="GitHub Token">
+        <input
+          className="sys-input"
+          type="password"
+          placeholder="ghu_…"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+        />
       </FormRow>
-      {method === "token" && (
-        <FormRow label="GitHub Token">
-          <input
-            className="sys-input"
-            type="password"
-            placeholder="ghu_…"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-        </FormRow>
-      )}
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit}>
           Submit
@@ -3285,124 +3255,77 @@ function AddFlowAlibabaForm({
   onCancel,
   submitting,
 }: AddFlowFormProps) {
-  const [method, setMethod] = useState("api-key")
   const [plan, setPlan] = useState("standard")
   const [region, setRegion] = useState("global")
   const [endpoint, setEndpoint] = useState("")
   const [apiKey, setApiKey] = useState("")
-  const isAnthropicMode = plan === "anthropic"
   const submit = async () => {
-    const body: Record<string, string> = { method }
-    if (method === "api-key") {
-      if (!apiKey.trim()) return
-      if (isAnthropicMode) {
-        body.apiFormat = "anthropic"
-        if (endpoint.trim()) {
-          body.endpoint = endpoint.trim()
-        }
-      } else {
-        body.plan = plan
-        body.region = region
-        if (endpoint.trim()) {
-          body.endpoint = endpoint.trim()
-        }
-      }
-      body.apiKey = apiKey.trim()
+    if (!apiKey.trim()) return
+    const body: Record<string, string> = {
+      method: "api-key",
+      plan,
+      region,
+      apiKey: apiKey.trim(),
+    }
+    if (endpoint.trim()) {
+      body.endpoint = endpoint.trim()
     }
     await onSubmit(body)
   }
   return (
     <div style={addFlowPanelStyle}>
-      <FormRow label="Auth Method">
+      <AddFlowHint>
+        Only API key authentication is supported for Alibaba DashScope.
+      </AddFlowHint>
+      <FormRow label="API Mode">
         <AddFlowChoiceGroup
-          value={method}
-          onChange={setMethod}
+          value={plan}
+          onChange={setPlan}
           accent="#ff9f0a"
           options={[
-            { value: "api-key", label: "API Key" },
-            { value: "oauth", label: "OAuth" },
+            { value: "standard", label: "Standard (pay-as-you-go, recommended for qwen3.6-plus)" },
+            { value: "coding-plan", label: "Coding Plan" },
           ]}
         />
       </FormRow>
-      {method === "api-key" && (
-        <>
-          <FormRow label="API Mode">
-            <AddFlowChoiceGroup
-              value={plan}
-              onChange={setPlan}
-              accent="#ff9f0a"
-              options={[
-                { value: "standard", label: "Standard" },
-                { value: "coding-plan", label: "Coding Plan" },
-                { value: "anthropic", label: "Anthropic API" },
-              ]}
-            />
-          </FormRow>
-          {!isAnthropicMode && (
-            <FormRow label="Region">
-              <select
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                style={addFlowControlStyle}
-              >
-                <option value="global">
-                  Global (dashscope-intl.aliyuncs.com)
-                </option>
-                <option value="china">China (dashscope.aliyuncs.com)</option>
-              </select>
-            </FormRow>
-          )}
-          <FormRow label="Base URL (optional)">
-            <input
-              type="text"
-              placeholder={
-                isAnthropicMode ?
-                  "https://dashscope.aliyuncs.com/apps/anthropic/v1"
-                : plan === "coding-plan" ?
-                  "https://coding-intl.dashscope.aliyuncs.com/v1"
-                : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-              }
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-              style={addFlowTextInputStyle}
-            />
-          </FormRow>
-          <FormRow label={isAnthropicMode ? "API Key" : "DashScope API Key"}>
-            <input
-              type="password"
-              placeholder={
-                isAnthropicMode ? "sk-…"
-                : plan === "coding-plan" ? "sk-sp-…"
-                : "sk-…"
-              }
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              style={addFlowTextInputStyle}
-            />
-          </FormRow>
-          {isAnthropicMode && (
-            <AddFlowHint>
-              Uses the Alibaba Anthropic-compatible endpoint
-              (dashscope.aliyuncs.com/apps/anthropic). Claude-style model
-              aliases like claude-sonnet-4-5 are accepted and routed to
-              supported Alibaba upstream models.
-            </AddFlowHint>
-          )}
-          {!isAnthropicMode && (
-            <AddFlowHint>
-              Standard is the right default for `qwen3.6-plus`. Use Coding Plan
-              only when you have a dedicated Coding Plan key and base URL.
-            </AddFlowHint>
-          )}
-        </>
-      )}
-      {method === "oauth" && (
-        <AddFlowHint tone="warning">
-          OAuth connects to the Qwen portal flow. It does not behave like a
-          standard DashScope API-key provider, and some newer models such as
-          `qwen3.6-plus` may be unavailable there.
-        </AddFlowHint>
-      )}
+      <FormRow label="Region">
+        <select
+          value={region}
+          onChange={(e) => setRegion(e.target.value)}
+          style={addFlowControlStyle}
+        >
+          <option value="global">
+            Global (dashscope-intl.aliyuncs.com)
+          </option>
+          <option value="china">China (dashscope.aliyuncs.com)</option>
+        </select>
+      </FormRow>
+      <FormRow label="Base URL (optional)">
+        <input
+          type="text"
+          placeholder={
+            plan === "coding-plan" ?
+              "https://coding-intl.dashscope.aliyuncs.com/v1"
+            : "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+          }
+          value={endpoint}
+          onChange={(e) => setEndpoint(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <FormRow label="DashScope API Key">
+        <input
+          type="password"
+          placeholder={plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <AddFlowHint>
+        Standard is the right default for `qwen3.6-plus`. Use Coding Plan
+        only when you have a dedicated Coding Plan key and base URL.
+      </AddFlowHint>
       <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
         <button
           className="btn btn-primary btn-sm"
@@ -3413,8 +3336,6 @@ function AddFlowAlibabaForm({
             <>
               <Spin size={13} /> Connecting…
             </>
-          : method === "oauth" ?
-            "Start OAuth →"
           : "Add Provider"}
         </button>
         <button
@@ -3434,45 +3355,25 @@ function AddFlowCopilotForm({
   onCancel,
   submitting,
 }: AddFlowFormProps) {
-  const [method, setMethod] = useState("oauth")
   const [token, setToken] = useState("")
   const submit = async () => {
-    const body: Record<string, string> = { method }
-    if (method === "token") {
-      if (!token.trim()) return
-      body.token = token.trim()
-    }
-    await onSubmit(body)
+    if (!token.trim()) return
+    await onSubmit({ method: "token", token: token.trim() })
   }
   return (
     <div style={addFlowPanelStyle}>
-      <FormRow label="Auth Method">
-        <AddFlowChoiceGroup
-          value={method}
-          onChange={setMethod}
-          options={[
-            { value: "oauth", label: "OAuth" },
-            { value: "token", label: "Token" },
-          ]}
+      <FormRow label="GitHub Token">
+        <input
+          type="password"
+          placeholder="ghu_…"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          style={addFlowTextInputStyle}
         />
       </FormRow>
-      {method === "token" && (
-        <FormRow label="GitHub Token">
-          <input
-            type="password"
-            placeholder="ghu_…"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            style={addFlowTextInputStyle}
-          />
-        </FormRow>
-      )}
-      {method === "oauth" && (
-        <AddFlowHint>
-          Opens the GitHub device authorization page. Sign in with your GitHub
-          Copilot account.
-        </AddFlowHint>
-      )}
+      <AddFlowHint>
+        Enter your GitHub Copilot token. You can generate one from GitHub Settings → Developer settings → Personal access tokens.
+      </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button
           className="btn btn-primary btn-sm"
@@ -3483,8 +3384,6 @@ function AddFlowCopilotForm({
             <>
               <Spin size={13} /> Connecting…
             </>
-          : method === "oauth" ?
-            "Start OAuth →"
           : "Add Provider"}
         </button>
         <button
@@ -3738,7 +3637,7 @@ const PROVIDER_TYPES = [
   {
     id: "github-copilot",
     name: "GitHub Copilot",
-    desc: "Access Copilot models via OAuth or token",
+    desc: "Access Copilot models via token",
   },
   {
     id: "antigravity",
@@ -3748,7 +3647,7 @@ const PROVIDER_TYPES = [
   {
     id: "alibaba",
     name: "Alibaba DashScope",
-    desc: "Qwen models via API key or OAuth",
+    desc: "Qwen models via API key",
   },
   {
     id: "azure-openai",

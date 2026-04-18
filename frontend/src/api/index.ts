@@ -141,27 +141,6 @@ export interface ChatCompletionResponse {
   }
 }
 
-export interface AnthropicContentBlock {
-  type: "text" | "tool_use"
-  text?: string
-  id?: string
-  name?: string
-  input?: Record<string, unknown>
-}
-
-export interface AnthropicResponse {
-  id: string
-  type: "message"
-  role: "assistant"
-  content: Array<AnthropicContentBlock>
-  model: string
-  stop_reason: string
-  usage?: {
-    input_tokens: number
-    output_tokens: number
-  }
-}
-
 export interface ResponsesInputItem {
   type: "message"
   role: "user" | "assistant" | "system"
@@ -196,7 +175,7 @@ export interface ResponsesResponse {
   created_at?: number
 }
 
-export type ChatApiResponse = ChatCompletionResponse | AnthropicResponse | ResponsesResponse
+export type ChatApiResponse = ChatCompletionResponse | ResponsesResponse
 
 export interface UsageData {
   // GitHub Copilot fields
@@ -538,24 +517,12 @@ export const getModels = () =>
 
 export const createChatCompletion = async (
   request: ChatCompletionRequest,
-  apiShape: "openai" | "anthropic" | "responses" = "openai"
+  apiShape: "openai" | "responses" = "openai"
 ) => {
   let endpoint: string
   let requestBody: Record<string, unknown> = {}
 
   switch (apiShape) {
-    case "anthropic": {
-      endpoint = "/v1/messages"
-      // Convert OpenAI-style messages to Anthropic format
-      requestBody = {
-        model: request.model,
-        max_tokens: request.max_tokens || 1024,
-        messages: request.messages,
-        stream: request.stream || false,
-        temperature: request.temperature
-      } as Record<string, unknown>
-      break
-    }
     case "responses": {
       endpoint = "/v1/responses"
       // Convert OpenAI-style messages to Responses format

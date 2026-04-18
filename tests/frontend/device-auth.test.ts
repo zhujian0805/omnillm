@@ -21,23 +21,22 @@ describe("getDeviceAuthCopy", () => {
     authStatus: "unauthenticated",
   }
 
-  test("treats Alibaba URLs with embedded user codes as prefilled", () => {
+  test("returns consistent auth copy for all providers since OAuth was removed", () => {
     const authFlow: AuthFlow = {
       providerId: "alibaba-2",
       status: "awaiting_user",
       userCode: "JGPYTR1R",
-      instructionURL:
-        "https://chat.qwen.ai/authorize?user_code=JGPYTR1R&client=qwen-code&prompt=login",
+      instructionURL: "https://example.com/auth",
     }
 
     const copy = getDeviceAuthCopy(authFlow, [alibabaProvider])
 
-    expect(copy.codeLabel).toBe("This code is already filled in for Qwen:")
-    expect(copy.codeHint).toContain("confirm the login")
-    expect(copy.waitingLabel).toContain("confirm in the browser")
+    expect(copy.codeLabel).toBe("Enter this code:")
+    expect(copy.codeHint).toBeUndefined()
+    expect(copy.waitingLabel).toBe("Waiting for authorization…")
   })
 
-  test("keeps manual-entry copy for providers that need device codes entered", () => {
+  test("returns same auth copy for non-Alibaba providers", () => {
     const authFlow: AuthFlow = {
       providerId: "github-copilot-1",
       status: "awaiting_user",
