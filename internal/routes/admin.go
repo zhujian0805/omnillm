@@ -20,6 +20,7 @@ import (
 	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/providers/copilot"
 	"omnimodel/internal/providers/generic"
+	"omnimodel/internal/providers/shared"
 	openaicompatprovider "omnimodel/internal/providers/openaicompatprovider"
 	"omnimodel/internal/providers/types"
 	"omnimodel/internal/registry"
@@ -135,6 +136,12 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 
 	// Logs streaming
 	router.GET("/logs/stream", handleLogsStream)
+
+	// Config file management
+	router.GET("/config", handleGetConfigFiles)
+	router.GET("/config/:name", handleGetConfig)
+	router.PUT("/config/:name", handleSaveConfig)
+	router.POST("/config/:name/import", handleImportConfig)
 }
 
 type providerModelView struct {
@@ -437,14 +444,24 @@ func stringSliceValue(raw interface{}) []string {
 }
 
 func normalizeOpenAICompatibleAPIFormatConfig(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "responses", "response", "openai-responses", "openai_responses":
-		return "responses"
-	case "chat", "chat.completions", "chat_completions", "openai-chat", "openai_chat":
-		return "chat.completions"
-	default:
-		return ""
+	return shared.NormalizeOpenAICompatibleAPIFormat(raw)
+}
+
+func mergeOpenAICompatibleAPIFormat(merged, incomingConfig map[string]interface{}) {
+	_, hasCamel := incomingConfig["apiFormat"]
+	_, hasSnake := incomingConfig["api_format"]
+	if !hasCamel && !hasSnake {
+		return
 	}
+
+	if apiFormat, ok := firstStringValue(incomingConfig, "apiFormat", "api_format"); ok {
+		if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
+			merged["api_format"] = normalizedFormat
+			return
+		}
+	}
+
+	delete(merged, "api_format")
 }
 
 func cloneConfigMap(config map[string]interface{}) map[string]interface{} {
@@ -473,27 +490,7 @@ func mergeOpenAICompatibleConfig(previousConfig, incomingConfig, normalizedConfi
 		}
 	}
 
-	if _, ok := incomingConfig["apiFormat"]; ok {
-		if apiFormat, ok := firstStringValue(incomingConfig, "apiFormat", "api_format"); ok {
-			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
-				merged["api_format"] = normalizedFormat
-			} else {
-				delete(merged, "api_format")
-			}
-		} else {
-			delete(merged, "api_format")
-		}
-	} else if _, ok := incomingConfig["api_format"]; ok {
-		if apiFormat, ok := firstStringValue(incomingConfig, "apiFormat", "api_format"); ok {
-			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
-				merged["api_format"] = normalizedFormat
-			} else {
-				delete(merged, "api_format")
-			}
-		} else {
-			delete(merged, "api_format")
-		}
-	}
+	mergeOpenAICompatibleAPIFormat(merged, incomingConfig)
 
 	return merged
 }

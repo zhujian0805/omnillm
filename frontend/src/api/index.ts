@@ -725,3 +725,33 @@ export const deleteVirtualModel = (id: string) =>
   apiFetch<{ deleted: string }>(`/api/admin/vmodels/${encodeURIComponent(id)}`, {
     method: "DELETE",
   })
+
+// ─── Config files ────────────────────────────────────────────────────────────
+
+export interface ConfigFileEntry {
+  name: string
+  label: string
+  description: string
+  language: string
+  exists: boolean
+}
+
+export interface ConfigFileContent {
+  name: string
+  label: string
+  content: string
+  exists: boolean
+  message?: string
+}
+
+export const listConfigFiles = () =>
+  apiFetch<{ configs: Array<ConfigFileEntry> }>("/api/admin/config")
+
+export const getConfigFile = (name: string) =>
+  apiFetch<ConfigFileContent>(`/api/admin/config/${encodeURIComponent(name)}`)
+
+export const saveConfigFile = (name: string, content: string) =>
+  apiFetch<{ success: boolean; message: string }>(`/api/admin/config/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  })

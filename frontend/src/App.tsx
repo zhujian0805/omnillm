@@ -8,6 +8,7 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
+  SlidersHorizontal,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 
@@ -16,6 +17,7 @@ import { MuiThemeWrapper } from "@/components/MuiThemeWrapper"
 import { useToast, ToastContainer } from "@/components/Toast"
 import { createLogger } from "@/lib/logger"
 import { ChatPage } from "@/pages/ChatPage"
+import { ConfigPage } from "@/pages/ConfigPage"
 import { LoggingPage } from "@/pages/LoggingPage"
 import { ProvidersPage } from "@/pages/ProvidersPage"
 import { AboutPage } from "@/pages/SettingsPage"
@@ -23,7 +25,7 @@ import { VmodelPage } from "@/pages/VmodelPage"
 
 const log = createLogger("app")
 
-type Tab = "providers" | "chat" | "logging" | "vmodel" | "about"
+type Tab = "providers" | "chat" | "logging" | "vmodel" | "config" | "about"
 type Theme = "dark" | "light"
 
 const NAV_ITEMS = [
@@ -31,6 +33,7 @@ const NAV_ITEMS = [
   { id: "chat" as const, label: "Chat", icon: MessageSquare },
   { id: "logging" as const, label: "Logging", icon: BarChart3 },
   { id: "vmodel" as const, label: "Virtual Models", icon: Layers },
+  { id: "config" as const, label: "ToolSettings", icon: SlidersHorizontal },
   { id: "about" as const, label: "About", icon: Settings },
 ]
 
@@ -52,6 +55,7 @@ function isTab(value: string): value is Tab {
     || value === "chat"
     || value === "logging"
     || value === "vmodel"
+    || value === "config"
     || value === "about"
   )
 }
@@ -493,6 +497,7 @@ export default function AppComponent() {
                 {tab === "chat" && <ChatPage showToast={showToast} />}
                 {tab === "logging" && <LoggingPage showToast={showToast} />}
                 {tab === "vmodel" && <VmodelPage showToast={showToast} />}
+                {tab === "config" && <ConfigPage showToast={showToast} />}
                 {tab === "about" && <AboutPage showToast={showToast} />}
               </div>
             </div>
