@@ -393,7 +393,7 @@ func extractAgentToolTranscriptGaps(request *cif.CanonicalRequest) []agentToolTr
 
 func logRawAnthropicToolLoopPayload(requestID string, payload map[string]interface{}) {
 	for _, entry := range extractLatestRawAnthropicToolResultEntries(payload) {
-		event := log.Info().
+		event := log.Debug().
 			Str("request_id", requestID).
 			Str("api_shape", "anthropic").
 			Int("loop_message_index", entry.MessageIndex).
@@ -411,7 +411,7 @@ func logRawAnthropicToolLoopPayload(requestID string, payload map[string]interfa
 
 func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest) {
 	for _, entry := range extractLatestToolResultLogEntries(request) {
-		event := log.Info().
+		event := log.Debug().
 			Str("request_id", requestID).
 			Str("api_shape", "anthropic").
 			Str("model_requested", request.Model).
@@ -431,7 +431,7 @@ func logAnthropicToolLoopRequest(requestID string, request *cif.CanonicalRequest
 
 func logAnthropicToolLoopResponse(requestID string, originalModel string, modelUsed string, providerID string, stream bool, entries []toolLoopCallLogEntry) {
 	for _, entry := range entries {
-		log.Info().
+		log.Debug().
 			Str("request_id", requestID).
 			Str("api_shape", "anthropic").
 			Str("model_requested", originalModel).
@@ -462,7 +462,7 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 		return
 	}
 
-	log.Info().
+	log.Debug().
 		Str("request_id", requestID).
 		Str("api_shape", "anthropic").
 		Str("model_requested", request.Model).
@@ -509,7 +509,7 @@ func logAnthropicAgentGuardrailRequest(requestID string, request *cif.CanonicalR
 
 func logAnthropicAgentGuardrailResponse(requestID string, originalModel string, modelUsed string, providerID string, stream bool, entries []toolLoopCallLogEntry) {
 	for _, entry := range filterToolCallEntriesByName(entries, anthropicAgentToolName) {
-		log.Info().
+		log.Debug().
 			Str("request_id", requestID).
 			Str("api_shape", "anthropic").
 			Str("model_requested", originalModel).
