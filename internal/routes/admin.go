@@ -205,6 +205,11 @@ func normalizeProviderConfigForFrontend(providerType string, config map[string]i
 		if endpoint, ok := firstStringValue(config, "base_url", "endpoint"); ok {
 			normalized["endpoint"] = endpoint
 		}
+		if apiFormat, ok := firstStringValue(config, "apiFormat", "api_format"); ok {
+			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
+				normalized["apiFormat"] = normalizedFormat
+			}
+		}
 		if models := stringSliceValue(config["models"]); len(models) > 0 {
 			normalized["models"] = models
 		}
@@ -260,8 +265,13 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		if baseURL, _ := firstStringValue(config, "base_url", "endpoint"); baseURL != "" {
 			normalized["base_url"] = baseURL
 		}
-		if models := stringSliceValue(config["models"]); len(models) > 0 {
-			normalized["models"] = models
+		if _, ok := config["models"]; ok {
+			normalized["models"] = stringSliceValue(config["models"])
+		}
+		if apiFormat, ok := firstStringValue(config, "apiFormat", "api_format"); ok {
+			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
+				normalized["api_format"] = normalizedFormat
+			}
 		}
 		return normalized
 	default:
@@ -424,6 +434,68 @@ func stringSliceValue(raw interface{}) []string {
 	default:
 		return nil
 	}
+}
+
+func normalizeOpenAICompatibleAPIFormatConfig(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "responses", "response", "openai-responses", "openai_responses":
+		return "responses"
+	case "chat", "chat.completions", "chat_completions", "openai-chat", "openai_chat":
+		return "chat.completions"
+	default:
+		return ""
+	}
+}
+
+func cloneConfigMap(config map[string]interface{}) map[string]interface{} {
+	if len(config) == 0 {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(config))
+	for key, value := range config {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func mergeOpenAICompatibleConfig(previousConfig, incomingConfig, normalizedConfig map[string]interface{}) map[string]interface{} {
+	merged := cloneConfigMap(previousConfig)
+	for key, value := range normalizedConfig {
+		merged[key] = value
+	}
+
+	if _, ok := incomingConfig["models"]; ok {
+		models := stringSliceValue(incomingConfig["models"])
+		if len(models) == 0 {
+			delete(merged, "models")
+		} else {
+			merged["models"] = models
+		}
+	}
+
+	if _, ok := incomingConfig["apiFormat"]; ok {
+		if apiFormat, ok := firstStringValue(incomingConfig, "apiFormat", "api_format"); ok {
+			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
+				merged["api_format"] = normalizedFormat
+			} else {
+				delete(merged, "api_format")
+			}
+		} else {
+			delete(merged, "api_format")
+		}
+	} else if _, ok := incomingConfig["api_format"]; ok {
+		if apiFormat, ok := firstStringValue(incomingConfig, "apiFormat", "api_format"); ok {
+			if normalizedFormat := normalizeOpenAICompatibleAPIFormatConfig(apiFormat); normalizedFormat != "" {
+				merged["api_format"] = normalizedFormat
+			} else {
+				delete(merged, "api_format")
+			}
+		} else {
+			delete(merged, "api_format")
+		}
+	}
+
+	return merged
 }
 
 // ─── Provider endpoints ───
@@ -1326,6 +1398,9 @@ func handleUpdateProviderConfig(c *gin.Context) {
 	if len(normalizedConfig) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid configuration fields supplied"})
 		return
+	}
+	if provider.GetID() == "openai-compatible" {
+		normalizedConfig = mergeOpenAICompatibleConfig(previousConfig, config, normalizedConfig)
 	}
 
 	configStore := database.NewProviderConfigStore()

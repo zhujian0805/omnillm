@@ -73,6 +73,7 @@ func handleMessages(c *gin.Context) {
 			canonicalRequest.IncomingHeaders[k] = v[0]
 		}
 	}
+	setInboundAPIShape(canonicalRequest, "anthropic")
 
 	originalModel := canonicalRequest.Model
 
@@ -146,7 +147,7 @@ func handleMessages(c *gin.Context) {
 				Str("provider", provider.GetInstanceID()).
 				Str("api_shape", "anthropic").
 				Str("inbound_path", c.FullPath()).
-				Str("upstream_api", upstreamAPIForProvider(provider.GetID(), remappedModel)).
+				Str("upstream_api", detectUpstreamAPI(provider.GetID(), adapter, &providerRequest, remappedModel)).
 				Str("canonical_model", providerRequest.Model).
 				Str("upstream_model", remappedModel).
 				Msg("Converted CIF request to upstream model API")

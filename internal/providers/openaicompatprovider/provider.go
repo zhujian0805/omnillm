@@ -1,7 +1,8 @@
 // Package openaicompatprovider is the "openai-compatible" provider type.
 //
 // It lets users connect OmniModel to any endpoint that speaks the OpenAI
-// chat-completions wire protocol (Ollama, vLLM, LM Studio, llama.cpp, etc.)
+// chat-completions wire protocol and, when available, the OpenAI Responses API
+// (Ollama, vLLM, LM Studio, llama.cpp, OpenAI, etc.)
 // by supplying just a base URL and an optional API key.
 //
 // All HTTP work is delegated to internal/providers/openaicompat — this package
@@ -21,6 +22,7 @@ import (
 	"omnimodel/internal/cif"
 	"omnimodel/internal/database"
 	"omnimodel/internal/providers/openaicompat"
+	"omnimodel/internal/providers/shared"
 	"omnimodel/internal/providers/types"
 
 	"github.com/rs/zerolog/log"
@@ -174,29 +176,158 @@ type Adapter struct {
 	provider *Provider
 }
 
+const (
+	openAICompatChatCompletionsAPI = "chat.completions"
+	openAICompatResponsesAPI       = "responses"
+)
+
 func (a *Adapter) GetProvider() types.Provider { return a.provider }
 
 // RemapModel is a no-op: model IDs are forwarded as-is.
 func (a *Adapter) RemapModel(model string) string { return strings.TrimSpace(model) }
 
+func (a *Adapter) UpstreamAPI(request *cif.CanonicalRequest, _ string) string {
+	a.provider.ensureConfig()
+	return a.selectedUpstreamAPI(request)
+}
+
 func (a *Adapter) Execute(request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	a.provider.ensureConfig()
-	cr, err := openaicompat.BuildChatRequest(a.RemapModel(request.Model), request, false, openaicompat.Config{})
-	if err != nil {
-		return nil, err
+	switch a.selectedUpstreamAPI(request) {
+	case openAICompatResponsesAPI:
+		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, false, openaicompat.ResponsesConfig{})
+		return openaicompat.ExecuteResponses(responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, false), payload)
+	default:
+		cr, err := openaicompat.BuildChatRequest(
+			a.RemapModel(request.Model),
+			request,
+			false,
+			a.chatCompletionsConfig(request, false),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return openaicompat.Execute(chatURL(a.provider.baseURL), buildHeaders(a.provider.token, false), cr)
 	}
-	return openaicompat.Execute(chatURL(a.provider.baseURL), buildHeaders(a.provider.token, false), cr)
 }
 
 func (a *Adapter) ExecuteStream(request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	a.provider.ensureConfig()
-	cr, err := openaicompat.BuildChatRequest(a.RemapModel(request.Model), request, true, openaicompat.Config{
-		IncludeUsageInStream: true,
-	})
-	if err != nil {
-		return nil, err
+	if a.shouldBufferAnthropicStreaming(request) {
+		response, err := a.Execute(request)
+		if err != nil {
+			return nil, err
+		}
+		return shared.StreamResponse(response), nil
 	}
-	return openaicompat.Stream(chatURL(a.provider.baseURL), buildHeaders(a.provider.token, true), cr)
+	switch a.selectedUpstreamAPI(request) {
+	case openAICompatResponsesAPI:
+		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, true, openaicompat.ResponsesConfig{})
+		return openaicompat.StreamResponses(responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, true), payload)
+	default:
+		cr, err := openaicompat.BuildChatRequest(
+			a.RemapModel(request.Model),
+			request,
+			true,
+			a.chatCompletionsConfig(request, true),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return openaicompat.Stream(chatURL(a.provider.baseURL), buildHeaders(a.provider.token, true), cr)
+	}
+}
+
+func (a *Adapter) shouldBufferAnthropicStreaming(request *cif.CanonicalRequest) bool {
+	return a.inboundAPIShape(request) == "anthropic"
+}
+
+func (a *Adapter) chatCompletionsConfig(request *cif.CanonicalRequest, stream bool) openaicompat.Config {
+	cfg := openaicompat.Config{
+		IncludeUsageInStream: stream,
+	}
+	if extras := dashScopeChatExtras(a.provider.baseURL, a.RemapModel(request.Model), request); len(extras) > 0 {
+		cfg.Extras = extras
+	}
+	return cfg
+}
+
+func (a *Adapter) selectedUpstreamAPI(request *cif.CanonicalRequest) string {
+	if a.forceChatCompletions(request) {
+		return openAICompatChatCompletionsAPI
+	}
+
+	switch a.configuredAPIFormat() {
+	case openAICompatResponsesAPI:
+		return openAICompatResponsesAPI
+	case openAICompatChatCompletionsAPI:
+		return openAICompatChatCompletionsAPI
+	}
+
+	switch a.inboundAPIShape(request) {
+	case "anthropic", "responses":
+		if isOfficialOpenAIBaseURL(a.provider.baseURL) {
+			return openAICompatResponsesAPI
+		}
+	}
+
+	return openAICompatChatCompletionsAPI
+}
+
+func (a *Adapter) configuredAPIFormat() string {
+	if a.provider.config == nil {
+		return ""
+	}
+	if raw, ok := a.provider.config["api_format"].(string); ok {
+		return normalizeOpenAICompatibleAPIFormat(raw)
+	}
+	return ""
+}
+
+func (a *Adapter) inboundAPIShape(request *cif.CanonicalRequest) string {
+	if request == nil || request.Extensions == nil || request.Extensions.InboundAPIShape == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(*request.Extensions.InboundAPIShape))
+}
+
+func (a *Adapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
+	return request != nil &&
+		request.Extensions != nil &&
+		request.Extensions.ForceChatCompletions != nil &&
+		*request.Extensions.ForceChatCompletions
+}
+
+func dashScopeChatExtras(baseURL string, model string, request *cif.CanonicalRequest) map[string]interface{} {
+	if !isDashScopeBaseURL(baseURL) || !isDashScopeReasoningModel(model) || request == nil {
+		return nil
+	}
+	if len(request.Tools) == 0 {
+		return nil
+	}
+	// DashScope rejects required/specific tool_choice while Qwen is left in its
+	// default reasoning mode. Tool turns must explicitly opt out.
+	return map[string]interface{}{"enable_thinking": false}
+}
+
+func isDashScopeBaseURL(rawURL string) bool {
+	u, err := url.Parse(normalizeBaseURL(rawURL))
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(u.Hostname())) {
+	case "dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDashScopeReasoningModel(model string) bool {
+	lower := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(lower, "qwen3") ||
+		strings.Contains(lower, "qwen-plus") ||
+		strings.Contains(lower, "qwq")
 }
 
 // ─── LoadFromDB ───────────────────────────────────────────────────────────────
@@ -260,6 +391,9 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 		"base_url":  endpoint,
 		"name":      displayName,
 	}
+	if apiFormat := normalizeOpenAICompatibleAPIFormat(options.APIFormat); apiFormat != "" {
+		config["api_format"] = apiFormat
+	}
 
 	// Parse and persist any pre-configured model IDs.
 	if options.Models != "" {
@@ -308,6 +442,11 @@ func chatURL(baseURL string) string {
 	return strings.TrimRight(baseURL, "/") + "/chat/completions"
 }
 
+// responsesURL appends "/responses" to baseURL.
+func responsesURL(baseURL string) string {
+	return strings.TrimRight(baseURL, "/") + "/responses"
+}
+
 // buildHeaders returns the HTTP headers for a request.
 // Authorization header is omitted when token is empty (open endpoints).
 func buildHeaders(token string, stream bool) map[string]string {
@@ -331,6 +470,25 @@ func deriveDisplayName(baseURL string) string {
 		return "OpenAI-Compatible"
 	}
 	return "OpenAI-Compatible (" + u.Host + ")"
+}
+
+func isOfficialOpenAIBaseURL(rawURL string) bool {
+	u, err := url.Parse(normalizeBaseURL(rawURL))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Hostname(), "api.openai.com")
+}
+
+func normalizeOpenAICompatibleAPIFormat(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "responses", "response", "openai-responses", "openai_responses":
+		return openAICompatResponsesAPI
+	case "chat", "chat.completions", "chat_completions", "openai-chat", "openai_chat":
+		return openAICompatChatCompletionsAPI
+	default:
+		return ""
+	}
 }
 
 // urlSlug converts a URL to a safe identifier fragment.

@@ -18,6 +18,7 @@ export interface Provider {
     apiVersion?: string
     deployments?: Array<string>
     models?: Array<string>
+    apiFormat?: string
   }
 }
 
@@ -542,7 +543,7 @@ export const createChatCompletion = async (
     }
     default: {
       endpoint = "/v1/chat/completions"
-      requestBody = request as Record<string, unknown>
+      requestBody = request as unknown as Record<string, unknown>
       break
     }
   }

@@ -207,7 +207,6 @@ func readBody(t *testing.T, resp *http.Response) string {
 	return string(body)
 }
 
-
 func TestAnthropicMessagesRoute_NonStreamingThinkingSuppression(t *testing.T) {
 	registerStubProvider(t, "thinking-model", func(_ *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 		return &cif.CanonicalResponse{
@@ -263,7 +262,7 @@ func TestAnthropicMessagesRoute_NonStreamingThinkingSuppression(t *testing.T) {
 			requestBody,
 			map[string]string{
 				"anthropic-version": "2023-06-01",
-				"anthropic-beta":   "interleaved-thinking-2025-05-14",
+				"anthropic-beta":    "interleaved-thinking-2025-05-14",
 			},
 		)
 		body := readBody(t, resp)
@@ -574,6 +573,71 @@ func TestAPIShapeEndpointsUseGoSerializers(t *testing.T) {
 			t.Fatalf("unexpected responses payload: %#v", payload)
 		}
 	})
+}
+
+func TestRoutesAnnotateInboundAPIShapeOnCanonicalRequest(t *testing.T) {
+	testCases := []struct {
+		name      string
+		endpoint  string
+		body      string
+		headers   map[string]string
+		wantShape string
+	}{
+		{
+			name:      "chat completions",
+			endpoint:  "/v1/chat/completions",
+			body:      `{"model":"shape-hint-model","messages":[{"role":"user","content":"ping"}]}`,
+			wantShape: "openai",
+		},
+		{
+			name:      "anthropic messages",
+			endpoint:  "/v1/messages",
+			body:      `{"model":"shape-hint-model","max_tokens":16,"messages":[{"role":"user","content":"ping"}]}`,
+			headers:   map[string]string{"anthropic-version": "2023-06-01"},
+			wantShape: "anthropic",
+		},
+		{
+			name:      "responses api",
+			endpoint:  "/v1/responses",
+			body:      `{"model":"shape-hint-model","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"ping"}]}]}`,
+			wantShape: "responses",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedShape string
+
+			registerStubProvider(
+				t,
+				"shape-hint-model",
+				func(req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+					if req.Extensions != nil && req.Extensions.InboundAPIShape != nil {
+						capturedShape = *req.Extensions.InboundAPIShape
+					}
+					return &cif.CanonicalResponse{
+						ID:         "resp_shape_hint",
+						Model:      req.Model,
+						Content:    []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "pong"}},
+						StopReason: cif.StopReasonEndTurn,
+					}, nil
+				},
+				nil,
+			)
+
+			srv := newTestServer(t)
+			defer srv.Close()
+
+			resp := postJSON(t, srv.URL+tc.endpoint, tc.body, tc.headers)
+			body := readBody(t, resp)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+			}
+			if capturedShape != tc.wantShape {
+				t.Fatalf("expected inbound API shape %q, got %q", tc.wantShape, capturedShape)
+			}
+		})
+	}
 }
 
 func TestAnthropicMessagesRouteNormalizesAliasesBeforeProviderExecution(t *testing.T) {

@@ -20,6 +20,20 @@ var (
 	streamClient = &http.Client{}
 )
 
+// APIError preserves upstream HTTP failures so adapters can decide whether to
+// retry on a different upstream API.
+type APIError struct {
+	StatusCode int
+	Body       []byte
+}
+
+func (e *APIError) Error() string {
+	if e == nil {
+		return "openaicompat: upstream request failed"
+	}
+	return fmt.Sprintf("openaicompat: upstream returned %d: %s", e.StatusCode, string(e.Body))
+}
+
 // Execute performs a non-streaming POST to url and returns a CIF response.
 func Execute(url string, headers map[string]string, cr *ChatRequest) (*cif.CanonicalResponse, error) {
 	cr.Stream = false
@@ -44,9 +58,9 @@ func Execute(url string, headers map[string]string, cr *ChatRequest) (*cif.Canon
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openaicompat: upstream returned %d: %s", resp.StatusCode, string(b))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: b}
 	}
 
 	var chatResp ChatResponse
@@ -79,10 +93,10 @@ func Stream(url string, headers map[string]string, cr *ChatRequest) (<-chan cif.
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: stream request failed: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		b, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("openaicompat: upstream stream returned %d: %s", resp.StatusCode, string(b))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: b}
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)

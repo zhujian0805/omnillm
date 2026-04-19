@@ -279,6 +279,53 @@ const addFlowTextInputStyle = {
   padding: "11px 14px",
 } as const
 
+type OpenAICompatibleAPIFormat = "" | "chat.completions" | "responses"
+
+const OPENAI_COMPATIBLE_API_FORMAT_OPTIONS: Array<{
+  value: OpenAICompatibleAPIFormat
+  label: string
+}> = [
+  { value: "", label: "Auto (recommended)" },
+  { value: "chat.completions", label: "Chat Completions" },
+  { value: "responses", label: "Responses" },
+]
+
+function normalizeOpenAICompatibleAPIFormat(
+  value: string | undefined,
+): OpenAICompatibleAPIFormat {
+  if (value === "chat.completions" || value === "responses") {
+    return value
+  }
+  return ""
+}
+
+function OpenAICompatibleAPIFormatControl({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: OpenAICompatibleAPIFormat
+  onChange: (next: OpenAICompatibleAPIFormat) => void
+  disabled?: boolean
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) =>
+        onChange(normalizeOpenAICompatibleAPIFormat(e.target.value))
+      }
+      disabled={disabled}
+      style={addFlowControlStyle}
+    >
+      {OPENAI_COMPATIBLE_API_FORMAT_OPTIONS.map((option) => (
+        <option key={option.value || "auto"} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
 function AddFlowChoiceGroup({
   value,
   onChange,
@@ -607,6 +654,21 @@ function ModelsDialog({
   const [userModels, setUserModels] = useState<Array<string>>(
     (provider.config?.models as Array<string>) || [],
   )
+  const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>(
+    normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
+  )
+
+  useEffect(() => {
+    if (provider.type === "azure-openai") {
+      setDeployments(provider.config?.deployments || [])
+    }
+    if (provider.type === "openai-compatible") {
+      setUserModels((provider.config?.models as Array<string>) || [])
+      setApiFormat(
+        normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
+      )
+    }
+  }, [provider])
 
   const load = async () => {
     setLoading(true)
@@ -614,13 +676,6 @@ function ModelsDialog({
     try {
       const resp = await getProviderModels(provider.id)
       setModels(resp?.models ?? [])
-      // Also update deployments from current config
-      if (provider.type === "azure-openai") {
-        setDeployments(provider.config?.deployments || [])
-      }
-      if (provider.type === "openai-compatible") {
-        setUserModels((provider.config?.models as Array<string>) || [])
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -632,6 +687,15 @@ function ModelsDialog({
     setOpen(true)
     if (models === null && !loading) load()
     setNewDeployment("")
+    if (provider.type === "azure-openai") {
+      setDeployments(provider.config?.deployments || [])
+    }
+    if (provider.type === "openai-compatible") {
+      setUserModels((provider.config?.models as Array<string>) || [])
+      setApiFormat(
+        normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
+      )
+    }
   }
 
   const handleToggle = async (model: Model) => {
@@ -742,6 +806,26 @@ function ModelsDialog({
       onModelsChanged?.()
       await load()
     } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleUpdateAPIFormat = async (nextFormat: OpenAICompatibleAPIFormat) => {
+    if (provider.type !== "openai-compatible" || nextFormat === apiFormat) {
+      return
+    }
+    const previousFormat = apiFormat
+    setConfigLoading(true)
+    setError(null)
+    setApiFormat(nextFormat)
+    try {
+      await updateProviderConfig(provider.id, { apiFormat: nextFormat })
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setApiFormat(previousFormat)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setConfigLoading(false)
@@ -983,6 +1067,41 @@ function ModelsDialog({
                         }}
                       >
                         Model IDs
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                          marginBottom: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "#10b981",
+                          }}
+                        >
+                          Upstream API
+                        </div>
+                        <OpenAICompatibleAPIFormatControl
+                          value={apiFormat}
+                          onChange={handleUpdateAPIFormat}
+                          disabled={configLoading}
+                        />
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--color-text-tertiary)",
+                          }}
+                        >
+                          Auto uses <code>/v1/responses</code> for official
+                          OpenAI when requests arrive via{" "}
+                          <code>/v1/messages</code> or{" "}
+                          <code>/v1/responses</code>, and{" "}
+                          <code>/v1/chat/completions</code> otherwise.
+                        </div>
                       </div>
                       <div
                         style={{
@@ -1856,6 +1975,21 @@ function ModelsMenuItem({
   const [userModels, setUserModels] = useState<Array<string>>(
     (provider.config?.models as Array<string>) || [],
   )
+  const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>(
+    normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
+  )
+
+  useEffect(() => {
+    if (provider.type === "azure-openai") {
+      setDeployments(provider.config?.deployments || [])
+    }
+    if (provider.type === "openai-compatible") {
+      setUserModels((provider.config?.models as Array<string>) || [])
+      setApiFormat(
+        normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
+      )
+    }
+  }, [provider])
 
   const load = async () => {
     setLoading(true)
@@ -1863,12 +1997,6 @@ function ModelsMenuItem({
     try {
       const resp = await getProviderModels(provider.id)
       setModels(resp?.models ?? [])
-      if (provider.type === "azure-openai") {
-        setDeployments(provider.config?.deployments || [])
-      }
-      if (provider.type === "openai-compatible") {
-        setUserModels((provider.config?.models as Array<string>) || [])
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -1880,6 +2008,15 @@ function ModelsMenuItem({
     setOpen(true)
     if (models === null && !loading) load()
     setNewDeployment("")
+    if (provider.type === "azure-openai") {
+      setDeployments(provider.config?.deployments || [])
+    }
+    if (provider.type === "openai-compatible") {
+      setUserModels((provider.config?.models as Array<string>) || [])
+      setApiFormat(
+        normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
+      )
+    }
   }
 
   const handleToggle = async (model: Model) => {
@@ -1985,6 +2122,26 @@ function ModelsMenuItem({
       onModelsChanged?.()
       await load()
     } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
+  const handleUpdateAPIFormat = async (nextFormat: OpenAICompatibleAPIFormat) => {
+    if (provider.type !== "openai-compatible" || nextFormat === apiFormat) {
+      return
+    }
+    const previousFormat = apiFormat
+    setConfigLoading(true)
+    setError(null)
+    setApiFormat(nextFormat)
+    try {
+      await updateProviderConfig(provider.id, { apiFormat: nextFormat })
+      onModelsChanged?.()
+      await load()
+    } catch (e) {
+      setApiFormat(previousFormat)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setConfigLoading(false)
@@ -2229,6 +2386,41 @@ function ModelsMenuItem({
                         }}
                       >
                         Model IDs
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                          marginBottom: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: "#10b981",
+                          }}
+                        >
+                          Upstream API
+                        </div>
+                        <OpenAICompatibleAPIFormatControl
+                          value={apiFormat}
+                          onChange={handleUpdateAPIFormat}
+                          disabled={configLoading}
+                        />
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--color-text-tertiary)",
+                          }}
+                        >
+                          Auto uses <code>/v1/responses</code> for official
+                          OpenAI when requests arrive via{" "}
+                          <code>/v1/messages</code> or{" "}
+                          <code>/v1/responses</code>, and{" "}
+                          <code>/v1/chat/completions</code> otherwise.
+                        </div>
                       </div>
                       <div
                         style={{
@@ -3908,6 +4100,7 @@ function AddFlowOpenAICompatibleForm({
   const [apiKey, setApiKey] = useState("")
   const [models, setModels] = useState<Array<string>>([])
   const [newModel, setNewModel] = useState("")
+  const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>("")
 
   const addModel = () => {
     const id = newModel.trim()
@@ -3925,6 +4118,7 @@ function AddFlowOpenAICompatibleForm({
     await onSubmit({
       endpoint: endpoint.trim(),
       apiKey: apiKey.trim(),
+      ...(apiFormat ? { apiFormat } : {}),
       ...(models.length > 0 ? { models: JSON.stringify(models) } : {}),
     })
   }
@@ -3947,6 +4141,13 @@ function AddFlowOpenAICompatibleForm({
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           style={addFlowTextInputStyle}
+        />
+      </FormRow>
+      <FormRow label="Upstream API">
+        <OpenAICompatibleAPIFormatControl
+          value={apiFormat}
+          onChange={setApiFormat}
+          disabled={submitting}
         />
       </FormRow>
       <FormRow label="Models (optional)">
@@ -4017,8 +4218,10 @@ function AddFlowOpenAICompatibleForm({
       </FormRow>
       <AddFlowHint>
         Connect to any OpenAI-compatible endpoint — Ollama, vLLM, LM Studio,
-        llama.cpp, or a hosted service. Add model IDs upfront, or add them
-        later from the Models panel.
+        llama.cpp, or a hosted service. Auto uses Responses for official
+        OpenAI when traffic comes in through <code>/v1/messages</code> or{" "}
+        <code>/v1/responses</code>, and Chat Completions otherwise. Add model
+        IDs upfront, or add them later from the Models panel.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button
@@ -4700,8 +4903,10 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
             if (showActiveOnly && visibleProviders.length === 0) return null
             return [providerType, visibleProviders] as [string, Provider[]]
           })
-          .filter(Boolean)
-          .sort(([, a]: any, [, b]: any) => {
+          .filter(
+            (entry): entry is [string, Provider[]] => entry !== null,
+          )
+          .sort(([, a], [, b]) => {
             if (a.length > 0 && b.length === 0) return -1
             if (a.length === 0 && b.length > 0) return 1
             return 0

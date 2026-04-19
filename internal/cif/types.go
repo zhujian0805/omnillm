@@ -133,6 +133,8 @@ type CanonicalRequest struct {
 type Extensions struct {
 	// Anthropic thinking budget
 	ThinkingBudgetTokens *int `json:"thinkingBudgetTokens,omitempty"`
+	// Original public API shape that produced this CIF request.
+	InboundAPIShape *string `json:"inboundAPIShape,omitempty"`
 	// Qwen needs dummy tool injection — flag set by Alibaba adapter
 	RequiresDummyToolInjection *bool `json:"requiresDummyToolInjection,omitempty"`
 	// Force providers that support multiple upstream APIs to stay on chat completions.

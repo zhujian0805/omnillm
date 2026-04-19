@@ -100,6 +100,7 @@ func handleChatCompletions(c *gin.Context) {
 			canonicalRequest.IncomingHeaders[k] = v[0]
 		}
 	}
+	setInboundAPIShape(canonicalRequest, "openai")
 
 	originalModel := canonicalRequest.Model
 
