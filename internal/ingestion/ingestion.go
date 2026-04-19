@@ -256,7 +256,7 @@ func convertOpenAIMessage(msg OpenAIMessage) (cif.CIFMessage, error) {
 
 			contentParts = append(contentParts, cif.CIFToolCallPart{
 				Type:          "tool_call",
-				ToolCallID:    toolCall.ID,
+				ToolCallID:    firstNonEmpty(toolCall.ID, toolCall.CallID),
 				ToolName:      toolCall.Function.Name,
 				ToolArguments: args,
 			})
@@ -697,4 +697,14 @@ func normalizeSchemaValue(value interface{}) interface{} {
 	default:
 		return value
 	}
+}
+
+// firstNonEmpty returns the first non-empty string from the provided values.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

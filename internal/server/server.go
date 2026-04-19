@@ -19,6 +19,7 @@ import (
 	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/providers/copilot"
 	"omnimodel/internal/providers/generic"
+	openaicompatprovider "omnimodel/internal/providers/openaicompatprovider"
 	"omnimodel/internal/providers/types"
 	"omnimodel/internal/registry"
 	"omnimodel/internal/routes"
@@ -240,6 +241,12 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 				provider = p
 			case "alibaba":
 				p := alibabapkg.NewProvider(inst.InstanceID, inst.Name)
+				if err := p.LoadFromDB(); err != nil {
+					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
+				}
+				provider = p
+			case "openai-compatible":
+				p := openaicompatprovider.NewProvider(inst.InstanceID, inst.Name)
 				if err := p.LoadFromDB(); err != nil {
 					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
 				}

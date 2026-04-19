@@ -20,6 +20,7 @@ import (
 	alibabapkg "omnimodel/internal/providers/alibaba"
 	"omnimodel/internal/providers/copilot"
 	"omnimodel/internal/providers/generic"
+	openaicompatprovider "omnimodel/internal/providers/openaicompatprovider"
 	"omnimodel/internal/providers/types"
 	"omnimodel/internal/registry"
 	ghservice "omnimodel/internal/services/github"
@@ -475,6 +476,8 @@ func handleAddProviderInstance(c *gin.Context) {
 		provider = copilot.NewGitHubCopilotProvider(instanceID)
 	case "antigravity", "alibaba", "azure-openai", "google", "kimi":
 		provider = generic.NewGenericProvider(providerType, instanceID, "")
+	case "openai-compatible":
+		provider = openaicompatprovider.NewProvider(instanceID, "")
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Unknown provider type '%s'", providerType),
@@ -750,6 +753,47 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 				"id":         gen.GetInstanceID(),
 				"type":       gen.GetID(),
 				"name":       gen.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	// ── OpenAI-compatible (generic) ───────────────────────────────────────────
+	case "openai-compatible":
+		endpoint := strings.TrimSpace(req.Endpoint)
+		if endpoint == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "endpoint (base URL) is required for openai-compatible providers",
+			})
+			return
+		}
+
+		canonicalID := openaicompatprovider.CanonicalInstanceID(endpoint, req.APIKey)
+		prov := openaicompatprovider.NewProvider(canonicalID, "")
+
+		if err := prov.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(prov, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         prov.GetInstanceID(),
+				"type":       prov.GetID(),
+				"name":       prov.GetName(),
 				"isActive":   false,
 				"authStatus": "authenticated",
 			},
