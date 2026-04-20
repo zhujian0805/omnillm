@@ -6,6 +6,7 @@
   <a href="#quick-start">Quick Start</a> |
   <a href="#core-capabilities">Capabilities</a> |
   <a href="#supported-providers">Providers</a> |
+  <a href="#toolconfig---ai-assistant-configuration-management">ToolConfig</a> |
   <a href="#api-compatibility-surface">API Reference</a> |
   <a href="#security">Security</a> |
   <a href="#development">Development</a>
@@ -403,6 +404,71 @@ Or in `.claude/settings.json`:
   }
 }
 ```
+
+---
+
+## ToolConfig - AI Assistant Configuration Management
+
+OmniLLM provides a unified **ToolConfig** interface in the admin UI for managing configuration files of popular AI coding assistants. Access it at `http://localhost:5080/admin/` → **ToolConfig**.
+
+### Supported Tools
+
+| Tool | Config File | Template | Documentation |
+|------|-------------|----------|---------------|
+| **[Claude Code](https://claude.ai/code)** | `~/.claude/settings.json` | [Example](.claude/settings.json.example) | [Official Docs](https://code.claude.com/docs/en/settings) |
+| **[Codex](https://github.com/openai/codex)** | `~/.codex/config.toml` | [Example](.codex/config.toml.example) | [Official Docs](https://developers.openai.com/codex/config-reference) |
+| **[Droid](https://docs.factory.ai/cli)** | `~/.factory/settings.json` | [Example](.factory/settings.json.example) | [Official Docs](https://docs.factory.ai/cli/byok/overview#understanding-providers) |
+| **[OpenCode](https://opencode.ai)** | `~/.opencode/config.json` | [Example](.opencode/config.json.example) | [Official Docs](https://opencode.ai/docs/config/) |
+| **[AMP](https://ampcode.com)** | `~/.amp/config.json` | [Example](.amp/config.json.example) | [Official Docs](https://ampcode.com/manual#configuration) |
+
+### Features
+
+✅ **Structured Editors** - Intuitive UI for editing configs without manual JSON/TOML editing  
+✅ **Template Files** - Ready-to-use examples for quick setup ([see all templates](docs/CONFIG_TEMPLATES.md))  
+✅ **Real-time Validation** - Catch errors before saving  
+✅ **Auto-create Files** - Configs are created automatically if they don't exist  
+✅ **Import/Export** - Backup and restore configurations  
+
+### Quick Start with ToolConfig
+
+1. **Start OmniLLM:**
+   ```sh
+   bun run omni start --enable-config-edit
+   ```
+
+2. **Open ToolConfig UI:**
+   - Navigate to http://localhost:5080/admin/
+   - Click **ToolConfig** in the sidebar
+
+3. **Configure Your Tools:**
+   - Click on any tool card (shows "○ new" if config doesn't exist)
+   - Edit settings in the structured editor
+   - Click **Save** to persist changes
+
+4. **Use Templates (Optional):**
+   ```sh
+   # Copy template to actual location
+   cp ~/.factory/settings.json.example ~/.factory/settings.json
+   
+   # Or use ToolConfig UI to create automatically
+   ```
+
+### Documentation & References
+
+- **[Configuration Templates](docs/CONFIG_TEMPLATES.md)** - Complete guide to all template files
+- **[ToolConfig Fixes](docs/TOOLCONFIG_FIXES.md)** - Path fixes and save/reload improvements
+- **[Structured Editors](docs/STRUCTURED_EDITORS.md)** - Details on structured editor implementation
+- **[Layout Improvements](docs/LAYOUT_IMPROVEMENTS.md)** - UI/UX enhancements
+
+### Security Note
+
+Config file editing is **disabled by default** for security. Enable it with the `--enable-config-edit` flag:
+
+```sh
+bun run omni start --enable-config-edit
+```
+
+This prevents unauthorized modification of AI assistant configurations when running OmniLLM as a shared service.
 
 ---
 
