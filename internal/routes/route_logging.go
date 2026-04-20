@@ -4,13 +4,14 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"omnillm/internal/cif"
 )
 
 func captureIncomingHeaders(c *gin.Context, request *cif.CanonicalRequest) {
-	if request == nil {
+	if request == nil || log.Logger.GetLevel() > zerolog.DebugLevel {
 		return
 	}
 	request.IncomingHeaders = make(map[string]string)

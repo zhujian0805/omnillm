@@ -13,8 +13,18 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+const traceBodyLimit = 1024
+
+func cappedBody(b []byte) []byte {
+	if len(b) <= traceBodyLimit {
+		return b
+	}
+	return append(b[:traceBodyLimit], []byte("...(truncated)")...)
+}
 
 var (
 	httpClient = &http.Client{
@@ -89,7 +99,9 @@ func Execute(ctx context.Context, url string, headers map[string]string, cr *Cha
 		return nil, fmt.Errorf("openaicompat: marshal request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat request")
+	if log.Logger.GetLevel() <= zerolog.TraceLevel {
+		log.Trace().Str("url", url).RawJSON("payload", cappedBody(body)).Msg("outbound openaicompat request")
+	}
 
 	req, err := newPOSTRequest(ctx, url, headers, body, false)
 	if err != nil {
@@ -117,7 +129,9 @@ func Stream(ctx context.Context, url string, headers map[string]string, cr *Chat
 		return nil, fmt.Errorf("openaicompat: marshal request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat stream request")
+	if log.Logger.GetLevel() <= zerolog.TraceLevel {
+		log.Trace().Str("url", url).RawJSON("payload", cappedBody(body)).Msg("outbound openaicompat stream request")
+	}
 
 	req, err := newPOSTRequest(ctx, url, headers, body, true)
 	if err != nil {

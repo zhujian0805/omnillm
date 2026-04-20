@@ -11,6 +11,7 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
 
@@ -340,7 +341,9 @@ func ExecuteResponses(ctx context.Context, url string, headers map[string]string
 		return nil, fmt.Errorf("openaicompat: marshal responses request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat responses request")
+	if log.Logger.GetLevel() <= zerolog.TraceLevel {
+		log.Trace().Str("url", url).RawJSON("payload", cappedBody(body)).Msg("outbound openaicompat responses request")
+	}
 
 	req, err := newPOSTRequest(ctx, url, headers, body, false)
 	if err != nil {
@@ -367,7 +370,9 @@ func StreamResponses(ctx context.Context, url string, headers map[string]string,
 		return nil, fmt.Errorf("openaicompat: marshal responses stream request: %w", err)
 	}
 
-	log.Trace().Str("url", url).RawJSON("payload", body).Msg("outbound openaicompat responses stream request")
+	if log.Logger.GetLevel() <= zerolog.TraceLevel {
+		log.Trace().Str("url", url).RawJSON("payload", cappedBody(body)).Msg("outbound openaicompat responses stream request")
+	}
 
 	req, err := newPOSTRequest(ctx, url, headers, body, true)
 	if err != nil {
