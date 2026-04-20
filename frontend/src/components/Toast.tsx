@@ -5,7 +5,6 @@ import { createLogger } from "@/lib/logger"
 
 const log = createLogger("toast")
 
-
 export function useToast() {
   const showToast = useCallback(
     (message: string, type: "success" | "error" = "success") => {

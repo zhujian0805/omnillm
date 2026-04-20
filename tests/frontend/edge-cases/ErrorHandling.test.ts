@@ -5,6 +5,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
+
 import { setupTestEnvironment, resetTestEnvironment } from "../setup"
 
 describe("API Error Handling", () => {
@@ -27,7 +28,7 @@ describe("API Error Handling", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("400"),
-        "error"
+        "error",
       )
     })
 
@@ -71,7 +72,7 @@ describe("API Error Handling", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Network"),
-        "error"
+        "error",
       )
     })
 
@@ -82,7 +83,7 @@ describe("API Error Handling", () => {
 
       try {
         await mockFetch()
-      } catch (e) {
+      } catch {
         mockShowToast("Cannot connect to server", "error")
       }
 
@@ -131,8 +132,8 @@ describe("API Error Handling", () => {
     test("should handle deeply nested missing fields", () => {
       const response = {
         choices: [
-          { message: { content: null } } // Missing or null content
-        ]
+          { message: { content: null } }, // Missing or null content
+        ],
       }
 
       const content = response.choices?.[0]?.message?.content
@@ -145,7 +146,8 @@ describe("API Error Handling", () => {
 
     test("should handle array instead of object", () => {
       const response = ["item1", "item2"] // Expected object, got array
-      const isObject = response && typeof response === "object" && !Array.isArray(response)
+      const isObject =
+        response && typeof response === "object" && !Array.isArray(response)
 
       if (!isObject) {
         mockShowToast("Invalid response format", "error")
@@ -163,7 +165,7 @@ describe("API Error Handling", () => {
 
       try {
         await mockFetch()
-      } catch (e) {
+      } catch {
         mockShowToast("Invalid JSON response", "error")
       }
 
@@ -191,22 +193,22 @@ describe("Data Edge Cases", () => {
 
   describe("Empty Data", () => {
     test("should handle empty model list", () => {
-      const models: any[] = []
+      const models: Array<any> = []
       expect(models).toHaveLength(0)
     })
 
     test("should handle empty providers list", () => {
-      const providers: any[] = []
+      const providers: Array<any> = []
       expect(providers).toHaveLength(0)
     })
 
     test("should handle empty sessions list", () => {
-      const sessions: any[] = []
+      const sessions: Array<any> = []
       expect(sessions).toHaveLength(0)
     })
 
     test("should handle empty log lines", () => {
-      const lines: any[] = []
+      const lines: Array<any> = []
       expect(lines).toHaveLength(0)
     })
 
@@ -220,7 +222,7 @@ describe("Data Edge Cases", () => {
     test("should handle very large response", () => {
       const largeArray = Array(10000).fill({
         id: "item",
-        data: "x".repeat(1000)
+        data: "x".repeat(1000),
       })
 
       expect(largeArray).toHaveLength(10000)
@@ -232,11 +234,11 @@ describe("Data Edge Cases", () => {
     })
 
     test("should handle many chat messages", () => {
-      const messages: any[] = []
+      const messages: Array<any> = []
       for (let i = 0; i < 1000; i++) {
         messages.push({
           role: i % 2 === 0 ? "user" : "assistant",
-          content: `Message ${i}`
+          content: `Message ${i}`,
         })
       }
 
@@ -244,7 +246,7 @@ describe("Data Edge Cases", () => {
     })
 
     test("should handle large log buffer", () => {
-      const lines: string[] = []
+      const lines: Array<string> = []
       for (let i = 0; i < 500; i++) {
         lines.push(`Line ${i}`)
       }
@@ -265,7 +267,7 @@ describe("Data Edge Cases", () => {
       const provider = {
         id: "provider-1",
         type: "test",
-        name: "Test"
+        name: "Test",
         // Missing config
       }
 
@@ -276,7 +278,7 @@ describe("Data Edge Cases", () => {
     test("should handle session without model_id", () => {
       const session = {
         session_id: "s1",
-        title: "Chat"
+        title: "Chat",
         // Missing model_id
       }
 
@@ -287,7 +289,7 @@ describe("Data Edge Cases", () => {
     test("should handle auth flow without error message", () => {
       const authFlow = {
         providerId: "test",
-        status: "error" as const
+        status: "error" as const,
         // Missing error field
       }
 
@@ -351,7 +353,7 @@ describe("UI Edge Cases", () => {
     })
 
     test("should handle special characters in names", () => {
-      const special = "Test <>&\"'\\/@"
+      const special = String.raw`Test <>&"'\/@`
       expect(special.length).toBeGreaterThan(0)
     })
 
@@ -370,7 +372,7 @@ describe("UI Edge Cases", () => {
 
     test("should handle JSON-like strings", () => {
       const jsonString = '{"key": "value"}'
-      const isJSON = /^[{\[].*[}\]]$/.test(jsonString)
+      const isJSON = /^[{[].*[}\]]$/.test(jsonString)
 
       expect(isJSON).toBe(true)
     })
@@ -381,7 +383,8 @@ describe("UI Edge Cases", () => {
     })
 
     test("should handle newlines in log messages", () => {
-      const logMsg = "Error at line 1\n  at function (line 2)\n  at main (line 3)"
+      const logMsg =
+        "Error at line 1\n  at function (line 2)\n  at main (line 3)"
       const lines = logMsg.split("\n")
 
       expect(lines).toHaveLength(3)
@@ -439,7 +442,7 @@ describe("UI Edge Cases", () => {
     })
 
     test("should handle NaN in percentages", () => {
-      const percent = NaN
+      const percent = Number.NaN
       const isValid = !isNaN(percent)
 
       expect(isValid).toBe(false)

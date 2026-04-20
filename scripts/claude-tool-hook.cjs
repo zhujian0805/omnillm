@@ -52,7 +52,9 @@ function summarize(value, maxLength = 1600) {
   }
 
   const text =
-    typeof value === "string" ? value : JSON.stringify(value, null, 2) || String(value)
+    typeof value === "string" ? value : (
+      JSON.stringify(value, null, 2) || String(value)
+    )
 
   if (text.length <= maxLength) {
     return text
@@ -104,9 +106,9 @@ function main() {
     pid: process.pid,
     anthropicBaseURL: process.env.ANTHROPIC_BASE_URL || null,
     anthropicModel:
-      process.env.CLAUDE_CODE_MODEL ||
-      process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL ||
-      null,
+      process.env.CLAUDE_CODE_MODEL
+      || process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL
+      || null,
     sessionID,
     toolUseID,
     toolName,

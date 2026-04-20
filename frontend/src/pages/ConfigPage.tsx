@@ -1,5 +1,3 @@
-import { CSSProperties, useEffect, useState } from "react"
-import { listConfigFiles, getConfigFile, saveConfigFile, type ConfigFileEntry } from "@/api"
 import {
   Save,
   RotateCcw,
@@ -14,6 +12,14 @@ import {
   Plug,
   Code,
 } from "lucide-react"
+import { CSSProperties, useEffect, useState } from "react"
+
+import {
+  listConfigFiles,
+  getConfigFile,
+  saveConfigFile,
+  type ConfigFileEntry,
+} from "@/api"
 
 interface ConfigPageProps {
   showToast: (msg: string, type?: "success" | "error") => void
@@ -68,7 +74,9 @@ function parseTOML(text: string): CodexConfig {
     if (!line || line.startsWith("#")) continue
 
     // Sub-section like [profiles.xxx.windows] — skip subsections
-    const multiDotMatch = line.match(/^\[([^\]]+\.[^\]]+\.[^\]]+)\]$/)
+    const multiDotMatch = line.match(
+      /^\[([^\]][^.\]]*\.[^\]][^.\]]*\.[^\]]+)\]$/,
+    )
     if (multiDotMatch) {
       currentSection = "__skip__"
       continue
@@ -76,19 +84,27 @@ function parseTOML(text: string): CodexConfig {
 
     const sectionMatch = line.match(/^\[([^\]]+)\]$/)
     if (sectionMatch) {
-      const raw = sectionMatch[1].replace(/^["']|["']$/g, "")
+      const raw = sectionMatch[1].replaceAll(/^["']|["']$/g, "")
       currentSection = raw
 
       if (raw.startsWith("model_providers.")) {
-        const key = raw.replace("model_providers.", "").replace(/^["']|["']$/g, "")
+        const key = raw
+          .replace("model_providers.", "")
+          .replaceAll(/^["']|["']$/g, "")
         if (!result.model_providers) result.model_providers = {}
         result.model_providers[key] = { name: key, base_url: "", env_key: "" }
       } else if (raw.startsWith("profiles.")) {
-        const key = raw.replace("profiles.", "").replace(/^["']|["']$/g, "")
+        const key = raw.replace("profiles.", "").replaceAll(/^["']|["']$/g, "")
         if (!result.profiles) result.profiles = {}
-        result.profiles[key] = { name: key, model: "", model_provider: "", model_reasoning_effort: "", sandbox: "" }
+        result.profiles[key] = {
+          name: key,
+          model: "",
+          model_provider: "",
+          model_reasoning_effort: "",
+          sandbox: "",
+        }
       } else if (raw.startsWith("projects.")) {
-        const key = raw.replace("projects.", "").replace(/^["']|["']$/g, "")
+        const key = raw.replace("projects.", "").replaceAll(/^["']|["']$/g, "")
         if (!result.projects) result.projects = {}
         result.projects[key] = { trust_level: "" }
       }
@@ -101,10 +117,13 @@ function parseTOML(text: string): CodexConfig {
     if (!kvMatch) continue
 
     const key = kvMatch[1]
-    let value = kvMatch[2].trim().split(" #")[0].trim()
+    const value = kvMatch[2].trim().split(" #")[0].trim()
 
     let parsed: string | boolean = value
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'"))
+    ) {
       parsed = value.slice(1, -1)
     } else if (value === "true") {
       parsed = true
@@ -115,16 +134,25 @@ function parseTOML(text: string): CodexConfig {
     const s = String(parsed)
 
     if (!currentSection) {
-      (result as Record<string, unknown>)[key] = parsed
+      ;(result as Record<string, unknown>)[key] = parsed
     } else if (currentSection.startsWith("model_providers.")) {
-      const name = currentSection.replace("model_providers.", "").replace(/^["']|["']$/g, "")
-      if (result.model_providers?.[name]) (result.model_providers[name] as Record<string, string>)[key] = s
+      const name = currentSection
+        .replace("model_providers.", "")
+        .replaceAll(/^["']|["']$/g, "")
+      if (result.model_providers?.[name])
+        (result.model_providers[name] as Record<string, string>)[key] = s
     } else if (currentSection.startsWith("profiles.")) {
-      const name = currentSection.replace("profiles.", "").replace(/^["']|["']$/g, "")
-      if (result.profiles?.[name]) (result.profiles[name] as Record<string, string>)[key] = s
+      const name = currentSection
+        .replace("profiles.", "")
+        .replaceAll(/^["']|["']$/g, "")
+      if (result.profiles?.[name])
+        (result.profiles[name] as Record<string, string>)[key] = s
     } else if (currentSection.startsWith("projects.")) {
-      const name = currentSection.replace("projects.", "").replace(/^["']|["']$/g, "")
-      if (result.projects?.[name]) result.projects[name][key as "trust_level"] = s
+      const name = currentSection
+        .replace("projects.", "")
+        .replaceAll(/^["']|["']$/g, "")
+      if (result.projects?.[name])
+        result.projects[name][key as "trust_level"] = s
     }
   }
 
@@ -134,14 +162,14 @@ function parseTOML(text: string): CodexConfig {
 function serializeTOML(config: CodexConfig, originalContent: string): string {
   // For TOML we do a targeted replacement strategy to preserve the original structure
   // but update the values we track in structured fields
-  let lines = originalContent.split("\n")
-  const result: string[] = []
+  const lines = originalContent.split("\n")
+  const result: Array<string> = []
   let currentSection = ""
 
   for (const line of lines) {
     const sectionMatch = line.trim().match(/^\[([^\]]+)\]$/)
     if (sectionMatch) {
-      currentSection = sectionMatch[1].replace(/^["']|["']$/g, "")
+      currentSection = sectionMatch[1].replaceAll(/^["']|["']$/g, "")
       result.push(line)
       continue
     }
@@ -155,7 +183,10 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
           result.push(`${key} = "${config.model}"`)
           continue
         }
-        if (key === "model_reasoning_effort" && config.model_reasoning_effort !== undefined) {
+        if (
+          key === "model_reasoning_effort"
+          && config.model_reasoning_effort !== undefined
+        ) {
           result.push(`${key} = "${config.model_reasoning_effort}"`)
           continue
         }
@@ -164,24 +195,53 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
           continue
         }
       } else if (currentSection.startsWith("model_providers.")) {
-        const name = currentSection.replace("model_providers.", "").replace(/^["']|["']$/g, "")
+        const name = currentSection
+          .replace("model_providers.", "")
+          .replaceAll(/^["']|["']$/g, "")
         const provider = config.model_providers?.[name]
         if (provider) {
-          if (key === "base_url") { result.push(`base_url = "${provider.base_url}"`); continue }
-          if (key === "env_key") { result.push(`env_key = "${provider.env_key}"`); continue }
-          if (key === "name") { result.push(`name = "${provider.name}"`); continue }
+          if (key === "base_url") {
+            result.push(`base_url = "${provider.base_url}"`)
+            continue
+          }
+          if (key === "env_key") {
+            result.push(`env_key = "${provider.env_key}"`)
+            continue
+          }
+          if (key === "name") {
+            result.push(`name = "${provider.name}"`)
+            continue
+          }
         }
       } else if (currentSection.startsWith("profiles.")) {
-        const name = currentSection.replace("profiles.", "").replace(/^["']|["']$/g, "")
+        const name = currentSection
+          .replace("profiles.", "")
+          .replaceAll(/^["']|["']$/g, "")
         const profile = config.profiles?.[name]
         if (profile) {
-          if (key === "model") { result.push(`model = "${profile.model}"`); continue }
-          if (key === "model_provider") { result.push(`model_provider = "${profile.model_provider}"`); continue }
-          if (key === "model_reasoning_effort") { result.push(`model_reasoning_effort = "${profile.model_reasoning_effort}"`); continue }
-          if (key === "sandbox") { result.push(`sandbox = "${profile.sandbox}"`); continue }
+          if (key === "model") {
+            result.push(`model = "${profile.model}"`)
+            continue
+          }
+          if (key === "model_provider") {
+            result.push(`model_provider = "${profile.model_provider}"`)
+            continue
+          }
+          if (key === "model_reasoning_effort") {
+            result.push(
+              `model_reasoning_effort = "${profile.model_reasoning_effort}"`,
+            )
+            continue
+          }
+          if (key === "sandbox") {
+            result.push(`sandbox = "${profile.sandbox}"`)
+            continue
+          }
         }
       } else if (currentSection.startsWith("projects.")) {
-        const name = currentSection.replace("projects.", "").replace(/^["']|["']$/g, "")
+        const name = currentSection
+          .replace("projects.", "")
+          .replaceAll(/^["']|["']$/g, "")
         const project = config.projects?.[name]
         if (project && key === "trust_level") {
           result.push(`trust_level = "${project.trust_level}"`)
@@ -236,7 +296,9 @@ function Section({
         }}
       >
         {Icon && <Icon size={13} style={{ color: "var(--color-blue)" }} />}
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        {open ?
+          <ChevronDown size={13} />
+        : <ChevronRight size={13} />}
         {title}
         {count !== undefined && (
           <span
@@ -284,7 +346,14 @@ function Field({
   labelWidth?: number
 }) {
   return (
-    <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "center",
+        marginBottom: 10,
+      }}
+    >
       <label
         style={{
           fontSize: 12,
@@ -363,7 +432,9 @@ function ClaudeCodeEditor({
         <Field label="Auto Updates Channel">
           <input
             value={settings.autoUpdatesChannel ?? ""}
-            onChange={(e) => onChange({ ...settings, autoUpdatesChannel: e.target.value })}
+            onChange={(e) =>
+              onChange({ ...settings, autoUpdatesChannel: e.target.value })
+            }
             style={inputStyle}
             placeholder="latest"
           />
@@ -380,9 +451,12 @@ function ClaudeCodeEditor({
         >
           <input
             type="checkbox"
-            checked={!!settings.skipDangerousModePermissionPrompt}
+            checked={Boolean(settings.skipDangerousModePermissionPrompt)}
             onChange={(e) =>
-              onChange({ ...settings, skipDangerousModePermissionPrompt: e.target.checked })
+              onChange({
+                ...settings,
+                skipDangerousModePermissionPrompt: e.target.checked,
+              })
             }
             style={{ accentColor: "var(--color-blue)" }}
           />
@@ -391,9 +465,21 @@ function ClaudeCodeEditor({
       </Section>
 
       {/* Env vars */}
-      <Section title="Environment Variables" icon={Key} count={envEntries.length}>
+      <Section
+        title="Environment Variables"
+        icon={Key}
+        count={envEntries.length}
+      >
         {envEntries.map(([key, value]) => (
-          <div key={key} style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+          <div
+            key={key}
+            style={{
+              display: "flex",
+              gap: 6,
+              marginBottom: 6,
+              alignItems: "center",
+            }}
+          >
             <input
               value={key}
               onChange={(e) => setEnvKey(key, e.target.value)}
@@ -422,7 +508,7 @@ function ClaudeCodeEditor({
         ))}
         <button
           onClick={() =>
-            onChange({ ...settings, env: { ...settings.env, "NEW_VAR": "" } })
+            onChange({ ...settings, env: { ...settings.env, NEW_VAR: "" } })
           }
           style={{
             display: "flex",
@@ -443,8 +529,19 @@ function ClaudeCodeEditor({
       </Section>
 
       {/* Plugins */}
-      <Section title="Plugins" icon={Plug} count={pluginEntries.length} defaultOpen={false}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 24px" }}>
+      <Section
+        title="Plugins"
+        icon={Plug}
+        count={pluginEntries.length}
+        defaultOpen={false}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "2px 24px",
+          }}
+        >
           {pluginEntries.map(([plugin, enabled]) => (
             <label
               key={plugin}
@@ -462,7 +559,10 @@ function ClaudeCodeEditor({
                 onChange={(e) =>
                   onChange({
                     ...settings,
-                    enabledPlugins: { ...settings.enabledPlugins, [plugin]: e.target.checked },
+                    enabledPlugins: {
+                      ...settings.enabledPlugins,
+                      [plugin]: e.target.checked,
+                    },
                   })
                 }
                 style={{ accentColor: "var(--color-blue)", flexShrink: 0 }}
@@ -471,7 +571,10 @@ function ClaudeCodeEditor({
                 style={{
                   fontSize: 11,
                   fontFamily: "var(--font-mono)",
-                  color: enabled ? "var(--color-text)" : "var(--color-text-tertiary)",
+                  color:
+                    enabled ? "var(--color-text)" : (
+                      "var(--color-text-tertiary)"
+                    ),
                 }}
               >
                 {plugin}
@@ -514,12 +617,16 @@ function CodexEditor({
         <Field label="Reasoning Effort">
           <select
             value={config.model_reasoning_effort ?? ""}
-            onChange={(e) => onChange({ ...config, model_reasoning_effort: e.target.value })}
+            onChange={(e) =>
+              onChange({ ...config, model_reasoning_effort: e.target.value })
+            }
             style={{ ...inputStyle, fontFamily: "var(--font-text)" }}
           >
             <option value="">(none)</option>
             {reasoningOptions.map((o) => (
-              <option key={o} value={o}>{o}</option>
+              <option key={o} value={o}>
+                {o}
+              </option>
             ))}
           </select>
         </Field>
@@ -584,7 +691,12 @@ function CodexEditor({
             {(["base_url", "env_key"] as const).map((field) => (
               <div
                 key={field}
-                style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginBottom: 5,
+                }}
               >
                 <span
                   style={{
@@ -642,7 +754,12 @@ function CodexEditor({
       </Section>
 
       {/* Profiles */}
-      <Section title="Profiles" icon={Settings2} count={profiles.length} defaultOpen={false}>
+      <Section
+        title="Profiles"
+        icon={Settings2}
+        count={profiles.length}
+        defaultOpen={false}
+      >
         {profiles.map(([name, profile]) => (
           <div
             key={name}
@@ -692,9 +809,20 @@ function CodexEditor({
             {(["model", "model_provider", "sandbox"] as const).map((field) => (
               <div
                 key={field}
-                style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginBottom: 5,
+                }}
               >
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", minWidth: 80 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    minWidth: 80,
+                  }}
+                >
                   {field}
                 </span>
                 <input
@@ -712,8 +840,21 @@ function CodexEditor({
                 />
               </div>
             ))}
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", minWidth: 80 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 5,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  minWidth: 80,
+                }}
+              >
                 reasoning
               </span>
               <select
@@ -723,7 +864,10 @@ function CodexEditor({
                     ...config,
                     profiles: {
                       ...config.profiles,
-                      [name]: { ...profile, model_reasoning_effort: e.target.value },
+                      [name]: {
+                        ...profile,
+                        model_reasoning_effort: e.target.value,
+                      },
                     },
                   })
                 }
@@ -731,7 +875,9 @@ function CodexEditor({
               >
                 <option value="">(none)</option>
                 {reasoningOptions.map((o) => (
-                  <option key={o} value={o}>{o}</option>
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
                 ))}
               </select>
             </div>
@@ -744,7 +890,13 @@ function CodexEditor({
               ...config,
               profiles: {
                 ...config.profiles,
-                [key]: { name: key, model: "", model_provider: "", model_reasoning_effort: "", sandbox: "" },
+                [key]: {
+                  name: key,
+                  model: "",
+                  model_provider: "",
+                  model_reasoning_effort: "",
+                  sandbox: "",
+                },
               },
             })
           }}
@@ -767,11 +919,21 @@ function CodexEditor({
       </Section>
 
       {/* Projects */}
-      <Section title="Projects" icon={Settings2} count={projects.length} defaultOpen={false}>
+      <Section
+        title="Projects"
+        icon={Settings2}
+        count={projects.length}
+        defaultOpen={false}
+      >
         {projects.map(([path, project]) => (
           <div
             key={path}
-            style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              marginBottom: 6,
+            }}
           >
             <span
               style={{
@@ -845,8 +1007,9 @@ function ToolCard({
   onClick: () => void
 }) {
   const Icon = entry.language === "json" ? FileJson : FileText
-  const desc = entry.language === "json"
-    ? "~/.claude/settings.json"
+  const desc =
+    entry.language === "json" ?
+      "~/.claude/settings.json"
     : "~/.codex/config.toml"
 
   return (
@@ -858,11 +1021,14 @@ function ToolCard({
         gap: 8,
         padding: "16px 18px",
         borderRadius: "var(--radius-lg)",
-        border: isActive
-          ? "2px solid var(--color-blue)"
+        border:
+          isActive ?
+            "2px solid var(--color-blue)"
           : "1px solid var(--color-separator)",
-        background: isActive ? "var(--color-blue-fill)" : "var(--color-bg-elevated)",
-        boxShadow: isActive ? "0 0 0 3px rgba(56,189,248,0.12)" : "var(--shadow-card)",
+        background:
+          isActive ? "var(--color-blue-fill)" : "var(--color-bg-elevated)",
+        boxShadow:
+          isActive ? "0 0 0 3px rgba(56,189,248,0.12)" : "var(--shadow-card)",
         cursor: "pointer",
         textAlign: "left",
         minWidth: 220,
@@ -875,14 +1041,18 @@ function ToolCard({
             width: 34,
             height: 34,
             borderRadius: "var(--radius-md)",
-            background: isActive ? "var(--color-blue)" : "var(--color-surface-2)",
+            background:
+              isActive ? "var(--color-blue)" : "var(--color-surface-2)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             flexShrink: 0,
           }}
         >
-          <Icon size={16} color={isActive ? "white" : "var(--color-text-secondary)"} />
+          <Icon
+            size={16}
+            color={isActive ? "white" : "var(--color-text-secondary)"}
+          />
         </div>
         <div>
           <div
@@ -913,10 +1083,14 @@ function ToolCard({
             fontSize: 10,
             padding: "2px 7px",
             borderRadius: 999,
-            background: entry.exists
-              ? "rgba(74, 222, 128, 0.12)"
+            background:
+              entry.exists ?
+                "rgba(74, 222, 128, 0.12)"
               : "var(--color-surface-2)",
-            color: entry.exists ? "var(--color-green)" : "var(--color-text-tertiary)",
+            color:
+              entry.exists ? "var(--color-green)" : (
+                "var(--color-text-tertiary)"
+              ),
             fontWeight: 600,
             border: `1px solid ${entry.exists ? "rgba(74,222,128,0.3)" : "var(--color-separator)"}`,
           }}
@@ -943,7 +1117,7 @@ function ToolCard({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function ConfigPage({ showToast }: ConfigPageProps) {
-  const [configs, setConfigs] = useState<ConfigFileEntry[]>([])
+  const [configs, setConfigs] = useState<Array<ConfigFileEntry>>([])
   const [activeConfig, setActiveConfig] = useState<string | null>(null)
   const [rawContent, setRawContent] = useState("")
   const [originalContent, setOriginalContent] = useState("")
@@ -952,7 +1126,8 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const [dirty, setDirty] = useState(false)
   const [viewMode, setViewMode] = useState<"structured" | "raw">("structured")
 
-  const [claudeSettings, setClaudeSettings] = useState<ClaudeCodeSettings | null>(null)
+  const [claudeSettings, setClaudeSettings] =
+    useState<ClaudeCodeSettings | null>(null)
   const [codexConfig, setCodexConfig] = useState<CodexConfig | null>(null)
 
   useEffect(() => {
@@ -975,9 +1150,17 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
         setRawContent(resp.content)
         setOriginalContent(resp.content)
         if (activeConfig === "claude-code" && resp.content) {
-          try { setClaudeSettings(JSON.parse(resp.content)) } catch { setClaudeSettings(null) }
+          try {
+            setClaudeSettings(JSON.parse(resp.content))
+          } catch {
+            setClaudeSettings(null)
+          }
         } else if (activeConfig === "codex" && resp.content) {
-          try { setCodexConfig(parseTOML(resp.content)) } catch { setCodexConfig(null) }
+          try {
+            setCodexConfig(parseTOML(resp.content))
+          } catch {
+            setCodexConfig(null)
+          }
         }
       })
       .catch(() => showToast("Failed to load config", "error"))
@@ -1011,9 +1194,17 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
     setRawContent(originalContent)
     setDirty(false)
     if (activeConfig === "claude-code" && originalContent) {
-      try { setClaudeSettings(JSON.parse(originalContent)) } catch { /* ignore */ }
+      try {
+        setClaudeSettings(JSON.parse(originalContent))
+      } catch {
+        /* ignore */
+      }
     } else if (activeConfig === "codex" && originalContent) {
-      try { setCodexConfig(parseTOML(originalContent)) } catch { /* ignore */ }
+      try {
+        setCodexConfig(parseTOML(originalContent))
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -1026,9 +1217,9 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
 
   const activeEntry = configs.find((c) => c.name === activeConfig)
   const showStructured =
-    viewMode === "structured" &&
-    ((activeConfig === "claude-code" && claudeSettings != null) ||
-      (activeConfig === "codex" && codexConfig != null))
+    viewMode === "structured"
+    && ((activeConfig === "claude-code" && claudeSettings != null)
+      || (activeConfig === "codex" && codexConfig != null))
 
   return (
     <div>
@@ -1047,13 +1238,21 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
         >
           ToolConfig
         </h1>
-        <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: "8px 0 0" }}>
+        <p
+          style={{
+            fontSize: 14,
+            color: "var(--color-text-secondary)",
+            margin: "8px 0 0",
+          }}
+        >
           Select a tool to view and edit its configuration
         </p>
       </div>
 
       {/* Tool cards */}
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+      <div
+        style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}
+      >
         {configs.map((cfg) => (
           <ToolCard
             key={cfg.name}
@@ -1103,8 +1302,12 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                     style={{
                       padding: "4px 12px",
                       border: "none",
-                      background: viewMode === mode ? "var(--color-blue)" : "transparent",
-                      color: viewMode === mode ? "white" : "var(--color-text-secondary)",
+                      background:
+                        viewMode === mode ? "var(--color-blue)" : "transparent",
+                      color:
+                        viewMode === mode ? "white" : (
+                          "var(--color-text-secondary)"
+                        ),
                       fontSize: 11,
                       fontWeight: 600,
                       cursor: "pointer",
@@ -1118,7 +1321,9 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                   </button>
                 ))}
               </div>
-              <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
+              <span
+                style={{ fontSize: 12, color: "var(--color-text-secondary)" }}
+              >
                 {activeEntry.description}
               </span>
             </div>
@@ -1157,7 +1362,8 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                   padding: "5px 16px",
                   borderRadius: "var(--radius-md)",
                   border: "none",
-                  background: dirty ? "var(--color-blue)" : "var(--color-surface-2)",
+                  background:
+                    dirty ? "var(--color-blue)" : "var(--color-surface-2)",
                   color: dirty ? "white" : "var(--color-text-tertiary)",
                   fontSize: 12,
                   fontWeight: 600,
@@ -1172,7 +1378,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
           </div>
 
           {/* Panel body */}
-          {loading ? (
+          {loading ?
             <div
               style={{
                 padding: 40,
@@ -1183,7 +1389,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             >
               Loading {activeEntry.label}…
             </div>
-          ) : showStructured ? (
+          : showStructured ?
             <div style={{ padding: 16 }}>
               {activeConfig === "claude-code" && claudeSettings && (
                 <ClaudeCodeEditor
@@ -1204,8 +1410,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                 />
               )}
             </div>
-          ) : (
-            <textarea
+          : <textarea
               value={rawContent}
               onChange={(e) => {
                 setRawContent(e.target.value)
@@ -1227,7 +1432,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                 boxSizing: "border-box",
               }}
             />
-          )}
+          }
         </div>
       )}
     </div>

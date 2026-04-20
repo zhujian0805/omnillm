@@ -4,7 +4,15 @@
  * Tests the API functions used by the ChatPage component
  */
 
-import { describe, test, expect, beforeEach, afterEach, afterAll, mock } from "bun:test"
+import {
+  describe,
+  test,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  mock,
+} from "bun:test"
 
 // We'll test the actual API functions by mocking fetch
 const originalFetch = globalThis.fetch
@@ -13,10 +21,12 @@ describe("Chat API Functions", () => {
   beforeEach(() => {
     // Reset fetch mock before each test
     globalThis.fetch = mock(() =>
-      Promise.resolve(new Response('{"object":"list","data":[],"has_more":false}', {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      }))
+      Promise.resolve(
+        new Response('{"object":"list","data":[],"has_more":false}', {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
     ) as any
   })
 
@@ -32,10 +42,13 @@ describe("Chat API Functions", () => {
     test("should call the correct endpoint", async () => {
       const mockFetch = globalThis.fetch as any
       mockFetch.mockResolvedValueOnce(
-        new Response('{"object":"list","data":[{"id":"gpt-4","display_name":"GPT-4"}],"has_more":false}', {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
+        new Response(
+          '{"object":"list","data":[{"id":"gpt-4","display_name":"GPT-4"}],"has_more":false}',
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       )
 
       // Simulate the API call
@@ -51,8 +64,8 @@ describe("Chat API Functions", () => {
       mockFetch.mockResolvedValueOnce(
         new Response('{"error":"Not found"}', {
           status: 404,
-          headers: { 'Content-Type': 'application/json' }
-        })
+          headers: { "Content-Type": "application/json" },
+        }),
       )
 
       const response = await fetch("/models")
@@ -79,28 +92,31 @@ describe("Chat API Functions", () => {
     test("should send correct request format", async () => {
       const mockFetch = globalThis.fetch as any
       mockFetch.mockResolvedValueOnce(
-        new Response('{"id":"test","choices":[{"message":{"role":"assistant","content":"Hello"}}]}', {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
+        new Response(
+          '{"id":"test","choices":[{"message":{"role":"assistant","content":"Hello"}}]}',
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
       )
 
       const request = {
         model: "gpt-4",
         messages: [{ role: "user", content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       await fetch("/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       })
 
       expect(mockFetch).toHaveBeenCalledWith("/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       })
     })
   })
@@ -117,10 +133,10 @@ describe("Chat API Functions", () => {
             created: 0,
             created_at: "1970-01-01T00:00:00.000Z",
             owned_by: "openai",
-            display_name: "GPT-4"
-          }
+            display_name: "GPT-4",
+          },
         ],
-        has_more: false
+        has_more: false,
       }
 
       expect(validResponse.object).toBe("list")
@@ -145,16 +161,16 @@ describe("Chat API Functions", () => {
             content: [
               {
                 type: "output_text",
-                text: "Hello! How can I help you today?"
-              }
-            ]
-          }
+                text: "Hello! How can I help you today?",
+              },
+            ],
+          },
         ],
         usage: {
           input_tokens: 9,
-          output_tokens: 12
+          output_tokens: 12,
         },
-        created_at: 1775694546
+        created_at: 1775694546,
       }
 
       expect(validResponsesResponse.id).toBeTruthy()
@@ -163,7 +179,9 @@ describe("Chat API Functions", () => {
       expect(validResponsesResponse.output[0].type).toBe("message")
       expect(validResponsesResponse.output[0].role).toBe("assistant")
       expect(Array.isArray(validResponsesResponse.output[0].content)).toBe(true)
-      expect(validResponsesResponse.output[0].content[0].type).toBe("output_text")
+      expect(validResponsesResponse.output[0].content[0].type).toBe(
+        "output_text",
+      )
       expect(validResponsesResponse.output[0].content[0].text).toBeTruthy()
     })
 
@@ -175,15 +193,15 @@ describe("Chat API Functions", () => {
         content: [
           {
             type: "text",
-            text: "Hello! How can I help you today?"
-          }
+            text: "Hello! How can I help you today?",
+          },
         ],
         model: "claude-3",
         stop_reason: "end_turn",
         usage: {
           input_tokens: 9,
-          output_tokens: 12
-        }
+          output_tokens: 12,
+        },
       }
 
       expect(validAnthropicResponse.id).toBeTruthy()
@@ -204,16 +222,16 @@ describe("Chat API Functions", () => {
             index: 0,
             message: {
               role: "assistant",
-              content: "Hello! How can I assist you today?"
+              content: "Hello! How can I assist you today?",
             },
-            finish_reason: "stop"
-          }
+            finish_reason: "stop",
+          },
         ],
         usage: {
           prompt_tokens: 9,
           completion_tokens: 12,
-          total_tokens: 21
-        }
+          total_tokens: 21,
+        },
       }
 
       expect(validResponse.id).toBeTruthy()
@@ -242,8 +260,8 @@ describe("Chat API Functions", () => {
       mockFetch.mockResolvedValueOnce(
         new Response('{"error":"Internal server error"}', {
           status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        })
+          headers: { "Content-Type": "application/json" },
+        }),
       )
 
       const response = await fetch("/models")
@@ -257,10 +275,10 @@ describe("Chat API Functions", () => {
     test("should handle malformed JSON responses", async () => {
       const mockFetch = globalThis.fetch as any
       mockFetch.mockResolvedValueOnce(
-        new Response('invalid json', {
+        new Response("invalid json", {
           status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        })
+          headers: { "Content-Type": "application/json" },
+        }),
       )
 
       const response = await fetch("/models")
@@ -277,13 +295,13 @@ describe("Chat API Functions", () => {
       const openAIMessages = [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi there!" },
-        { role: "user", content: "How are you?" }
+        { role: "user", content: "How are you?" },
       ]
 
-      const responsesInput = openAIMessages.map(msg => ({
+      const responsesInput = openAIMessages.map((msg) => ({
         type: "message",
         role: msg.role,
-        content: msg.content
+        content: msg.content,
       }))
 
       expect(responsesInput).toHaveLength(3)
@@ -296,9 +314,7 @@ describe("Chat API Functions", () => {
     test("should validate required fields in responses request", () => {
       const validRequest = {
         model: "gpt-4",
-        input: [
-          { type: "message", role: "user", content: "Hello" }
-        ]
+        input: [{ type: "message", role: "user", content: "Hello" }],
       }
 
       expect(validRequest.model).toBeTruthy()
@@ -314,9 +330,7 @@ describe("Chat API Functions", () => {
     test("should validate required fields in chat completion request", () => {
       const validRequest = {
         model: "gpt-4",
-        messages: [
-          { role: "user", content: "Hello" }
-        ]
+        messages: [{ role: "user", content: "Hello" }],
       }
 
       expect(validRequest.model).toBeTruthy()
@@ -332,7 +346,7 @@ describe("Chat API Functions", () => {
         messages: [{ role: "user", content: "Hello" }],
         stream: false,
         max_tokens: 100,
-        temperature: 0.7
+        temperature: 0.7,
       }
 
       expect(typeof requestWithOptionals.stream).toBe("boolean")
@@ -349,7 +363,7 @@ describe("Chat API Functions", () => {
       const streamingRequest = {
         model: "gpt-4",
         messages: [{ role: "user", content: "Hello" }],
-        stream: true
+        stream: true,
       }
 
       expect(streamingRequest.stream).toBe(true)
@@ -360,7 +374,7 @@ describe("Chat API Functions", () => {
       const nonStreamingRequest = {
         model: "gpt-4",
         messages: [{ role: "user", content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       expect(nonStreamingRequest.stream).toBe(false)
@@ -373,11 +387,11 @@ describe("Backend Port Detection", () => {
   test("should detect common backend ports", () => {
     const commonPorts = [4141, 5002, 3000, 8000]
 
-    commonPorts.forEach(port => {
+    for (const port of commonPorts) {
       expect(typeof port).toBe("number")
       expect(port).toBeGreaterThan(0)
       expect(port).toBeLessThan(65536)
-    })
+    }
   })
 
   test("should construct valid backend URLs", () => {
@@ -395,7 +409,7 @@ describe("Message Validation", () => {
   test("should validate message structure", () => {
     const validMessage = {
       role: "user",
-      content: "Hello, how are you?"
+      content: "Hello, how are you?",
     }
 
     expect(["user", "assistant", "system"]).toContain(validMessage.role)
@@ -407,17 +421,17 @@ describe("Message Validation", () => {
     const invalidRoles = ["admin", "bot", "human", ""]
     const validRoles = ["user", "assistant", "system"]
 
-    invalidRoles.forEach(role => {
+    for (const role of invalidRoles) {
       expect(validRoles).not.toContain(role)
-    })
+    }
   })
 
   test("should handle empty content validation", () => {
     const emptyContents = ["", "   ", "\n\t", null, undefined]
 
-    emptyContents.forEach(content => {
+    for (const content of emptyContents) {
       const isValid = typeof content === "string" && content.trim().length > 0
       expect(isValid).toBe(false)
-    })
+    }
   })
 })

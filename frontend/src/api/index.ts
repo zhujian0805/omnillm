@@ -45,13 +45,7 @@ export interface ServerInfo {
   authRequired?: boolean
 }
 
-export type LogLevel =
-  | "fatal"
-  | "error"
-  | "warn"
-  | "info"
-  | "debug"
-  | "trace"
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "trace"
 
 const LOG_LEVEL_BY_SEVERITY = [
   "fatal",
@@ -65,9 +59,7 @@ const LOG_LEVEL_BY_SEVERITY = [
 function normalizeLogLevel(value: unknown): LogLevel {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase()
-    if (
-      (LOG_LEVEL_BY_SEVERITY as ReadonlyArray<string>).includes(normalized)
-    ) {
+    if ((LOG_LEVEL_BY_SEVERITY as ReadonlyArray<string>).includes(normalized)) {
       return normalized as LogLevel
     }
 
@@ -205,9 +197,12 @@ function getApiKey(): string {
     return cachedApiKey
   }
 
-  const meta = globalThis.document?.querySelector?.('meta[name="omnimodel-api-key"]')
+  const meta = globalThis.document?.querySelector?.(
+    'meta[name="omnimodel-api-key"]',
+  )
   const content = meta?.getAttribute("content")?.trim() ?? ""
-  cachedApiKey = content || (typeof __API_KEY__ !== "undefined" ? __API_KEY__ : "")
+  cachedApiKey =
+    content || (typeof __API_KEY__ !== "undefined" ? __API_KEY__ : "")
   return cachedApiKey
 }
 
@@ -269,7 +264,9 @@ async function detectBackendPort(): Promise<number> {
         )
         if (response.ok) {
           detectedBackendPort = guessedPort
-          log.info(`Auto-detected backend server on port ${guessedPort} (frontend port - 1000)`)
+          log.info(
+            `Auto-detected backend server on port ${guessedPort} (frontend port - 1000)`,
+          )
           return guessedPort
         }
       } catch {
@@ -431,10 +428,10 @@ export const authAndCreateProvider = (
     user_code?: string
     verification_uri?: string
     message?: string
-  }>(
-    `/api/admin/providers/auth-and-create/${providerType}`,
-    { method: "POST", body: JSON.stringify(body) },
-  )
+  }>(`/api/admin/providers/auth-and-create/${providerType}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const updateProviderConfig = (id: string, config: Record<string, any>) =>
@@ -497,7 +494,9 @@ export async function subscribeToLogs(
   const url = `${backendBase}/api/admin/logs/stream`
   const apiKey = getApiKey()
 
-  const es = new EventSource(apiKey ? `${url}?api_key=${encodeURIComponent(apiKey)}` : url)
+  const es = new EventSource(
+    apiKey ? `${url}?api_key=${encodeURIComponent(apiKey)}` : url,
+  )
   es.addEventListener("message", (e: Event) => {
     const event = e as MessageEvent
     onLine(event.data as string)
@@ -538,13 +537,15 @@ export async function subscribeToLogsWebSocket(
 // ─── Models ────────────────────────────────────────────────────────────────
 
 export const getModels = () =>
-  apiFetch<{ object: string; data: Array<ModelInfo>; has_more: boolean }>("/models")
+  apiFetch<{ object: string; data: Array<ModelInfo>; has_more: boolean }>(
+    "/models",
+  )
 
 // ─── Chat Completions ──────────────────────────────────────────────────────
 
 export const createChatCompletion = async (
   request: ChatCompletionRequest,
-  apiShape: "openai" | "responses" = "openai"
+  apiShape: "openai" | "responses" = "openai",
 ) => {
   let endpoint: string
   let requestBody: Record<string, unknown> = {}
@@ -555,14 +556,14 @@ export const createChatCompletion = async (
       // Convert OpenAI-style messages to Responses format
       requestBody = {
         model: request.model,
-        input: request.messages.map(msg => ({
+        input: request.messages.map((msg) => ({
           type: "message",
           role: msg.role,
-          content: msg.content
+          content: msg.content,
         })),
         max_output_tokens: request.max_tokens || 1024,
         stream: request.stream || false,
-        temperature: request.temperature
+        temperature: request.temperature,
       } as Record<string, unknown>
       break
     }
@@ -582,15 +583,19 @@ export const createChatCompletion = async (
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "text/event-stream",
+        Accept: "text/event-stream",
         ...(getApiKey() ? { Authorization: `Bearer ${getApiKey()}` } : {}),
       },
       body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as Record<string, unknown>
-      const errorMsg = typeof body.error === "string" ? body.error : `HTTP ${response.status}`
+      const body = (await response.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >
+      const errorMsg =
+        typeof body.error === "string" ? body.error : `HTTP ${response.status}`
       throw new Error(errorMsg)
     }
 
@@ -617,10 +622,18 @@ export interface ChatSessionSummary {
 
 export interface ChatSessionDetail {
   session: ChatSessionSummary
-  messages: Array<{ message_id: string; session_id: string; role: string; content: string; created_at: string }>
+  messages: Array<{
+    message_id: string
+    session_id: string
+    role: string
+    content: string
+    created_at: string
+  }>
 }
 
-function normalizeSessionSummary(raw: Record<string, unknown>): ChatSessionSummary {
+function normalizeSessionSummary(
+  raw: Record<string, unknown>,
+): ChatSessionSummary {
   const sessionId = raw.session_id ?? raw.id
   const title = raw.title
   const modelId = raw.model_id
@@ -638,9 +651,11 @@ function normalizeSessionSummary(raw: Record<string, unknown>): ChatSessionSumma
 
 export const listChatSessions = async () => {
   const response = await apiFetch<
-    Array<Record<string, unknown>> | { sessions?: Array<Record<string, unknown>> }
+    | Array<Record<string, unknown>>
+    | { sessions?: Array<Record<string, unknown>> }
   >("/api/admin/chat/sessions")
-  const sessions = Array.isArray(response) ? response : (response.sessions ?? [])
+  const sessions =
+    Array.isArray(response) ? response : (response.sessions ?? [])
   return sessions.map(normalizeSessionSummary)
 }
 
@@ -653,7 +668,9 @@ export const getChatSession = async (sessionId: string) => {
   if ("session" in response && response.session) {
     const typed = response as ChatSessionDetail
     return {
-      session: normalizeSessionSummary(typed.session as unknown as Record<string, unknown>),
+      session: normalizeSessionSummary(
+        typed.session as unknown as Record<string, unknown>,
+      ),
       messages: typed.messages.map((msg) => ({
         message_id: String(msg.message_id ?? ""),
         session_id: String(msg.session_id ?? sessionId),
@@ -682,14 +699,30 @@ export const getChatSession = async (sessionId: string) => {
   }
 }
 
-export const createChatSession = (body: { session_id: string; title: string; model_id: string; api_shape: string }) =>
-  apiFetch<{ ok?: boolean; success?: boolean; session_id?: string }>("/api/admin/chat/sessions", { method: "POST", body: JSON.stringify(body) })
+export const createChatSession = (body: {
+  session_id: string
+  title: string
+  model_id: string
+  api_shape: string
+}) =>
+  apiFetch<{ ok?: boolean; success?: boolean; session_id?: string }>(
+    "/api/admin/chat/sessions",
+    { method: "POST", body: JSON.stringify(body) },
+  )
 
-export const addChatMessage = (sessionId: string, body: { message_id: string; role: string; content: string }) =>
-  apiFetch<{ ok: boolean }>(`/api/admin/chat/sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify(body) })
+export const addChatMessage = (
+  sessionId: string,
+  body: { message_id: string; role: string; content: string },
+) =>
+  apiFetch<{ ok: boolean }>(`/api/admin/chat/sessions/${sessionId}/messages`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
 
 export const deleteChatSession = (sessionId: string) =>
-  apiFetch<{ ok: boolean }>(`/api/admin/chat/sessions/${sessionId}`, { method: "DELETE" })
+  apiFetch<{ ok: boolean }>(`/api/admin/chat/sessions/${sessionId}`, {
+    method: "DELETE",
+  })
 
 export const deleteAllChatSessions = () =>
   apiFetch<{ ok: boolean }>("/api/admin/chat/sessions", { method: "DELETE" })
@@ -726,11 +759,18 @@ export interface VirtualModelPayload {
   api_shape?: string
   lb_strategy: LbStrategy
   enabled?: boolean
-  upstreams: Array<{ provider_id?: string; model_id: string; weight?: number; priority?: number }>
+  upstreams: Array<{
+    provider_id?: string
+    model_id: string
+    weight?: number
+    priority?: number
+  }>
 }
 
 export const listVirtualModels = () =>
-  apiFetch<{ data: Array<VirtualModel> }>("/api/admin/vmodels").then((r) => r.data ?? [])
+  apiFetch<{ data: Array<VirtualModel> }>("/api/admin/vmodels").then(
+    (r) => r.data ?? [],
+  )
 
 export const getVirtualModel = (id: string) =>
   apiFetch<VirtualModel>(`/api/admin/vmodels/${encodeURIComponent(id)}`)
@@ -748,9 +788,12 @@ export const updateVirtualModel = (id: string, payload: VirtualModelPayload) =>
   })
 
 export const deleteVirtualModel = (id: string) =>
-  apiFetch<{ deleted: string }>(`/api/admin/vmodels/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  })
+  apiFetch<{ deleted: string }>(
+    `/api/admin/vmodels/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    },
+  )
 
 // ─── Config files ────────────────────────────────────────────────────────────
 
@@ -777,7 +820,10 @@ export const getConfigFile = (name: string) =>
   apiFetch<ConfigFileContent>(`/api/admin/config/${encodeURIComponent(name)}`)
 
 export const saveConfigFile = (name: string, content: string) =>
-  apiFetch<{ success: boolean; message: string }>(`/api/admin/config/${encodeURIComponent(name)}`, {
-    method: "PUT",
-    body: JSON.stringify({ content }),
-  })
+  apiFetch<{ success: boolean; message: string }>(
+    `/api/admin/config/${encodeURIComponent(name)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    },
+  )

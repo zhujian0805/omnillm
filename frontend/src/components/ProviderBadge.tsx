@@ -6,7 +6,10 @@ interface ProviderBadgeProps {
   icon?: ReactNode
 }
 
-const VARIANT_STYLES: Record<ProviderBadgeProps["variant"], { bg: string; text: string; dot: string }> = {
+const VARIANT_STYLES: Record<
+  ProviderBadgeProps["variant"],
+  { bg: string; text: string; dot: string }
+> = {
   active: {
     bg: "var(--color-green-fill)",
     text: "var(--color-green)",

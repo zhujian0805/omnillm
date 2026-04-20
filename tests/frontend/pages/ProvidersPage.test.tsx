@@ -11,20 +11,16 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
-import {
-  setupTestEnvironment,
-  resetTestEnvironment,
-  createMockProvider,
-  createMockStatus
-} from "../setup"
+
 import {
   MOCK_PROVIDERS_LIST,
   MOCK_STATUS_RESPONSE,
   MOCK_AUTH_FLOW_PENDING,
   MOCK_AUTH_FLOW_AWAITING_USER,
   MOCK_AUTH_FLOW_COMPLETE,
-  MOCK_AUTH_FLOW_ERROR
+  MOCK_AUTH_FLOW_ERROR,
 } from "../fixtures/api-responses"
+import { setupTestEnvironment, resetTestEnvironment } from "../setup"
 
 describe("ProvidersPage Component Tests", () => {
   let mockShowToast: ReturnType<typeof mock>
@@ -93,7 +89,7 @@ describe("ProvidersPage Component Tests", () => {
       // Arrange
       const mockActivate = mock(async (id: string) => ({
         success: true,
-        provider: { id, name: "Alibaba" }
+        provider: { id, name: "Alibaba" },
       }))
 
       // Act
@@ -106,7 +102,7 @@ describe("ProvidersPage Component Tests", () => {
     test("should deactivate active provider", async () => {
       // Arrange
       const mockDeactivate = mock(async (id: string) => ({
-        success: true
+        success: true,
       }))
 
       // Act
@@ -121,7 +117,7 @@ describe("ProvidersPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         "Failed to activate provider",
-        "error"
+        "error",
       )
     })
 
@@ -130,7 +126,7 @@ describe("ProvidersPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         "Provider deleted successfully",
-        "success"
+        "success",
       )
     })
 
@@ -186,8 +182,8 @@ describe("ProvidersPage Component Tests", () => {
       const mockGetModels = mock(async (id: string) => ({
         models: [
           { id: "gpt-4", name: "GPT-4", vendor: "openai", enabled: true },
-          { id: "gpt-3.5", name: "GPT-3.5", vendor: "openai", enabled: false }
-        ]
+          { id: "gpt-3.5", name: "GPT-3.5", vendor: "openai", enabled: false },
+        ],
       }))
 
       // Act
@@ -201,11 +197,13 @@ describe("ProvidersPage Component Tests", () => {
 
     test("should toggle model enabled status", async () => {
       // Arrange
-      const mockToggle = mock(async (providerId: string, modelId: string, enabled: boolean) => ({
-        success: true,
-        modelId,
-        enabled
-      }))
+      const mockToggle = mock(
+        async (providerId: string, modelId: string, enabled: boolean) => ({
+          success: true,
+          modelId,
+          enabled,
+        }),
+      )
 
       // Act
       const result = await mockToggle("github-copilot-1", "gpt-4", false)
@@ -232,7 +230,7 @@ describe("ProvidersPage Component Tests", () => {
 
     test("should display enabled model count", () => {
       const provider = MOCK_PROVIDERS_LIST.find(
-        provider => provider.type === "azure-openai"
+        (provider) => provider.type === "azure-openai",
       )
 
       expect(provider?.enabledModelCount).toBe(1)
@@ -290,13 +288,13 @@ describe("ProvidersPage Component Tests", () => {
       // Arrange
       const mockGetUsage = mock(async (id: string) => ({
         quota_snapshots: {
-          "chat": {
+          chat: {
             entitlement: 100,
             remaining: 75,
             percent_remaining: 75,
-            unlimited: false
-          }
-        }
+            unlimited: false,
+          },
+        },
       }))
 
       // Act
@@ -312,7 +310,7 @@ describe("ProvidersPage Component Tests", () => {
         entitlement: 0,
         remaining: 0,
         unlimited: true,
-        percent_remaining: 100
+        percent_remaining: 100,
       }
 
       expect(quota.unlimited).toBe(true)
@@ -323,7 +321,7 @@ describe("ProvidersPage Component Tests", () => {
         entitlement: 100,
         remaining: 50,
         percent_remaining: 50,
-        unlimited: false
+        unlimited: false,
       }
 
       const percent = (quota.remaining / quota.entitlement) * 100
@@ -338,8 +336,8 @@ describe("ProvidersPage Component Tests", () => {
         priorities: {
           "github-copilot-1": 1,
           "alibaba-1": 2,
-          "azure-1": 3
-        }
+          "azure-1": 3,
+        },
       }))
 
       // Act
@@ -352,14 +350,16 @@ describe("ProvidersPage Component Tests", () => {
 
     test("should save updated priorities", async () => {
       // Arrange
-      const mockSetPriorities = mock(async (priorities: Record<string, number>) => ({
-        success: true
-      }))
+      const mockSetPriorities = mock(
+        async (priorities: Record<string, number>) => ({
+          success: true,
+        }),
+      )
 
       const newPriorities = {
         "github-copilot-1": 2,
         "alibaba-1": 1,
-        "azure-1": 3
+        "azure-1": 3,
       }
 
       // Act
@@ -390,8 +390,8 @@ describe("ProvidersPage Component Tests", () => {
           type: providerType,
           name: "New Provider",
           isActive: false,
-          authStatus: "unauthenticated" as const
-        }
+          authStatus: "unauthenticated" as const,
+        },
       }))
 
       // Act
@@ -421,7 +421,7 @@ describe("ProvidersPage Component Tests", () => {
   describe("Provider Configuration", () => {
     test("should load Azure OpenAI deployments", () => {
       const provider = MOCK_PROVIDERS_LIST.find(
-        provider => provider.type === "azure-openai"
+        (provider) => provider.type === "azure-openai",
       )
 
       expect(provider?.config?.deployments).toContain("gpt-4-deployment")
@@ -432,12 +432,12 @@ describe("ProvidersPage Component Tests", () => {
       // Arrange
       const mockUpdateConfig = mock(async (id: string, config: any) => ({
         success: true,
-        config
+        config,
       }))
 
       const newConfig = {
         endpoint: "https://new.openai.azure.com/",
-        apiVersion: "2024-02-15-preview"
+        apiVersion: "2024-02-15-preview",
       }
 
       // Act
@@ -475,7 +475,7 @@ describe("ProvidersPage Component Tests", () => {
     test("should display rate limit info when present", () => {
       const status = {
         ...MOCK_STATUS_RESPONSE,
-        rateLimitSeconds: 60
+        rateLimitSeconds: 60,
       }
 
       expect(status.rateLimitSeconds).toBe(60)
@@ -484,7 +484,7 @@ describe("ProvidersPage Component Tests", () => {
     test("should display manual approval status", () => {
       const status = {
         ...MOCK_STATUS_RESPONSE,
-        manualApprove: true
+        manualApprove: true,
       }
 
       expect(status.manualApprove).toBe(true)
@@ -497,7 +497,7 @@ describe("ProvidersPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to activate"),
-        "error"
+        "error",
       )
     })
 
@@ -506,7 +506,7 @@ describe("ProvidersPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Network error"),
-        "error"
+        "error",
       )
     })
 
@@ -515,7 +515,7 @@ describe("ProvidersPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Invalid configuration"),
-        "error"
+        "error",
       )
     })
   })
@@ -536,7 +536,9 @@ describe("ProvidersPage Component Tests", () => {
       let pollCount = 0
       const mockGetAuthStatus = mock(async () => {
         pollCount++
-        return pollCount < 2 ? MOCK_AUTH_FLOW_AWAITING_USER : MOCK_AUTH_FLOW_COMPLETE
+        return pollCount < 2 ?
+            MOCK_AUTH_FLOW_AWAITING_USER
+          : MOCK_AUTH_FLOW_COMPLETE
       })
 
       // Simulate polling
@@ -563,23 +565,23 @@ describe("ProvidersPage Component Tests", () => {
       const buttons = [
         { label: "Activate", ariaLabel: "Activate provider" },
         { label: "Delete", ariaLabel: "Delete provider" },
-        { label: "Settings", ariaLabel: "Provider settings" }
+        { label: "Settings", ariaLabel: "Provider settings" },
       ]
 
-      buttons.forEach(btn => {
+      for (const btn of buttons) {
         expect(btn.ariaLabel).toBeTruthy()
-      })
+      }
     })
 
     test("should have form input labels", () => {
       const inputs = [
         { name: "endpoint", label: "API Endpoint" },
-        { name: "apiKey", label: "API Key" }
+        { name: "apiKey", label: "API Key" },
       ]
 
-      inputs.forEach(input => {
+      for (const input of inputs) {
         expect(input.label).toBeTruthy()
-      })
+      }
     })
   })
 })

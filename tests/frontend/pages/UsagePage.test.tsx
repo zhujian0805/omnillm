@@ -9,12 +9,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
-import {
-  setupTestEnvironment,
-  resetTestEnvironment,
-  createMockUsageData
-} from "../setup"
+
 import { MOCK_USAGE_DATA } from "../fixtures/api-responses"
+import { setupTestEnvironment, resetTestEnvironment } from "../setup"
 
 describe("UsagePage Component Tests", () => {
   let mockShowToast: any
@@ -47,7 +44,7 @@ describe("UsagePage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to load usage"),
-        "error"
+        "error",
       )
     })
 
@@ -157,18 +154,14 @@ describe("UsagePage Component Tests", () => {
 
   describe("Color Coding", () => {
     test("should color code green for >50% remaining", () => {
-      const quotas = [
-        { name: "feature1", percent: 75 }
-      ]
+      const quotas = [{ name: "feature1", percent: 75 }]
 
       const color = quotas[0].percent > 50 ? "green" : "red"
       expect(color).toBe("green")
     })
 
     test("should color code yellow for 20-50% remaining", () => {
-      const quotas = [
-        { name: "feature1", percent: 35 }
-      ]
+      const quotas = [{ name: "feature1", percent: 35 }]
 
       const getColor = (percent: number) => {
         if (percent > 50) return "green"
@@ -180,9 +173,7 @@ describe("UsagePage Component Tests", () => {
     })
 
     test("should color code red for <20% remaining", () => {
-      const quotas = [
-        { name: "feature1", percent: 15 }
-      ]
+      const quotas = [{ name: "feature1", percent: 15 }]
 
       const getColor = (percent: number) => {
         if (percent > 50) return "green"
@@ -234,7 +225,7 @@ describe("UsagePage Component Tests", () => {
         entitlement: 100,
         remaining: 0,
         percent_remaining: 0,
-        unlimited: false
+        unlimited: false,
       }
 
       expect(quota.percent_remaining).toBe(0)
@@ -246,7 +237,7 @@ describe("UsagePage Component Tests", () => {
         entitlement: 100,
         remaining: 100,
         percent_remaining: 100,
-        unlimited: false
+        unlimited: false,
       }
 
       expect(quota.percent_remaining).toBe(100)
@@ -284,7 +275,7 @@ describe("UsagePage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to refresh"),
-        "error"
+        "error",
       )
     })
   })
@@ -339,7 +330,7 @@ describe("UsagePage Component Tests", () => {
     test("should handle missing optional fields", () => {
       const data = {
         // Missing many optional fields
-        quota_snapshots: {}
+        quota_snapshots: {},
       }
 
       const hasSnapshots = "quota_snapshots" in data
@@ -372,7 +363,7 @@ describe("UsagePage Component Tests", () => {
     test("should handle empty quota snapshots", async () => {
       const mockGetEmpty = mock(async () => ({
         copilot_plan: "pro",
-        quota_snapshots: {}
+        quota_snapshots: {},
       }))
 
       // Act
@@ -392,9 +383,9 @@ describe("UsagePage Component Tests", () => {
   describe("Quota Name Mapping", () => {
     test("should display human-readable quota names", () => {
       const nameMap: Record<string, string> = {
-        "chat_operations": "Chat Operations",
-        "code_completions": "Code Completions",
-        "unlimited_feature": "Unlimited Feature"
+        chat_operations: "Chat Operations",
+        code_completions: "Code Completions",
+        unlimited_feature: "Unlimited Feature",
       }
 
       expect(nameMap["chat_operations"]).toBe("Chat Operations")
@@ -407,10 +398,10 @@ describe("UsagePage Component Tests", () => {
       const quotaNames = Object.keys(result.quota_snapshots)
 
       // Assert - Each quota should have a name
-      quotaNames.forEach(quotaId => {
+      for (const quotaId of quotaNames) {
         const hasName = quotaId.length > 0
         expect(hasName).toBe(true)
-      })
+      }
     })
   })
 
@@ -420,7 +411,7 @@ describe("UsagePage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to load usage"),
-        "error"
+        "error",
       )
     })
 
@@ -429,14 +420,14 @@ describe("UsagePage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to refresh"),
-        "error"
+        "error",
       )
     })
 
     test("should handle malformed response", async () => {
       const mockGetMalformed = mock(async () => ({
         // Missing required fields
-        invalid: "data"
+        invalid: "data",
       }))
 
       // Act
@@ -462,7 +453,10 @@ describe("UsagePage Component Tests", () => {
     })
 
     test("should have alt text for progress indicators", () => {
-      const indicator = { role: "progressbar", ariaLabel: "Chat quota: 75% remaining" }
+      const indicator = {
+        role: "progressbar",
+        ariaLabel: "Chat quota: 75% remaining",
+      }
 
       expect(indicator.role).toBe("progressbar")
       expect(indicator.ariaLabel).toBeTruthy()
@@ -471,7 +465,7 @@ describe("UsagePage Component Tests", () => {
     test("should have proper headings", () => {
       const headings = [
         { level: 2, text: "Usage Summary" },
-        { level: 3, text: "Quotas" }
+        { level: 3, text: "Quotas" },
       ]
 
       expect(headings[0].level).toBe(2)
@@ -481,7 +475,7 @@ describe("UsagePage Component Tests", () => {
 
   describe("State Persistence", () => {
     test("should save raw display preference", () => {
-      let showRaw = true
+      const showRaw = true
 
       // Save preference
       localStorage.setItem("usage-show-raw", String(showRaw))

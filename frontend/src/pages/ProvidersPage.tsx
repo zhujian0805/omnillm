@@ -26,6 +26,7 @@ import {
 } from "@/api"
 import { EmptyState } from "@/components/EmptyState"
 import { Spinner } from "@/components/Spinner"
+import { createLogger } from "@/lib/logger"
 import { AuthFlowBanner } from "@/pages/providers/components/AuthFlowBanner"
 import { GroupHeader } from "@/pages/providers/components/GroupHeader"
 import { PriorityModal } from "@/pages/providers/components/PriorityModal"
@@ -37,8 +38,6 @@ import {
   PROVIDER_TYPES as PROVIDER_TYPE_IDS,
   TYPE_NAMES,
 } from "@/pages/providers/constants/providerRegistry"
-import { getDeviceAuthCopy } from "@/lib/device-auth"
-import { createLogger } from "@/lib/logger"
 
 const _log = createLogger("providers-page")
 
@@ -311,7 +310,13 @@ function AlibabaAuthForm({
   }
   return (
     <AuthFormWrapper title="Authenticate Alibaba DashScope">
-      <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 12 }}>
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--color-text-tertiary)",
+          marginBottom: 12,
+        }}
+      >
         Only API key authentication is supported for Alibaba DashScope.
       </div>
       <FormRow label="Region">
@@ -320,9 +325,7 @@ function AlibabaAuthForm({
           value={region}
           onChange={(e) => setRegion(e.target.value)}
         >
-          <option value="global">
-            Global (dashscope-intl.aliyuncs.com)
-          </option>
+          <option value="global">Global (dashscope-intl.aliyuncs.com)</option>
           <option value="china">China (dashscope.aliyuncs.com)</option>
         </select>
       </FormRow>
@@ -660,7 +663,9 @@ function ModelsDialog({
     }
   }
 
-  const handleUpdateAPIFormat = async (nextFormat: OpenAICompatibleAPIFormat) => {
+  const handleUpdateAPIFormat = async (
+    nextFormat: OpenAICompatibleAPIFormat,
+  ) => {
     if (provider.type !== "openai-compatible" || nextFormat === apiFormat) {
       return
     }
@@ -781,9 +786,7 @@ function ModelsDialog({
                       setModels(resp?.models ?? [])
                       onModelsChanged?.()
                     } catch (e) {
-                      setError(
-                        e instanceof Error ? e.message : String(e),
-                      )
+                      setError(e instanceof Error ? e.message : String(e))
                     } finally {
                       setLoading(false)
                     }
@@ -979,7 +982,9 @@ function ModelsDialog({
                           disabled={configLoading || !newModel.trim()}
                           style={{ minWidth: 32, padding: "6px 8px" }}
                         >
-                          {configLoading ? <Spin size={12} /> : "+"}
+                          {configLoading ?
+                            <Spin size={12} />
+                          : "+"}
                         </button>
                       </div>
                       <div
@@ -989,8 +994,7 @@ function ModelsDialog({
                         }}
                       >
                         Enter model IDs to use from this endpoint. These are
-                        merged with any models returned by{" "}
-                        <code>/models</code>.
+                        merged with any models returned by <code>/models</code>.
                       </div>
                     </div>
                   )}
@@ -1321,7 +1325,9 @@ function ModelsMenuItem({
     }
   }
 
-  const handleUpdateAPIFormat = async (nextFormat: OpenAICompatibleAPIFormat) => {
+  const handleUpdateAPIFormat = async (
+    nextFormat: OpenAICompatibleAPIFormat,
+  ) => {
     if (provider.type !== "openai-compatible" || nextFormat === apiFormat) {
       return
     }
@@ -1381,10 +1387,7 @@ function ModelsMenuItem({
 
   return (
     <>
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={handleOpen}
-      >
+      <button className="btn btn-ghost btn-sm" onClick={handleOpen}>
         Models
         {provider.totalModelCount != null && provider.totalModelCount > 0 && (
           <span
@@ -1446,9 +1449,7 @@ function ModelsMenuItem({
                       setModels(resp?.models ?? [])
                       onModelsChanged?.()
                     } catch (e) {
-                      setError(
-                        e instanceof Error ? e.message : String(e),
-                      )
+                      setError(e instanceof Error ? e.message : String(e))
                     } finally {
                       setLoading(false)
                     }
@@ -1643,7 +1644,9 @@ function ModelsMenuItem({
                           disabled={configLoading || !newModel.trim()}
                           style={{ minWidth: 32, padding: "6px 8px" }}
                         >
-                          {configLoading ? <Spin size={12} /> : "+"}
+                          {configLoading ?
+                            <Spin size={12} />
+                          : "+"}
                         </button>
                       </div>
                       <div
@@ -1653,8 +1656,7 @@ function ModelsMenuItem({
                         }}
                       >
                         Enter model IDs to use from this endpoint. These are
-                        merged with any models returned by{" "}
-                        <code>/models</code>.
+                        merged with any models returned by <code>/models</code>.
                       </div>
                     </div>
                   )}
@@ -1834,10 +1836,7 @@ function UsageMenuItem({ provider }: { provider: Provider }) {
 
   return (
     <>
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={handleOpen}
-      >
+      <button className="btn btn-ghost btn-sm" onClick={handleOpen}>
         Usage
       </button>
 
@@ -2682,9 +2681,7 @@ function AddProviderFlow({
           {selectedType === "google" && (
             <AddFlowGoogleForm {...authFormProps} />
           )}
-          {selectedType === "kimi" && (
-            <AddFlowKimiForm {...authFormProps} />
-          )}
+          {selectedType === "kimi" && <AddFlowKimiForm {...authFormProps} />}
           {selectedType === "openai-compatible" && (
             <AddFlowOpenAICompatibleForm {...authFormProps} />
           )}
@@ -2859,7 +2856,10 @@ function AddFlowAlibabaForm({
           onChange={setPlan}
           accent="#ff9f0a"
           options={[
-            { value: "standard", label: "Standard (pay-as-you-go, recommended for qwen3.6-plus)" },
+            {
+              value: "standard",
+              label: "Standard (pay-as-you-go, recommended for qwen3.6-plus)",
+            },
             { value: "coding-plan", label: "Coding Plan" },
           ]}
         />
@@ -2870,9 +2870,7 @@ function AddFlowAlibabaForm({
           onChange={(e) => setRegion(e.target.value)}
           style={addFlowControlStyle}
         >
-          <option value="global">
-            Global (dashscope-intl.aliyuncs.com)
-          </option>
+          <option value="global">Global (dashscope-intl.aliyuncs.com)</option>
           <option value="china">China (dashscope.aliyuncs.com)</option>
         </select>
       </FormRow>
@@ -2899,8 +2897,8 @@ function AddFlowAlibabaForm({
         />
       </FormRow>
       <AddFlowHint>
-        Standard is the right default for `qwen3.6-plus`. Use Coding Plan
-        only when you have a dedicated Coding Plan key and base URL.
+        Standard is the right default for `qwen3.6-plus`. Use Coding Plan only
+        when you have a dedicated Coding Plan key and base URL.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
         <button
@@ -2948,7 +2946,8 @@ function AddFlowCopilotForm({
         />
       </FormRow>
       <AddFlowHint>
-        Enter your GitHub Copilot token. You can generate one from GitHub Settings → Developer settings → Personal access tokens.
+        Enter your GitHub Copilot token. You can generate one from GitHub
+        Settings → Developer settings → Personal access tokens.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button
@@ -3151,11 +3150,7 @@ function AddFlowGoogleForm({
   )
 }
 
-function AddFlowKimiForm({
-  onSubmit,
-  onCancel,
-  submitting,
-}: AddFlowFormProps) {
+function AddFlowKimiForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
   const [apiKey, setApiKey] = useState("")
   const submit = async () => {
     await onSubmit({ method: "api-key", apiKey })
@@ -3334,8 +3329,8 @@ function AddFlowOpenAICompatibleForm({
       </FormRow>
       <AddFlowHint>
         Connect to any OpenAI-compatible endpoint — Ollama, vLLM, LM Studio,
-        llama.cpp, or a hosted service. Auto uses Responses for official
-        OpenAI when traffic comes in through <code>/v1/messages</code> or{" "}
+        llama.cpp, or a hosted service. Auto uses Responses for official OpenAI
+        when traffic comes in through <code>/v1/messages</code> or{" "}
         <code>/v1/responses</code>, and Chat Completions otherwise. Add model
         IDs upfront, or add them later from the Models panel.
       </AddFlowHint>
@@ -3468,7 +3463,9 @@ function AddProviderModal({
                         setOpen(false)
                       }}
                       className="provider-type-btn"
-                      style={{ "--provider-accent": accent } as React.CSSProperties}
+                      style={
+                        { "--provider-accent": accent } as React.CSSProperties
+                      }
                     >
                       <div
                         style={{
@@ -3857,7 +3854,11 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            className={showActiveOnly ? "btn btn-primary btn-sm" : "btn btn-secondary btn-sm"}
+            className={
+              showActiveOnly ?
+                "btn btn-primary btn-sm"
+              : "btn btn-secondary btn-sm"
+            }
             onClick={() => setShowActiveOnly((v) => !v)}
           >
             {showActiveOnly ? "All" : "Active only"}
@@ -3884,15 +3885,14 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
       <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
         {Object.entries(completeGroups)
           .map(([providerType, typeProviders]) => {
-            const visibleProviders = showActiveOnly
-              ? typeProviders.filter((p) => p.isActive)
+            const visibleProviders =
+              showActiveOnly ?
+                typeProviders.filter((p) => p.isActive)
               : typeProviders
             if (showActiveOnly && visibleProviders.length === 0) return null
-            return [providerType, visibleProviders] as [string, Provider[]]
+            return [providerType, visibleProviders] as [string, Array<Provider>]
           })
-          .filter(
-            (entry): entry is [string, Provider[]] => entry !== null,
-          )
+          .filter((entry): entry is [string, Array<Provider>] => entry !== null)
           .sort(([, a], [, b]) => {
             if (a.length > 0 && b.length === 0) return -1
             if (a.length === 0 && b.length > 0) return 1
@@ -3945,7 +3945,11 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
                         />
                       ))
                     : <EmptyState
-                        icon={PROVIDER_ICONS[providerType] ?? <span style={{ fontSize: 20 }}>◌</span>}
+                        icon={
+                          PROVIDER_ICONS[providerType] ?? (
+                            <span style={{ fontSize: 20 }}>◌</span>
+                          )
+                        }
                         title={`No ${TYPE_NAMES[providerType]} accounts configured`}
                         description="Add an account to start using this provider type."
                         action={{

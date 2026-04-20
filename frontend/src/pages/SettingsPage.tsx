@@ -300,7 +300,10 @@ export function AboutPage({
                   >
                     {baseUrl}
                   </code>
-                  <button className="btn btn-ghost btn-sm" onClick={() => copy(baseUrl)}>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => copy(baseUrl)}
+                  >
                     Copy
                   </button>
                 </div>
@@ -374,10 +377,7 @@ export function AboutPage({
               Runtime State
             </div>
             <div style={card}>
-              <DataRow
-                label="Active Provider"
-                value={displayedProvider}
-              />
+              <DataRow label="Active Provider" value={displayedProvider} />
               <DataRow
                 label="Available Models"
                 value={String(status.modelCount)}

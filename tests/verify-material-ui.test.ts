@@ -35,7 +35,7 @@ describe("Material UI Verification", () => {
 
       const html = await response.text()
       expect(html).toContain("OmniModel Admin")
-      expect(html).toContain("id=\"root\"")
+      expect(html).toContain('id="root"')
       expect(html).toContain("main.tsx")
       console.log("✅ Frontend is loading correctly")
     } catch (error) {
@@ -47,9 +47,12 @@ describe("Material UI Verification", () => {
   test("✅ Material Design components should build without errors", async () => {
     try {
       // Test that we can create and delete providers (Material UI functionality)
-      const createRes = await fetch(`${API_BASE}/api/admin/providers/alibaba/add-instance`, {
-        method: "POST"
-      })
+      const createRes = await fetch(
+        `${API_BASE}/api/admin/providers/alibaba/add-instance`,
+        {
+          method: "POST",
+        },
+      )
       expect(createRes.ok).toBe(true)
 
       const result = await createRes.json()
@@ -58,9 +61,12 @@ describe("Material UI Verification", () => {
       const providerId = result.provider.id
 
       // Clean up
-      const deleteRes = await fetch(`${API_BASE}/api/admin/providers/${providerId}`, {
-        method: "DELETE"
-      })
+      const deleteRes = await fetch(
+        `${API_BASE}/api/admin/providers/${providerId}`,
+        {
+          method: "DELETE",
+        },
+      )
       expect(deleteRes.ok).toBe(true)
 
       console.log("✅ Material Design components are functioning correctly")
@@ -71,14 +77,22 @@ describe("Material UI Verification", () => {
   })
 
   test("✅ All provider types should be available", async () => {
-    const providerTypes = ["github-copilot", "alibaba", "antigravity", "azure-openai"]
-    const createdProviders: string[] = []
+    const providerTypes = [
+      "github-copilot",
+      "alibaba",
+      "antigravity",
+      "azure-openai",
+    ]
+    const createdProviders: Array<string> = []
 
     try {
       for (const type of providerTypes) {
-        const response = await fetch(`${API_BASE}/api/admin/providers/${type}/add-instance`, {
-          method: "POST"
-        })
+        const response = await fetch(
+          `${API_BASE}/api/admin/providers/${type}/add-instance`,
+          {
+            method: "POST",
+          },
+        )
         expect(response.ok).toBe(true)
 
         const result = await response.json()
@@ -94,11 +108,13 @@ describe("Material UI Verification", () => {
       await Promise.all(
         createdProviders.map(async (id) => {
           try {
-            await fetch(`${API_BASE}/api/admin/providers/${id}`, { method: "DELETE" })
+            await fetch(`${API_BASE}/api/admin/providers/${id}`, {
+              method: "DELETE",
+            })
           } catch {
             // Ignore cleanup errors
           }
-        })
+        }),
       )
     }
   })
@@ -129,12 +145,12 @@ describe("Material UI Verification", () => {
 
   test("✅ Build system should be working", async () => {
     try {
-      const { spawn } = require("child_process")
+      const { spawn } = require("node:child_process")
 
       // Run build command
       const buildProcess = spawn("bun", ["run", "build"], {
         stdio: "pipe",
-        shell: true
+        shell: true,
       })
 
       let buildOutput = ""

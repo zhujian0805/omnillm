@@ -13,13 +13,12 @@ import {
   type Provider,
   type Model,
 } from "@/api"
+import { createLogger } from "@/lib/logger"
 import {
   detectModelFamily,
   formatVirtualModelUpstreamSummary,
   resolveUpstreamProvider,
 } from "@/lib/vmodels"
-
-import { createLogger } from "@/lib/logger"
 
 const _log = createLogger("vmodel-page")
 
@@ -27,12 +26,29 @@ interface Props {
   showToast: (msg: string, type?: "success" | "error") => void
 }
 
-const LB_STRATEGIES: Array<{ value: LbStrategy; label: string; hint: string }> = [
-  { value: "round-robin", label: "Round-robin", hint: "Cycle through upstreams in order" },
-  { value: "random", label: "Random", hint: "Pick a random upstream each request" },
-  { value: "priority", label: "Priority / failover", hint: "Highest-priority upstream first" },
-  { value: "weighted", label: "Weighted", hint: "Distribute by numeric weight" },
-]
+const LB_STRATEGIES: Array<{ value: LbStrategy; label: string; hint: string }> =
+  [
+    {
+      value: "round-robin",
+      label: "Round-robin",
+      hint: "Cycle through upstreams in order",
+    },
+    {
+      value: "random",
+      label: "Random",
+      hint: "Pick a random upstream each request",
+    },
+    {
+      value: "priority",
+      label: "Priority / failover",
+      hint: "Highest-priority upstream first",
+    },
+    {
+      value: "weighted",
+      label: "Weighted",
+      hint: "Distribute by numeric weight",
+    },
+  ]
 
 const emptyForm = (): Partial<VirtualModel> => ({
   virtual_model_id: "",
@@ -60,12 +76,16 @@ export function VmodelPage({ showToast }: Props) {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<VirtualModel | null>(null)
   const [form, setForm] = useState<Partial<VirtualModel>>(emptyForm())
-  const [upstreamRows, setUpstreamRows] = useState<Array<UpstreamRow>>([emptyUpstreamRow()])
+  const [upstreamRows, setUpstreamRows] = useState<Array<UpstreamRow>>([
+    emptyUpstreamRow(),
+  ])
   const [saving, setSaving] = useState(false)
   const [isNew, setIsNew] = useState(false)
 
   const [providers, setProviders] = useState<Array<Provider>>([])
-  const [providerModels, setProviderModels] = useState<Record<string, Array<Model>>>({})
+  const [providerModels, setProviderModels] = useState<
+    Record<string, Array<Model>>
+  >({})
   const [catalogueLoading, setCatalogueLoading] = useState(false)
 
   const load = useCallback(async () => {
@@ -122,7 +142,11 @@ export function VmodelPage({ showToast }: Props) {
     )
   }
 
-  const setRowNum = (i: number, field: "weight" | "priority", value: number) => {
+  const setRowNum = (
+    i: number,
+    field: "weight" | "priority",
+    value: number,
+  ) => {
     setUpstreamRows((prev) =>
       prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)),
     )
@@ -144,10 +168,14 @@ export function VmodelPage({ showToast }: Props) {
     setIsNew(false)
     setForm({ ...vm })
     const rows: Array<UpstreamRow> = (
-      vm.upstreams.length ? vm.upstreams : [{ model_id: "", weight: 1, priority: 0 }]
-    ).map((u) => {
-      const selectedProviderId = u.provider_id
-        ?? providers.find((p) => (providerModels[p.id] ?? []).some((m) => m.id === u.model_id))?.id
+      vm.upstreams.length > 0 ?
+        vm.upstreams
+      : [{ model_id: "", weight: 1, priority: 0 }]).map((u) => {
+      const selectedProviderId =
+        u.provider_id
+        ?? providers.find((p) =>
+          (providerModels[p.id] ?? []).some((m) => m.id === u.model_id),
+        )?.id
         ?? ""
       return { ...u, selectedProviderId }
     })
@@ -201,20 +229,23 @@ export function VmodelPage({ showToast }: Props) {
         await createVirtualModel(payload as VirtualModel)
         showToast("Virtual model created", "success")
       } else {
-        await updateVirtualModel(form.virtual_model_id!, payload as VirtualModel)
+        await updateVirtualModel(form.virtual_model_id, payload as VirtualModel)
         showToast("Virtual model updated", "success")
       }
       closeForm()
       await load()
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : "Failed to save virtual model", "error")
+      showToast(
+        err instanceof Error ? err.message : "Failed to save virtual model",
+        "error",
+      )
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm(`Delete virtual model "${id}"?`)) return
+    if (!globalThis.confirm(`Delete virtual model "${id}"?`)) return
     try {
       await deleteVirtualModel(id)
       showToast("Deleted", "success")
@@ -239,7 +270,9 @@ export function VmodelPage({ showToast }: Props) {
   }
 
   return (
-    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}>
+    <div
+      style={{ padding: 24, display: "flex", flexDirection: "column", gap: 24 }}
+    >
       <div
         style={{
           display: "flex",
@@ -271,7 +304,8 @@ export function VmodelPage({ showToast }: Props) {
               maxWidth: 720,
             }}
           >
-            Create stable model aliases and route requests across multiple upstream providers.
+            Create stable model aliases and route requests across multiple
+            upstream providers.
           </p>
         </div>
         <button className="btn btn-primary" onClick={openNew}>
@@ -282,7 +316,8 @@ export function VmodelPage({ showToast }: Props) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isEditing ? "minmax(320px, 380px) minmax(0, 1fr)" : "1fr",
+          gridTemplateColumns:
+            isEditing ? "minmax(320px, 380px) minmax(0, 1fr)" : "1fr",
           gap: 24,
           alignItems: "start",
         }}
@@ -319,22 +354,31 @@ export function VmodelPage({ showToast }: Props) {
             </div>
           </div>
 
-          {loading ? (
+          {loading ?
             <div style={emptyStateStyle}>Loading virtual models…</div>
-          ) : vmodels.length === 0 ? (
+          : vmodels.length === 0 ?
             <div style={emptyStateStyle}>
-              No virtual models yet. Click <strong>+ New Virtual Model</strong> to create one.
+              No virtual models yet. Click <strong>+ New Virtual Model</strong>{" "}
+              to create one.
             </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {vmodels.map((vm) => {
-                const isSelected = selected?.virtual_model_id === vm.virtual_model_id
+                const isSelected =
+                  selected?.virtual_model_id === vm.virtual_model_id
                 const virtualFamily = detectModelFamily(vm.virtual_model_id)
-                const primaryUpstreamFamily = vm.upstreams.length > 0 ? detectModelFamily(vm.upstreams[0].model_id) : null
+                const primaryUpstreamFamily =
+                  vm.upstreams.length > 0 ?
+                    detectModelFamily(vm.upstreams[0].model_id)
+                  : null
                 const hasFamilyMismatch = Boolean(
-                  virtualFamily && primaryUpstreamFamily && virtualFamily !== primaryUpstreamFamily,
+                  virtualFamily
+                    && primaryUpstreamFamily
+                    && virtualFamily !== primaryUpstreamFamily,
                 )
-                const upstreamSummary = formatVirtualModelUpstreamSummary(vm, upstreamResolutionContext)
+                const upstreamSummary = formatVirtualModelUpstreamSummary(
+                  vm,
+                  upstreamResolutionContext,
+                )
                 const showVmWeight = vm.lb_strategy === "weighted"
                 const showVmPriority = vm.lb_strategy === "priority"
                 return (
@@ -391,15 +435,23 @@ export function VmodelPage({ showToast }: Props) {
                         >
                           <Badge>{vm.lb_strategy}</Badge>
                           <Badge>{vm.api_shape}</Badge>
-                          <Badge>{vm.upstreams.length} upstream{vm.upstreams.length !== 1 ? "s" : ""}</Badge>
+                          <Badge>
+                            {vm.upstreams.length} upstream
+                            {vm.upstreams.length !== 1 ? "s" : ""}
+                          </Badge>
                           <Badge tone={vm.enabled ? "green" : "neutral"}>
                             {vm.enabled ? "enabled" : "disabled"}
                           </Badge>
-                          {hasFamilyMismatch && <Badge tone="amber">family mismatch</Badge>}
+                          {hasFamilyMismatch && (
+                            <Badge tone="amber">family mismatch</Badge>
+                          )}
                         </div>
                         {hasFamilyMismatch && (
                           <div style={warningBoxStyle}>
-                            Virtual model looks like <strong>{virtualFamily}</strong> but primary upstream routes to <strong>{primaryUpstreamFamily}</strong>.
+                            Virtual model looks like{" "}
+                            <strong>{virtualFamily}</strong> but primary
+                            upstream routes to{" "}
+                            <strong>{primaryUpstreamFamily}</strong>.
                           </div>
                         )}
                         <div
@@ -413,17 +465,59 @@ export function VmodelPage({ showToast }: Props) {
                           }}
                         >
                           {vm.upstreams.map((upstream, index) => {
-                            const { providerLabel, isLegacy } = resolveUpstreamProvider(upstream, upstreamResolutionContext)
+                            const { providerLabel, isLegacy } =
+                              resolveUpstreamProvider(
+                                upstream,
+                                upstreamResolutionContext,
+                              )
                             return (
-                              <div key={`${vm.virtual_model_id}-${index}`} style={{ display: "flex", gap: 6, minWidth: 0 }}>
-                                <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>{index + 1}.</span>
-                                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${providerLabel} · ${upstream.model_id}${showVmWeight ? ` · weight ${upstream.weight ?? 1}` : ""}${showVmPriority ? ` · priority ${upstream.priority ?? 0}` : ""}`}>
+                              <div
+                                key={`${vm.virtual_model_id}-${index}`}
+                                style={{ display: "flex", gap: 6, minWidth: 0 }}
+                              >
+                                <span
+                                  style={{
+                                    color: "var(--color-text-tertiary)",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {index + 1}.
+                                </span>
+                                <span
+                                  style={{
+                                    minWidth: 0,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title={`${providerLabel} · ${upstream.model_id}${showVmWeight ? ` · weight ${upstream.weight ?? 1}` : ""}${showVmPriority ? ` · priority ${upstream.priority ?? 0}` : ""}`}
+                                >
                                   {providerLabel}
                                   {" · "}
-                                  <span style={{ fontFamily: "var(--font-mono)" }}>{upstream.model_id}</span>
-                                  {showVmWeight && <span style={{ color: "var(--color-text-tertiary)" }}>{` · w${upstream.weight ?? 1}`}</span>}
-                                  {showVmPriority && <span style={{ color: "var(--color-text-tertiary)" }}>{` · p${upstream.priority ?? 0}`}</span>}
-                                  {isLegacy && <span style={{ marginLeft: 6 }}><Badge tone="amber">legacy</Badge></span>}
+                                  <span
+                                    style={{ fontFamily: "var(--font-mono)" }}
+                                  >
+                                    {upstream.model_id}
+                                  </span>
+                                  {showVmWeight && (
+                                    <span
+                                      style={{
+                                        color: "var(--color-text-tertiary)",
+                                      }}
+                                    >{` · w${upstream.weight ?? 1}`}</span>
+                                  )}
+                                  {showVmPriority && (
+                                    <span
+                                      style={{
+                                        color: "var(--color-text-tertiary)",
+                                      }}
+                                    >{` · p${upstream.priority ?? 0}`}</span>
+                                  )}
+                                  {isLegacy && (
+                                    <span style={{ marginLeft: 6 }}>
+                                      <Badge tone="amber">legacy</Badge>
+                                    </span>
+                                  )}
                                 </span>
                               </div>
                             )
@@ -432,12 +526,21 @@ export function VmodelPage({ showToast }: Props) {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                            gridTemplateColumns:
+                              "repeat(auto-fit, minmax(120px, 1fr))",
                             gap: 6,
                           }}
                         >
-                          <MetaItem label="Updated" value={formatTimestamp(vm.updated_at)} compact />
-                          <MetaItem label="Description" value={vm.description || "—"} compact />
+                          <MetaItem
+                            label="Updated"
+                            value={formatTimestamp(vm.updated_at)}
+                            compact
+                          />
+                          <MetaItem
+                            label="Description"
+                            value={vm.description || "—"}
+                            compact
+                          />
                         </div>
                       </div>
                       <button
@@ -455,7 +558,7 @@ export function VmodelPage({ showToast }: Props) {
                 )
               })}
             </div>
-          )}
+          }
         </section>
 
         {isEditing && (
@@ -477,7 +580,9 @@ export function VmodelPage({ showToast }: Props) {
                     color: "var(--color-text)",
                   }}
                 >
-                  {isNew ? "New Virtual Model" : selected?.name || selected?.virtual_model_id}
+                  {isNew ?
+                    "New Virtual Model"
+                  : selected?.name || selected?.virtual_model_id}
                 </div>
                 <div
                   style={{
@@ -486,7 +591,9 @@ export function VmodelPage({ showToast }: Props) {
                     marginTop: 4,
                   }}
                 >
-                  {isNew ? "Create a new routed model alias" : `Editing ${selected?.virtual_model_id}`}
+                  {isNew ?
+                    "Create a new routed model alias"
+                  : `Editing ${selected?.virtual_model_id}`}
                 </div>
               </div>
               <button className="btn btn-ghost btn-sm" onClick={closeForm}>
@@ -504,64 +611,130 @@ export function VmodelPage({ showToast }: Props) {
                     gap: 10,
                   }}
                 >
-                  <MetaItem label="Virtual model ID" value={form.virtual_model_id || "—"} mono />
-                  <MetaItem label="API shape" value={form.api_shape || "openai"} />
-                  <MetaItem label="Strategy" value={form.lb_strategy || "round-robin"} />
-                  <MetaItem label="Upstreams" value={String(upstreamRows.filter((row) => row.model_id.trim()).length)} />
+                  <MetaItem
+                    label="Virtual model ID"
+                    value={form.virtual_model_id || "—"}
+                    mono
+                  />
+                  <MetaItem
+                    label="API shape"
+                    value={form.api_shape || "openai"}
+                  />
+                  <MetaItem
+                    label="Strategy"
+                    value={form.lb_strategy || "round-robin"}
+                  />
+                  <MetaItem
+                    label="Upstreams"
+                    value={String(
+                      upstreamRows.filter((row) => row.model_id.trim()).length,
+                    )}
+                  />
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                >
                   <div style={sectionTitleStyle}>Current routing</div>
-                  <div style={sectionHintStyle}>This virtual model currently routes to these exact upstream model ids.</div>
+                  <div style={sectionHintStyle}>
+                    This virtual model currently routes to these exact upstream
+                    model ids.
+                  </div>
                   {(() => {
-                    const summaryVirtualFamily = detectModelFamily(form.virtual_model_id)
-                    const summaryPrimaryFamily = upstreamRows[0]?.model_id ? detectModelFamily(upstreamRows[0].model_id) : null
-                    const summaryMismatch = Boolean(
-                      summaryVirtualFamily && summaryPrimaryFamily && summaryVirtualFamily !== summaryPrimaryFamily,
+                    const summaryVirtualFamily = detectModelFamily(
+                      form.virtual_model_id,
                     )
-                    return summaryMismatch ? (
-                      <div style={warningBoxStyle}>
-                        Virtual model looks like <strong>{summaryVirtualFamily}</strong> but primary upstream routes to <strong>{summaryPrimaryFamily}</strong>.
-                      </div>
-                    ) : null
-                  })()}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {upstreamRows.filter((row) => row.model_id.trim()).map((row, index) => {
-                      const providerLabel = row.selectedProviderId
-                        ? (providerNameById[row.selectedProviderId] ?? row.selectedProviderId)
-                        : row.provider_id
-                          ? (providerNameById[row.provider_id] ?? row.provider_id)
-                          : "Legacy provider not resolved"
-                      const routeLabel =
-                        form.lb_strategy === "priority"
-                          ? index === 0
-                            ? "Primary"
-                            : `Fallback ${index}`
-                          : form.lb_strategy === "weighted"
-                            ? `Weight ${row.weight ?? 1}`
-                            : form.lb_strategy === "round-robin"
-                              ? `Round-robin ${index + 1}`
-                              : `Random ${index + 1}`
-                      return (
-                        <div key={`summary-${index}`} style={routingRowStyle}>
-                          <span style={routingLabelStyle}>{routeLabel}</span>
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {providerLabel}
-                            {" · "}
-                            <span style={{ fontFamily: "var(--font-mono)" }}>{row.model_id}</span>
-                            {form.lb_strategy === "priority" && <span style={{ color: "var(--color-text-tertiary)" }}>{` · p${row.priority ?? 0}`}</span>}
-                            {form.lb_strategy === "weighted" && <span style={{ color: "var(--color-text-tertiary)" }}>{` · w${row.weight ?? 1}`}</span>}
-                          </span>
+                    const summaryPrimaryFamily =
+                      upstreamRows[0]?.model_id ?
+                        detectModelFamily(upstreamRows[0].model_id)
+                      : null
+                    const summaryMismatch = Boolean(
+                      summaryVirtualFamily
+                        && summaryPrimaryFamily
+                        && summaryVirtualFamily !== summaryPrimaryFamily,
+                    )
+                    return summaryMismatch ?
+                        <div style={warningBoxStyle}>
+                          Virtual model looks like{" "}
+                          <strong>{summaryVirtualFamily}</strong> but primary
+                          upstream routes to{" "}
+                          <strong>{summaryPrimaryFamily}</strong>.
                         </div>
-                      )
-                    })}
+                      : null
+                  })()}
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                  >
+                    {upstreamRows
+                      .filter((row) => row.model_id.trim())
+                      .map((row, index) => {
+                        const providerLabel =
+                          row.selectedProviderId ?
+                            (providerNameById[row.selectedProviderId]
+                            ?? row.selectedProviderId)
+                          : row.provider_id ?
+                            (providerNameById[row.provider_id]
+                            ?? row.provider_id)
+                          : "Legacy provider not resolved"
+                        const routeLabel =
+                          form.lb_strategy === "priority" ?
+                            index === 0 ?
+                              "Primary"
+                            : `Fallback ${index}`
+                          : form.lb_strategy === "weighted" ?
+                            `Weight ${row.weight ?? 1}`
+                          : form.lb_strategy === "round-robin" ?
+                            `Round-robin ${index + 1}`
+                          : `Random ${index + 1}`
+                        return (
+                          <div key={`summary-${index}`} style={routingRowStyle}>
+                            <span style={routingLabelStyle}>{routeLabel}</span>
+                            <span
+                              style={{
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {providerLabel}
+                              {" · "}
+                              <span style={{ fontFamily: "var(--font-mono)" }}>
+                                {row.model_id}
+                              </span>
+                              {form.lb_strategy === "priority" && (
+                                <span
+                                  style={{
+                                    color: "var(--color-text-tertiary)",
+                                  }}
+                                >{` · p${row.priority ?? 0}`}</span>
+                              )}
+                              {form.lb_strategy === "weighted" && (
+                                <span
+                                  style={{
+                                    color: "var(--color-text-tertiary)",
+                                  }}
+                                >{` · w${row.weight ?? 1}`}</span>
+                              )}
+                            </span>
+                          </div>
+                        )
+                      })}
                   </div>
                 </div>
                 <div style={formGridStyle}>
-                  <Field label="Model ID" hint="Unique identifier exposed via /v1/models">
+                  <Field
+                    label="Model ID"
+                    hint="Unique identifier exposed via /v1/models"
+                  >
                     <input
                       className="sys-input"
                       value={form.virtual_model_id ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, virtual_model_id: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          virtual_model_id: e.target.value,
+                        }))
+                      }
                       disabled={!isNew}
                       placeholder="e.g. claude-mythos-5.0"
                     />
@@ -571,7 +744,9 @@ export function VmodelPage({ showToast }: Props) {
                     <input
                       className="sys-input"
                       value={form.name ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, name: e.target.value }))
+                      }
                       placeholder="My Virtual Model"
                     />
                   </Field>
@@ -580,7 +755,9 @@ export function VmodelPage({ showToast }: Props) {
                     <input
                       className="sys-input"
                       value={form.description ?? ""}
-                      onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, description: e.target.value }))
+                      }
                       placeholder="What this virtual model does"
                     />
                   </Field>
@@ -589,7 +766,12 @@ export function VmodelPage({ showToast }: Props) {
                     <select
                       className="sys-select"
                       value={form.lb_strategy ?? "round-robin"}
-                      onChange={(e) => setForm((f) => ({ ...f, lb_strategy: e.target.value as LbStrategy }))}
+                      onChange={(e) =>
+                        setForm((f) => ({
+                          ...f,
+                          lb_strategy: e.target.value as LbStrategy,
+                        }))
+                      }
                     >
                       {LB_STRATEGIES.map((s) => (
                         <option key={s.value} value={s.value}>
@@ -607,7 +789,9 @@ export function VmodelPage({ showToast }: Props) {
                   <input
                     type="checkbox"
                     checked={form.enabled ?? true}
-                    onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, enabled: e.target.checked }))
+                    }
                     style={{ width: 16, height: 16, cursor: "pointer" }}
                   />
                 </div>
@@ -626,7 +810,8 @@ export function VmodelPage({ showToast }: Props) {
                   <div>
                     <div style={sectionTitleStyle}>Upstream models</div>
                     <div style={sectionHintStyle}>
-                      Choose provider/model pairs that this virtual model can route to.
+                      Choose provider/model pairs that this virtual model can
+                      route to.
                     </div>
                   </div>
                   <button className="btn btn-ghost btn-sm" onClick={addRow}>
@@ -635,25 +820,38 @@ export function VmodelPage({ showToast }: Props) {
                 </div>
 
                 {catalogueLoading && (
-                  <div style={{ ...emptyStateStyle, padding: 12, marginBottom: 12 }}>
+                  <div
+                    style={{
+                      ...emptyStateStyle,
+                      padding: 12,
+                      marginBottom: 12,
+                    }}
+                  >
                     Loading providers…
                   </div>
                 )}
 
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
+                >
                   {upstreamRows.map((row, i) => {
-                    const availableModels = row.selectedProviderId
-                      ? (providerModels[row.selectedProviderId] ?? [])
+                    const availableModels =
+                      row.selectedProviderId ?
+                        (providerModels[row.selectedProviderId] ?? [])
                       : []
 
                     return (
                       <div key={i} style={upstreamCardStyle}>
-                        <div style={upstreamGridStyle(showWeight, showPriority)}>
+                        <div
+                          style={upstreamGridStyle(showWeight, showPriority)}
+                        >
                           <Field label="Provider">
                             <select
                               className="sys-select"
                               value={row.selectedProviderId}
-                              onChange={(e) => setRowProvider(i, e.target.value)}
+                              onChange={(e) =>
+                                setRowProvider(i, e.target.value)
+                              }
                             >
                               <option value="">— provider —</option>
                               {providers.map((p) => (
@@ -687,7 +885,9 @@ export function VmodelPage({ showToast }: Props) {
                                 type="number"
                                 min={1}
                                 value={row.weight}
-                                onChange={(e) => setRowNum(i, "weight", Number(e.target.value))}
+                                onChange={(e) =>
+                                  setRowNum(i, "weight", Number(e.target.value))
+                                }
                               />
                             </Field>
                           )}
@@ -699,13 +899,25 @@ export function VmodelPage({ showToast }: Props) {
                                 type="number"
                                 min={0}
                                 value={row.priority}
-                                onChange={(e) => setRowNum(i, "priority", Number(e.target.value))}
+                                onChange={(e) =>
+                                  setRowNum(
+                                    i,
+                                    "priority",
+                                    Number(e.target.value),
+                                  )
+                                }
                               />
                             </Field>
                           )}
                         </div>
 
-                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            marginTop: 12,
+                          }}
+                        >
                           <button
                             className="btn btn-ghost btn-sm"
                             onClick={() => removeRow(i)}
@@ -722,22 +934,41 @@ export function VmodelPage({ showToast }: Props) {
                 {(showWeight || showPriority) && (
                   <div style={sectionHintStyle}>
                     {showWeight && "Weight: higher value = more traffic. "}
-                    {showPriority && "Priority: lower number = higher priority (0 = first choice)."}
+                    {showPriority
+                      && "Priority: lower number = higher priority (0 = first choice)."}
                   </div>
                 )}
               </div>
 
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  justifyContent: "flex-end",
+                  flexWrap: "wrap",
+                }}
+              >
                 {!isNew && selected && (
-                  <button className="btn btn-ghost" onClick={() => handleDelete(selected.virtual_model_id)}>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => handleDelete(selected.virtual_model_id)}
+                  >
                     Delete
                   </button>
                 )}
                 <button className="btn btn-ghost" onClick={closeForm}>
                   Cancel
                 </button>
-                <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving…" : isNew ? "Create" : "Save"}
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  {saving ?
+                    "Saving…"
+                  : isNew ?
+                    "Create"
+                  : "Save"}
                 </button>
               </div>
             </div>
@@ -793,23 +1024,17 @@ function Badge({
         borderRadius: 999,
         fontWeight: 600,
         background:
-          tone === "green"
-            ? "rgba(48,209,88,0.12)"
-            : tone === "amber"
-              ? "rgba(255,159,10,0.12)"
-              : "rgba(255,255,255,0.06)",
+          tone === "green" ? "rgba(48,209,88,0.12)"
+          : tone === "amber" ? "rgba(255,159,10,0.12)"
+          : "rgba(255,255,255,0.06)",
         color:
-          tone === "green"
-            ? "var(--color-green)"
-            : tone === "amber"
-              ? "var(--color-orange)"
-              : "var(--color-text-tertiary)",
+          tone === "green" ? "var(--color-green)"
+          : tone === "amber" ? "var(--color-orange)"
+          : "var(--color-text-tertiary)",
         border:
-          tone === "green"
-            ? "1px solid rgba(48,209,88,0.2)"
-            : tone === "amber"
-              ? "1px solid rgba(255,159,10,0.2)"
-              : "1px solid var(--color-separator)",
+          tone === "green" ? "1px solid rgba(48,209,88,0.2)"
+          : tone === "amber" ? "1px solid rgba(255,159,10,0.2)"
+          : "1px solid var(--color-separator)",
       }}
     >
       {children}
@@ -942,7 +1167,10 @@ const upstreamCardStyle: React.CSSProperties = {
   background: "var(--color-bg-elevated)",
 }
 
-function upstreamGridStyle(showWeight: boolean, showPriority: boolean): React.CSSProperties {
+function upstreamGridStyle(
+  showWeight: boolean,
+  showPriority: boolean,
+): React.CSSProperties {
   return {
     display: "grid",
     gridTemplateColumns: `minmax(180px, 1fr) minmax(220px, 1.2fr)${showWeight ? " 110px" : ""}${showPriority ? " 110px" : ""}`,

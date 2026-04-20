@@ -9,7 +9,14 @@ interface FieldProps {
   required?: boolean
 }
 
-export function Field({ label, htmlFor, children, description, error, required }: FieldProps) {
+export function Field({
+  label,
+  htmlFor,
+  children,
+  description,
+  error,
+  required,
+}: FieldProps) {
   return (
     <div style={{ marginBottom: 16 }}>
       <label

@@ -7,9 +7,17 @@ export function StatsBar({
   providers: Array<Provider>
   totalActive: number
 }) {
-  const totalModels = providers.reduce((sum, p) => sum + (p.totalModelCount ?? 0), 0)
-  const enabledModels = providers.reduce((sum, p) => sum + (p.enabledModelCount ?? 0), 0)
-  const authCount = providers.filter((p) => p.authStatus === "authenticated").length
+  const totalModels = providers.reduce(
+    (sum, p) => sum + (p.totalModelCount ?? 0),
+    0,
+  )
+  const enabledModels = providers.reduce(
+    (sum, p) => sum + (p.enabledModelCount ?? 0),
+    0,
+  )
+  const authCount = providers.filter(
+    (p) => p.authStatus === "authenticated",
+  ).length
 
   const stats = [
     {
@@ -17,7 +25,16 @@ export function StatsBar({
       value: totalActive,
       color: "var(--color-green)",
       icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
           <polyline points="22 4 12 14.08 9 11.08" />
         </svg>
@@ -28,7 +45,16 @@ export function StatsBar({
       value: providers.length,
       color: "var(--color-blue)",
       icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <rect x="2" y="3" width="20" height="14" rx="2" />
           <line x1="8" y1="21" x2="16" y2="21" />
           <line x1="12" y1="17" x2="12" y2="21" />
@@ -41,7 +67,16 @@ export function StatsBar({
       suffix: totalModels > 0 ? ` / ${totalModels}` : "",
       color: "var(--color-orange)",
       icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M12 2L2 7l10 5 10-5-10-5z" />
           <path d="M2 17l10 5 10-5" />
           <path d="M2 12l10 5 10-5" />
@@ -53,7 +88,16 @@ export function StatsBar({
       value: authCount,
       color: "var(--color-text-secondary)",
       icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <rect x="3" y="11" width="18" height="11" rx="2" />
           <path d="M7 11V7a5 5 0 0 1 10 0v4" />
         </svg>

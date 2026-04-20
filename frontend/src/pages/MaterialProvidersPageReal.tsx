@@ -1,6 +1,5 @@
 import {
   Add as AddIcon,
-  Delete as DeleteIcon,
   Settings as SettingsIcon,
   Warning as WarningIcon,
   Link as LinkIcon,

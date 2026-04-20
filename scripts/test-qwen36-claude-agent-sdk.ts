@@ -5,11 +5,10 @@ import {
   type SDKAssistantMessage,
   type SDKResultMessage,
 } from "@anthropic-ai/claude-agent-sdk"
-import { dirname, resolve } from "node:path"
+import { resolve } from "node:path"
 import process from "node:process"
-import { fileURLToPath } from "node:url"
 
-const scriptDir = dirname(fileURLToPath(import.meta.url))
+const scriptDir = import.meta.dirname
 const repoRoot = resolve(scriptDir, "..")
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:5000"
@@ -46,13 +45,13 @@ type ToolUseObservation = {
 }
 
 type RunSummary = {
-  assistantText: string[]
+  assistantText: Array<string>
   messageCount: number
   resultMessage: SDKResultMessage | null
-  stderrLines: string[]
+  stderrLines: Array<string>
   streamEventCount: number
   toolCounts: Map<string, number>
-  toolUses: ToolUseObservation[]
+  toolUses: Array<ToolUseObservation>
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -64,7 +63,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
-function parseToolList(value: string | undefined): string[] {
+function parseToolList(value: string | undefined): Array<string> {
   if (!value) {
     return [...DEFAULT_ALLOWED_TOOLS]
   }
@@ -85,7 +84,7 @@ function truncate(text: string, maxLength: number): string {
 }
 
 function preview(text: string): string {
-  return truncate(text.replace(/\s+/g, " ").trim(), 160)
+  return truncate(text.replaceAll(/\s+/g, " ").trim(), 160)
 }
 
 function safeStringify(value: unknown): string {
@@ -102,16 +101,18 @@ function trackTool(toolCounts: Map<string, number>, toolName: string): void {
   toolCounts.set(toolName, (toolCounts.get(toolName) ?? 0) + 1)
 }
 
-function pushBounded(lines: string[], value: string, maxLines = 60): void {
+function pushBounded(lines: Array<string>, value: string, maxLines = 60): void {
   lines.push(value)
   if (lines.length > maxLines) {
     lines.splice(0, lines.length - maxLines)
   }
 }
 
-function assistantBlocks(message: SDKAssistantMessage): ContentBlockLike[] {
+function assistantBlocks(
+  message: SDKAssistantMessage,
+): Array<ContentBlockLike> {
   const { content } = message.message
-  return Array.isArray(content) ? (content as ContentBlockLike[]) : []
+  return Array.isArray(content) ? (content as Array<ContentBlockLike>) : []
 }
 
 function modelRequestHeaders(apiKey: string): Record<string, string> {
@@ -155,8 +156,8 @@ async function verifyBackendModel(
   }
 }
 
-function validateSummary(summary: RunSummary): string[] {
-  const failures: string[] = []
+function validateSummary(summary: RunSummary): Array<string> {
+  const failures: Array<string> = []
   const resultMessage = summary.resultMessage
 
   if (resultMessage == null) {
@@ -260,8 +261,7 @@ function printSummary(summary: RunSummary): void {
 }
 
 async function main(): Promise<void> {
-  const baseUrl =
-    process.env.OMNIMODEL_CLAUDE_BASE_URL ?? DEFAULT_BASE_URL
+  const baseUrl = process.env.OMNIMODEL_CLAUDE_BASE_URL ?? DEFAULT_BASE_URL
   const model = process.env.OMNIMODEL_CLAUDE_MODEL ?? DEFAULT_MODEL
   const apiKey =
     process.env.OMNIMODEL_CLAUDE_API_KEY ?? "sk-omnimodel-local-test"
@@ -304,10 +304,10 @@ async function main(): Promise<void> {
   try {
     const messageStream = query({
       prompt,
-        options: {
-          abortController,
-          allowedTools,
-          cwd: repoRoot,
+      options: {
+        abortController,
+        allowedTools,
+        cwd: repoRoot,
         env: {
           ...process.env,
           ANTHROPIC_API_KEY: apiKey,
@@ -352,9 +352,7 @@ async function main(): Promise<void> {
             const inputPreview = preview(safeStringify(block.input))
             summary.toolUses.push({ inputPreview, toolName, toolUseId })
             trackTool(summary.toolCounts, toolName)
-            console.log(
-              `[tool_use] ${toolName} (${toolUseId}) ${inputPreview}`,
-            )
+            console.log(`[tool_use] ${toolName} (${toolUseId}) ${inputPreview}`)
             continue
           }
 
@@ -388,12 +386,14 @@ async function main(): Promise<void> {
         continue
       }
 
-      if (message.type === "system" && "subtype" in message) {
-        if (message.subtype === "api_retry") {
-          console.log(
-            `[api_retry] attempt ${message.attempt}/${message.max_retries} after ${message.error}`,
-          )
-        }
+      if (
+        message.type === "system"
+        && "subtype" in message
+        && message.subtype === "api_retry"
+      ) {
+        console.log(
+          `[api_retry] attempt ${message.attempt}/${message.max_retries} after ${message.error}`,
+        )
       }
     }
   } catch (error: unknown) {

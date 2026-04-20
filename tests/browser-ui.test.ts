@@ -6,7 +6,7 @@
  * Note: Requires the development server to be running on localhost:5175
  */
 
-import { describe, test, expect, beforeAll, afterAll } from "bun:test"
+import { describe, test, expect, beforeAll } from "bun:test"
 
 const FRONTEND_URL = "http://localhost:5175/admin/"
 
@@ -20,11 +20,14 @@ async function testPageAccessibility(url: string) {
   }
 }
 
-async function testPageContainsElements(url: string, expectedElements: string[]) {
+async function testPageContainsElements(
+  url: string,
+  expectedElements: Array<string>,
+) {
   const { ok, html } = await testPageAccessibility(url)
   if (!ok) return false
 
-  return expectedElements.every(element => html.includes(element))
+  return expectedElements.every((element) => html.includes(element))
 }
 
 describe("Material Design UI Browser Tests", () => {
@@ -35,10 +38,14 @@ describe("Material Design UI Browser Tests", () => {
       const response = await fetch(FRONTEND_URL)
       frontendAvailable = response.ok
       if (!frontendAvailable) {
-        console.warn("Frontend server not available. Run 'bun run dev' to start it.")
+        console.warn(
+          "Frontend server not available. Run 'bun run dev' to start it.",
+        )
       }
     } catch {
-      console.warn("Frontend server not available. Run 'bun run dev' to start it.")
+      console.warn(
+        "Frontend server not available. Run 'bun run dev' to start it.",
+      )
     }
   })
 
@@ -54,12 +61,12 @@ describe("Material Design UI Browser Tests", () => {
 
       // Check for basic structure (this is the dev server template)
       expect(html).toContain("OmniModel Admin") // Title from HTML template
-      expect(html).toContain("id=\"root\"") // React mount point
+      expect(html).toContain('id="root"') // React mount point
       expect(html).toContain("main.tsx") // Main React entry point
 
       // Check that React and JavaScript modules are being loaded
       expect(html).toContain("script")
-      expect(html).toContain("type=\"module\"")
+      expect(html).toContain('type="module"')
     })
 
     test("should load with Material Design scripts", async () => {
@@ -108,12 +115,13 @@ describe("Material Design UI Browser Tests", () => {
       const cssLinkMatch = html.match(/href="([^"]*\.css[^"]*)"/)
       if (cssLinkMatch) {
         const cssUrl = cssLinkMatch[1]
-        const fullCssUrl = cssUrl.startsWith('http') ? cssUrl : `http://localhost:5175${cssUrl}`
+        const fullCssUrl =
+          cssUrl.startsWith("http") ? cssUrl : `http://localhost:5175${cssUrl}`
 
         try {
           const cssResponse = await fetch(fullCssUrl)
           expect(cssResponse.ok).toBe(true)
-        } catch (error) {
+        } catch {
           console.warn(`CSS asset not accessible: ${fullCssUrl}`)
         }
       }
@@ -132,12 +140,13 @@ describe("Material Design UI Browser Tests", () => {
       const jsLinkMatch = html.match(/src="([^"]*\.js[^"]*)"/)
       if (jsLinkMatch) {
         const jsUrl = jsLinkMatch[1]
-        const fullJsUrl = jsUrl.startsWith('http') ? jsUrl : `http://localhost:5175${jsUrl}`
+        const fullJsUrl =
+          jsUrl.startsWith("http") ? jsUrl : `http://localhost:5175${jsUrl}`
 
         try {
           const jsResponse = await fetch(fullJsUrl)
           expect(jsResponse.ok).toBe(true)
-        } catch (error) {
+        } catch {
           console.warn(`JS asset not accessible: ${fullJsUrl}`)
         }
       }
@@ -173,12 +182,14 @@ describe("Material Design UI Browser Tests", () => {
       // Check for main application structure
       const expectedElements = [
         "header", // Should have header
-        "main",   // Should have main content
+        "main", // Should have main content
         "OmniModel", // App title
         "Material Design", // Should mention Material Design when toggled
       ]
 
-      const hasRequiredElements = expectedElements.some(element => html.includes(element))
+      const hasRequiredElements = expectedElements.some((element) =>
+        html.includes(element),
+      )
       expect(hasRequiredElements).toBe(true)
     })
 
@@ -200,10 +211,12 @@ describe("Material Design UI Browser Tests", () => {
         "Uncaught",
         "is not defined",
         "404 Not Found",
-        "500 Internal Server Error"
+        "500 Internal Server Error",
       ]
 
-      const hasErrors = errorIndicators.some(error => html.toLowerCase().includes(error.toLowerCase()))
+      const hasErrors = errorIndicators.some((error) =>
+        html.toLowerCase().includes(error.toLowerCase()),
+      )
       expect(hasErrors).toBe(false)
     })
   })
@@ -262,7 +275,9 @@ describe("Material Design UI Browser Tests", () => {
       }
 
       // Try invalid hash
-      const { ok } = await testPageAccessibility(FRONTEND_URL + "#invalid-route")
+      const { ok } = await testPageAccessibility(
+        FRONTEND_URL + "#invalid-route",
+      )
       expect(ok).toBe(true) // Should still serve the page, handle routing client-side
     })
   })

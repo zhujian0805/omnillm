@@ -1,8 +1,4 @@
-import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-} from "@mui/icons-material"
+import { Add as AddIcon, Edit as EditIcon } from "@mui/icons-material"
 import {
   Box,
   Card,

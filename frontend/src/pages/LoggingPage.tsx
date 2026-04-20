@@ -13,8 +13,8 @@ import {
   updateLogLevel,
   type LogLevel,
 } from "@/api"
-import { parseLogLine } from "@/lib/logs"
 import { createLogger } from "@/lib/logger"
+import { parseLogLine } from "@/lib/logs"
 
 const log = createLogger("logging-page")
 
@@ -373,7 +373,10 @@ export function LoggingPage({
               onChange={async (e) => {
                 const newLevel = e.target.value as LogLevel
                 try {
-                  log.info("changing log level", { from: logLevel, to: newLevel })
+                  log.info("changing log level", {
+                    from: logLevel,
+                    to: newLevel,
+                  })
                   await updateLogLevel(newLevel)
                   setLogLevelState(newLevel)
                   showToast(
@@ -535,7 +538,7 @@ export function LoggingPage({
                   color: "var(--color-text)",
                 }}
               >
-                {lines.map((line, index) => (
+                {lines.map((line, index) =>
                   (() => {
                     const parsed = parseLogLine(line)
                     const tone = getLogToneStyles(parsed.levelNumber)
@@ -570,9 +573,6 @@ export function LoggingPage({
                       >
                         {parsed.level}
                       </span>,
-                    )
-
-                    segments.push(
                       <span
                         key="message"
                         style={{ color: "var(--color-text)", fontWeight: 600 }}
@@ -598,9 +598,7 @@ export function LoggingPage({
                           key={`${field.key}-${field.value}`}
                           style={{ color: "var(--color-text-secondary)" }}
                         >
-                          <span
-                            style={{ color: "var(--color-text-tertiary)" }}
-                          >
+                          <span style={{ color: "var(--color-text-tertiary)" }}>
                             {field.key}=
                           </span>
                           <span style={{ color: "var(--color-text)" }}>
@@ -651,8 +649,8 @@ export function LoggingPage({
                         </div>
                       </div>
                     )
-                  })()
-                ))}
+                  })(),
+                )}
               </div>
             }
           </div>

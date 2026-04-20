@@ -9,17 +9,15 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
-import {
-  setupTestEnvironment,
-  resetTestEnvironment
-} from "../setup"
+
 import {
   MOCK_MODELS_RESPONSE,
   MOCK_CHAT_SESSIONS,
   MOCK_CHAT_COMPLETION_OPENAI,
   MOCK_CHAT_COMPLETION_ANTHROPIC,
-  MOCK_CHAT_COMPLETION_RESPONSES
+  MOCK_CHAT_COMPLETION_RESPONSES,
 } from "../fixtures/api-responses"
+import { setupTestEnvironment, resetTestEnvironment } from "../setup"
 
 describe("Chat Workflow Integration Tests", () => {
   let _mockShowToast: ReturnType<typeof mock>
@@ -46,9 +44,11 @@ describe("Chat Workflow Integration Tests", () => {
       expect(selectedModel).toBe("gpt-4")
 
       // Step 3: Send message
-      const mockSendMessage = mock(async (_model: string, _message: string) => ({
-        status: "sending"
-      }))
+      const mockSendMessage = mock(
+        async (_model: string, _message: string) => ({
+          status: "sending",
+        }),
+      )
       await mockSendMessage(selectedModel, "Hello, how are you?")
 
       // Step 4: Receive response
@@ -63,28 +63,30 @@ describe("Chat Workflow Integration Tests", () => {
     test("should create session after first message", async () => {
       const mockCreateSession = mock(async (data: Record<string, unknown>) => ({
         ok: true,
-        session_id: data.session_id
+        session_id: data.session_id,
       }))
 
       const sessionData = {
         session_id: "new-session-456",
         title: "New Chat",
         model_id: "gpt-4",
-        api_shape: "openai"
+        api_shape: "openai",
       }
 
       const result = await mockCreateSession(sessionData)
       expect(result.ok).toBe(true)
 
       // Step 2: Add message to session
-      const mockAddMessage = mock(async (sessionId: string, _message: Record<string, unknown>) => ({
-        ok: true
-      }))
+      const mockAddMessage = mock(
+        async (sessionId: string, _message: Record<string, unknown>) => ({
+          ok: true,
+        }),
+      )
 
       await mockAddMessage(result.session_id as string, {
         message_id: "msg-1",
         role: "user",
-        content: "Hello"
+        content: "Hello",
       })
 
       expect(mockCreateSession).toHaveBeenCalled()
@@ -92,16 +94,18 @@ describe("Chat Workflow Integration Tests", () => {
     })
 
     test("should maintain conversation history across messages", async () => {
-      const messages: Array<{ role: "user" | "assistant"; content: string }> = []
+      const messages: Array<{ role: "user" | "assistant"; content: string }> =
+        []
 
       // Add user message
-      messages.push({ role: "user", content: "What is TypeScript?" })
-
-      // Add assistant response
-      messages.push({ role: "assistant", content: "TypeScript is a typed superset of JavaScript..." })
-
-      // Add follow-up message
-      messages.push({ role: "user", content: "How do I use it with React?" })
+      messages.push(
+        { role: "user", content: "What is TypeScript?" },
+        {
+          role: "assistant",
+          content: "TypeScript is a typed superset of JavaScript...",
+        },
+        { role: "user", content: "How do I use it with React?" },
+      )
 
       expect(messages).toHaveLength(3)
       expect(messages[0].content).toBe("What is TypeScript?")
@@ -111,12 +115,14 @@ describe("Chat Workflow Integration Tests", () => {
 
   describe("OpenAI API Shape Workflow", () => {
     test("should complete workflow with OpenAI API shape", async () => {
-      const mockCreateCompletion = mock(async (request: Record<string, unknown>) => MOCK_CHAT_COMPLETION_OPENAI)
+      const mockCreateCompletion = mock(
+        async (request: Record<string, unknown>) => MOCK_CHAT_COMPLETION_OPENAI,
+      )
 
       const request = {
         model: "gpt-4",
         messages: [{ role: "user", content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       const response = await mockCreateCompletion(request)
@@ -129,13 +135,16 @@ describe("Chat Workflow Integration Tests", () => {
 
   describe("Anthropic API Shape Workflow", () => {
     test("should complete workflow with Anthropic API shape", async () => {
-      const mockCreateCompletion = mock(async (request: Record<string, unknown>) => MOCK_CHAT_COMPLETION_ANTHROPIC)
+      const mockCreateCompletion = mock(
+        async (request: Record<string, unknown>) =>
+          MOCK_CHAT_COMPLETION_ANTHROPIC,
+      )
 
       // Request in OpenAI format
       const request = {
         model: "claude-3",
         messages: [{ role: "user", content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       const response = await mockCreateCompletion(request)
@@ -148,12 +157,15 @@ describe("Chat Workflow Integration Tests", () => {
 
   describe("Responses API Shape Workflow", () => {
     test("should complete workflow with Responses API shape", async () => {
-      const mockCreateCompletion = mock(async (request: Record<string, unknown>) => MOCK_CHAT_COMPLETION_RESPONSES)
+      const mockCreateCompletion = mock(
+        async (request: Record<string, unknown>) =>
+          MOCK_CHAT_COMPLETION_RESPONSES,
+      )
 
       const request = {
         model: "gpt-4",
         messages: [{ role: "user", content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       const response = await mockCreateCompletion(request)
@@ -176,20 +188,20 @@ describe("Chat Workflow Integration Tests", () => {
       // Load full session details
       const mockGetSession = mock(async (_id: string) => ({
         session: selectedSession,
-        messages: [
-          { role: "user" as const, content: "Previous message" }
-        ]
+        messages: [{ role: "user" as const, content: "Previous message" }],
       }))
 
       const sessionDetails = await mockGetSession(selectedSession.session_id)
       expect(sessionDetails.messages).toHaveLength(1)
 
       // Add new message
-      const mockAddMessage = mock(async (_id: string, _msg: Record<string, unknown>) => ({ ok: true }))
+      const mockAddMessage = mock(
+        async (_id: string, _msg: Record<string, unknown>) => ({ ok: true }),
+      )
       await mockAddMessage(selectedSession.session_id, {
         message_id: "msg-new",
         role: "user",
-        content: "Continue from previous"
+        content: "Continue from previous",
       })
 
       expect(mockListSessions).toHaveBeenCalled()
@@ -227,7 +239,7 @@ describe("Chat Workflow Integration Tests", () => {
 
       expect(_mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Chat error"),
-        "error"
+        "error",
       )
 
       // Should allow user to retry
@@ -243,7 +255,10 @@ describe("Chat Workflow Integration Tests", () => {
 
       if (!availableModels.includes(selectedModel)) {
         selectedModel = availableModels[0]
-        _mockShowToast("Model unavailable, switched to available model", "error")
+        _mockShowToast(
+          "Model unavailable, switched to available model",
+          "error",
+        )
       }
 
       expect(selectedModel).toBe("gpt-3.5")
@@ -254,8 +269,8 @@ describe("Chat Workflow Integration Tests", () => {
       const mockCreateCompletion = mock(async () => ({
         id: "response-123",
         choices: [
-          { index: 0, message: null } // Missing message
-        ]
+          { index: 0, message: null }, // Missing message
+        ],
       }))
 
       const response = await mockCreateCompletion()
@@ -332,11 +347,13 @@ describe("Chat Workflow Integration Tests", () => {
       expect(sessions).toHaveLength(3)
 
       // Add message to session
-      const mockAddMessage = mock(async (_id: string, _msg: Record<string, unknown>) => ({ ok: true }))
+      const mockAddMessage = mock(
+        async (_id: string, _msg: Record<string, unknown>) => ({ ok: true }),
+      )
       await mockAddMessage("session-1", {
         message_id: "new-msg",
         role: "assistant",
-        content: "Response"
+        content: "Response",
       })
 
       // Refresh sessions list
@@ -352,7 +369,7 @@ describe("Chat Workflow Integration Tests", () => {
       const mockGetModels = mock(async () => ({
         object: "list",
         data: [],
-        has_more: false
+        has_more: false,
       }))
 
       const result = await mockGetModels()

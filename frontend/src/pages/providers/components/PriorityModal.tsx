@@ -68,7 +68,10 @@ export function PriorityModal({
               >
                 Routing Priority
               </div>
-              <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setOpen(false)}
+              >
                 ✕
               </button>
             </div>
@@ -108,8 +111,12 @@ export function PriorityModal({
                     >
                       {i + 1}
                     </span>
-                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{p.name}</span>
-                    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>
+                      {p.name}
+                    </span>
+                    <div
+                      style={{ display: "flex", gap: 4, alignItems: "center" }}
+                    >
                       <button
                         onClick={() => handleMove(i, -1)}
                         disabled={i === 0}
@@ -117,7 +124,10 @@ export function PriorityModal({
                           background: "transparent",
                           border: "1px solid var(--color-separator)",
                           borderRadius: 4,
-                          color: i === 0 ? "var(--color-text-tertiary)" : "var(--color-text)",
+                          color:
+                            i === 0 ?
+                              "var(--color-text-tertiary)"
+                            : "var(--color-text)",
                           cursor: i === 0 ? "not-allowed" : "pointer",
                           opacity: i === 0 ? 0.3 : 1,
                           padding: "2px 8px",
@@ -136,13 +146,20 @@ export function PriorityModal({
                           background: "transparent",
                           border: "1px solid var(--color-separator)",
                           borderRadius: 4,
-                          color: i === ordered.length - 1 ? "var(--color-text-tertiary)" : "var(--color-text)",
-                          cursor: i === ordered.length - 1 ? "not-allowed" : "pointer",
+                          color:
+                            i === ordered.length - 1 ?
+                              "var(--color-text-tertiary)"
+                            : "var(--color-text)",
+                          cursor:
+                            i === ordered.length - 1 ?
+                              "not-allowed"
+                            : "pointer",
                           opacity: i === ordered.length - 1 ? 0.3 : 1,
                           padding: "2px 8px",
                           fontSize: 14,
                           lineHeight: 1,
-                          pointerEvents: i === ordered.length - 1 ? "none" : "auto",
+                          pointerEvents:
+                            i === ordered.length - 1 ? "none" : "auto",
                         }}
                         title="Move down"
                       >
@@ -152,8 +169,18 @@ export function PriorityModal({
                   </div>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 20 }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  justifyContent: "flex-end",
+                  marginTop: 20,
+                }}
+              >
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setOpen(false)}
+                >
                   Cancel
                 </button>
                 <button className="btn btn-primary btn-sm" onClick={handleSave}>

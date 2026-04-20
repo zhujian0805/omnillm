@@ -26,12 +26,12 @@
     "omni": "bun run omni-dev.ts",
     "prepare": "simple-git-hooks",
     "test": "bun test --timeout 30000 tests/",
-    "test:qwen36:agent-sdk": "bun run scripts/test-qwen36-claude-agent-sdk.ts",
     "test:frontend": "bun test tests/frontend/",
     "test:frontend:edge-cases": "bun test tests/frontend/edge-cases/",
     "test:frontend:integration": "bun test tests/frontend/integration/",
     "test:frontend:pages": "bun test tests/frontend/pages/",
     "test:frontend:watch": "bun test --watch tests/frontend/",
+    "test:qwen36:agent-sdk": "bun run scripts/test-qwen36-claude-agent-sdk.ts",
     "typecheck": "tsc -p frontend/tsconfig.json"
   },
   "simple-git-hooks": {
@@ -39,6 +39,9 @@
   },
   "lint-staged": {
     "*": "bun run lint --fix"
+  },
+  "overrides": {
+    "hono": "^4.12.14"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -77,8 +80,5 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "^8.0.8"
-  },
-  "overrides": {
-    "hono": "^4.12.14"
   }
 }

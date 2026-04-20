@@ -1,6 +1,7 @@
 import type { ComponentType } from "react"
 
 import type { AuthFlow, Provider } from "@/api"
+
 import { getDeviceAuthCopy } from "@/lib/device-auth"
 
 export function AuthFlowBanner({
@@ -14,11 +15,17 @@ export function AuthFlowBanner({
   onCancel: () => void
   Spin: ComponentType<{ size?: number }>
 }) {
-  if (!authFlow || authFlow.status === "complete" || authFlow.status === "error") {
+  if (
+    !authFlow
+    || authFlow.status === "complete"
+    || authFlow.status === "error"
+  ) {
     return null
   }
 
-  const name = providers.find((p) => p.id === authFlow.providerId)?.name ?? authFlow.providerId
+  const name =
+    providers.find((p) => p.id === authFlow.providerId)?.name
+    ?? authFlow.providerId
   const authCopy = getDeviceAuthCopy(authFlow, providers)
 
   return (
@@ -124,8 +131,14 @@ export function AuthFlowBanner({
               >
                 {authFlow.instructionURL}
               </div>
-              <a href={authFlow.instructionURL} target="_blank" rel="noopener noreferrer">
-                <button className="btn btn-amber btn-sm">Open in Browser ↗</button>
+              <a
+                href={authFlow.instructionURL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <button className="btn btn-amber btn-sm">
+                  Open in Browser ↗
+                </button>
               </a>
             </div>
           )}
@@ -142,7 +155,11 @@ export function AuthFlowBanner({
             {authCopy.waitingLabel}
           </div>
           <div>
-            <button className="btn btn-sm" style={{ color: "var(--color-text-secondary)" }} onClick={onCancel}>
+            <button
+              className="btn btn-sm"
+              style={{ color: "var(--color-text-secondary)" }}
+              onClick={onCancel}
+            >
               Cancel
             </button>
           </div>

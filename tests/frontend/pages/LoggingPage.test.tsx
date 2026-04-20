@@ -10,12 +10,13 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
+
+import { MOCK_LOG_LEVEL, MOCK_LOG_LINES } from "../fixtures/api-responses"
 import {
   setupTestEnvironment,
   resetTestEnvironment,
-  EventSourceMock
+  EventSourceMock,
 } from "../setup"
-import { MOCK_LOG_LEVEL, MOCK_LOG_LINES } from "../fixtures/api-responses"
 
 describe("LoggingPage Component Tests", () => {
   let mockShowToast: any
@@ -29,7 +30,7 @@ describe("LoggingPage Component Tests", () => {
     mockGetLogLevel = mock(async () => MOCK_LOG_LEVEL)
     mockUpdateLogLevel = mock(async (level: number) => ({
       success: true,
-      level
+      level,
     }))
   })
 
@@ -58,12 +59,12 @@ describe("LoggingPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to load log level"),
-        "error"
+        "error",
       )
     })
 
     test("should initialize with empty lines array", () => {
-      const lines: string[] = []
+      const lines: Array<string> = []
 
       expect(lines).toHaveLength(0)
       expect(Array.isArray(lines)).toBe(true)
@@ -136,11 +137,14 @@ describe("LoggingPage Component Tests", () => {
     })
 
     test("should show error on connection failure", () => {
-      mockShowToast("Failed to connect to log stream: Connection refused", "error")
+      mockShowToast(
+        "Failed to connect to log stream: Connection refused",
+        "error",
+      )
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to connect"),
-        "error"
+        "error",
       )
     })
   })
@@ -161,12 +165,12 @@ describe("LoggingPage Component Tests", () => {
     })
 
     test("should add lines to buffer", () => {
-      let lines: string[] = []
+      const lines: Array<string> = []
 
       // Act - Add lines
-      MOCK_LOG_LINES.forEach(line => {
+      for (const line of MOCK_LOG_LINES) {
         lines.push(line)
-      })
+      }
 
       // Assert
       expect(lines).toHaveLength(5)
@@ -174,11 +178,9 @@ describe("LoggingPage Component Tests", () => {
     })
 
     test("should maintain line order", () => {
-      const lines: string[] = []
+      const lines: Array<string> = []
 
-      lines.push("First line")
-      lines.push("Second line")
-      lines.push("Third line")
+      lines.push("First line", "Second line", "Third line")
 
       expect(lines[0]).toBe("First line")
       expect(lines[1]).toBe("Second line")
@@ -189,7 +191,7 @@ describe("LoggingPage Component Tests", () => {
   describe("Log Buffer Management", () => {
     test("should limit buffer to 500 lines", () => {
       const MAX_LINES = 500
-      let lines: string[] = []
+      let lines: Array<string> = []
 
       // Add more than max
       for (let i = 0; i < 550; i++) {
@@ -217,7 +219,7 @@ describe("LoggingPage Component Tests", () => {
     })
 
     test("should handle rapid log arrivals", async () => {
-      let lines: string[] = []
+      const lines: Array<string> = []
       const mockAddLine = mock((line: string) => {
         lines.push(line)
       })
@@ -264,7 +266,7 @@ describe("LoggingPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to update"),
-        "error"
+        "error",
       )
     })
 
@@ -275,7 +277,7 @@ describe("LoggingPage Component Tests", () => {
         { value: 2, label: "Warn" },
         { value: 3, label: "Info" },
         { value: 4, label: "Debug" },
-        { value: 5, label: "Trace" }
+        { value: 5, label: "Trace" },
       ]
 
       expect(levels[3].label).toBe("Info")
@@ -293,7 +295,7 @@ describe("LoggingPage Component Tests", () => {
   describe("Auto-Scroll Functionality", () => {
     test("should auto-scroll when new message arrives", () => {
       const mockScroll = mock()
-      let autoScroll = true
+      const autoScroll = true
 
       if (autoScroll) {
         mockScroll()
@@ -318,7 +320,7 @@ describe("LoggingPage Component Tests", () => {
 
     test("should not auto-scroll when disabled", () => {
       const mockScroll = mock()
-      let autoScroll = false
+      const autoScroll = false
 
       if (autoScroll) {
         mockScroll()
@@ -367,7 +369,7 @@ describe("LoggingPage Component Tests", () => {
     })
 
     test("should show disconnected state on error", () => {
-      let connecting = false
+      const connecting = false
       let connected = false
 
       // Simulate error
@@ -380,7 +382,7 @@ describe("LoggingPage Component Tests", () => {
       const statusIndicators = [
         { status: "connecting", color: "orange" },
         { status: "connected", color: "green" },
-        { status: "disconnected", color: "red" }
+        { status: "disconnected", color: "red" },
       ]
 
       expect(statusIndicators[1].status).toBe("connected")
@@ -475,7 +477,7 @@ describe("LoggingPage Component Tests", () => {
       const lines = [
         "[2024-01-15T10:30:00Z] ERROR: Failed to start",
         "  Stack trace: ...",
-        "  at main.ts:10"
+        "  at main.ts:10",
       ]
 
       expect(lines).toHaveLength(3)
@@ -488,7 +490,7 @@ describe("LoggingPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to connect"),
-        "error"
+        "error",
       )
     })
 
@@ -516,7 +518,7 @@ describe("LoggingPage Component Tests", () => {
 
       expect(mockShowToast).toHaveBeenCalledWith(
         expect.stringContaining("Failed to update"),
-        "error"
+        "error",
       )
     })
   })
@@ -552,10 +554,12 @@ describe("LoggingPage Component Tests", () => {
 
   describe("Performance", () => {
     test("should handle 100+ log lines efficiently", () => {
-      const lines: string[] = []
+      const lines: Array<string> = []
 
       for (let i = 0; i < 100; i++) {
-        lines.push(`[2024-01-15T10:30:${(i % 60).toString().padStart(2, "0")}Z] INFO: Line ${i}`)
+        lines.push(
+          `[2024-01-15T10:30:${(i % 60).toString().padStart(2, "0")}Z] INFO: Line ${i}`,
+        )
       }
 
       expect(lines).toHaveLength(100)
@@ -563,7 +567,7 @@ describe("LoggingPage Component Tests", () => {
 
     test("should handle buffer maintenance efficiently", () => {
       const MAX_LINES = 500
-      let lines: string[] = []
+      let lines: Array<string> = []
       const mockMaintain = mock(() => {
         if (lines.length > MAX_LINES) {
           lines = lines.slice(-(MAX_LINES - 1))
@@ -582,10 +586,12 @@ describe("LoggingPage Component Tests", () => {
     test("should not freeze UI during rapid updates", async () => {
       const mockUpdate = mock(async () => {
         // Simulate rapid updates
-        await new Promise(resolve => setTimeout(resolve, 0))
+        await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
-      const updates = Array(50).fill(0).map(() => mockUpdate())
+      const updates = Array(50)
+        .fill(0)
+        .map(() => mockUpdate())
       await Promise.all(updates)
 
       expect(mockUpdate).toHaveBeenCalledTimes(50)

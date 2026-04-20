@@ -14,7 +14,8 @@ const buttonVariants = cva(
         secondary:
           "bg-[var(--color-surface-2)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]",
         destructive: "bg-[var(--color-red)] text-white hover:opacity-90",
-        ghost: "hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)]",
+        ghost:
+          "hover:bg-[var(--color-surface-2)] text-[var(--color-text-secondary)]",
       },
       size: {
         default: "h-9 px-4 py-2 text-sm",

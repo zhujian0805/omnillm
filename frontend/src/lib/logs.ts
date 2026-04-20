@@ -144,7 +144,9 @@ function formatField(key: string, value: unknown): ParsedLogField | null {
   }
 }
 
-function collectStructuredFields(payload: Record<string, unknown>): Array<ParsedLogField> {
+function collectStructuredFields(
+  payload: Record<string, unknown>,
+): Array<ParsedLogField> {
   const fields: Array<ParsedLogField> = []
   const seen = new Set<string>()
 
@@ -221,13 +223,15 @@ function parsePipeLogLine(line: string): ParsedLogLine | null {
     return null
   }
 
-  const [timestampSegment, sourceSegment, levelSegment, messageSegment, ...fieldSegments] =
-    segments
+  const [
+    timestampSegment,
+    sourceSegment,
+    levelSegment,
+    messageSegment,
+    ...fieldSegments
+  ] = segments
 
-  if (
-    !timestampSegment.startsWith("[")
-    || !timestampSegment.endsWith("]")
-  ) {
+  if (!timestampSegment.startsWith("[") || !timestampSegment.endsWith("]")) {
     return null
   }
 
@@ -360,8 +364,7 @@ export function parseLogLine(line: string): ParsedLogLine {
     parsePipeLogLine(line)
     ?? parseLegacyLogLine(line)
     ?? parseWrappedJsonLogLine(line)
-    ?? parseRawJsonLogLine(line)
-    ?? {
+    ?? parseRawJsonLogLine(line) ?? {
       raw: line,
       timestamp: null,
       source: null,

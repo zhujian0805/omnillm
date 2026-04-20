@@ -44,21 +44,26 @@ function emit(level: LogLevel, message: string, meta?: unknown): void {
   const formatted = formatMessage(level, message, meta)
   switch (level) {
     case "fatal":
-    case "error":
+    case "error": {
       console.error(formatted)
       break
-    case "warn":
+    }
+    case "warn": {
       console.warn(formatted)
       break
-    case "info":
+    }
+    case "info": {
       console.info(formatted)
       break
-    case "debug":
+    }
+    case "debug": {
       console.debug(formatted)
       break
-    case "trace":
+    }
+    case "trace": {
       console.trace(formatted)
       break
+    }
   }
 }
 
@@ -71,11 +76,17 @@ function emit(level: LogLevel, message: string, meta?: unknown): void {
  */
 export function createLogger(namespace: string) {
   return {
-    fatal: (message: string, meta?: unknown) => emit("fatal", `[${namespace}] ${message}`, meta),
-    error: (message: string, meta?: unknown) => emit("error", `[${namespace}] ${message}`, meta),
-    warn: (message: string, meta?: unknown) => emit("warn", `[${namespace}] ${message}`, meta),
-    info: (message: string, meta?: unknown) => emit("info", `[${namespace}] ${message}`, meta),
-    debug: (message: string, meta?: unknown) => emit("debug", `[${namespace}] ${message}`, meta),
-    trace: (message: string, meta?: unknown) => emit("trace", `[${namespace}] ${message}`, meta),
+    fatal: (message: string, meta?: unknown) =>
+      emit("fatal", `[${namespace}] ${message}`, meta),
+    error: (message: string, meta?: unknown) =>
+      emit("error", `[${namespace}] ${message}`, meta),
+    warn: (message: string, meta?: unknown) =>
+      emit("warn", `[${namespace}] ${message}`, meta),
+    info: (message: string, meta?: unknown) =>
+      emit("info", `[${namespace}] ${message}`, meta),
+    debug: (message: string, meta?: unknown) =>
+      emit("debug", `[${namespace}] ${message}`, meta),
+    trace: (message: string, meta?: unknown) =>
+      emit("trace", `[${namespace}] ${message}`, meta),
   }
 }

@@ -2,7 +2,6 @@
 // omni-dev.ts — Comprehensive OmniModel Development Manager
 // Manages both frontend and backend services with start/stop/status operations
 
-import { parseArgs } from "node:util"
 import consola from "consola"
 import {
   appendFileSync,
@@ -13,8 +12,9 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs"
-import { join } from "node:path"
 import { homedir } from "node:os"
+import { join } from "node:path"
+import { parseArgs } from "node:util"
 
 const PID_FILE = join(process.cwd(), ".omni-dev.pid")
 const LOG_FILE = join(process.cwd(), ".omni-dev.log")
@@ -87,10 +87,10 @@ const { values, positionals } = parseArgs({
   options: {
     "server-port": { type: "string", default: "5002" },
     "frontend-port": { type: "string", default: "5080" },
-    "help": { type: "boolean", short: "h" },
-    "verbose": { type: "boolean", short: "v" },
-    "rebuild": { type: "boolean", short: "r" },
-    "follow": { type: "boolean", short: "f" },
+    help: { type: "boolean", short: "h" },
+    verbose: { type: "boolean", short: "v" },
+    rebuild: { type: "boolean", short: "r" },
+    follow: { type: "boolean", short: "f" },
   },
 })
 
@@ -201,59 +201,64 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
-async function listProcesses(): Promise<ProcessInfo[]> {
+async function listProcesses(): Promise<Array<ProcessInfo>> {
   // Cross-platform process listing with minimal dependencies
   if (process.platform === "win32") {
-    const proc = Bun.spawn([
-      "powershell",
-      "-NoProfile",
-      "-Command",
-      "Get-CimInstance Win32_Process | Select-Object ProcessId,CommandLine | ConvertTo-Json"
-    ], { stdout: "pipe", stderr: "pipe" })
+    const proc = Bun.spawn(
+      [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId,CommandLine | ConvertTo-Json",
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    )
 
     const output = await new Response(proc.stdout).text()
     try {
-      const rows = JSON.parse(output) as Array<{ ProcessId: number; CommandLine?: string }>
+      const rows = JSON.parse(output) as Array<{
+        ProcessId: number
+        CommandLine?: string
+      }>
       return rows
-        .filter(row => typeof row.ProcessId === "number")
-        .map(row => ({ pid: row.ProcessId, cmd: row.CommandLine || "" }))
+        .filter((row) => typeof row.ProcessId === "number")
+        .map((row) => ({ pid: row.ProcessId, cmd: row.CommandLine || "" }))
     } catch {
       return []
     }
   }
 
-  const proc = Bun.spawn([
-    "ps",
-    "-eo",
-    "pid=,command=",
-  ], { stdout: "pipe", stderr: "pipe" })
+  const proc = Bun.spawn(["ps", "-eo", "pid=,command="], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
 
   const output = await new Response(proc.stdout).text()
   return output
     .split("\n")
-    .map(line => line.trim())
+    .map((line) => line.trim())
     .filter(Boolean)
-    .map(line => {
+    .map((line) => {
       const [pidStr, ...cmdParts] = line.split(/\s+/)
       return {
         pid: Number(pidStr),
         cmd: cmdParts.join(" "),
       }
     })
-    .filter(p => !Number.isNaN(p.pid))
+    .filter((p) => !Number.isNaN(p.pid))
 }
 
-function matchesProcess(cmd: string, keywords: string[]): boolean {
+function matchesProcess(cmd: string, keywords: Array<string>): boolean {
   const lower = cmd.toLowerCase()
-  return keywords.every(keyword => lower.includes(keyword.toLowerCase()))
+  return keywords.every((keyword) => lower.includes(keyword.toLowerCase()))
 }
 
-async function findMatchingPids(): Promise<number[]> {
+async function findMatchingPids(): Promise<Array<number>> {
   const processes = await listProcesses()
 
   // Keywords chosen to uniquely identify OmniModel dev processes
   // Use path-separator-agnostic keywords (avoid / vs \ issues on Windows)
-  const patterns: Array<string[]> = [
+  const patterns: Array<Array<string>> = [
     ["omnimodel", "start", "--port"], // Go binary
     ["vite.config.ts", "--port"], // Frontend Vite (matches forward or backslash paths)
   ]
@@ -337,7 +342,11 @@ function stringifyLogValue(value: unknown): string {
   }
 }
 
-function formatStructuredField(key: string, value: unknown, requestedModel?: string): string | null {
+function formatStructuredField(
+  key: string,
+  value: unknown,
+  requestedModel?: string,
+): string | null {
   const formattedValue = stringifyLogValue(value)
   if (!formattedValue) {
     return null
@@ -379,7 +388,10 @@ function formatStructuredField(key: string, value: unknown, requestedModel?: str
     }
     case "message": {
       // Colorize incoming/outgoing request arrows
-      if (formattedValue.startsWith("--> ") || formattedValue.startsWith("<-- ")) {
+      if (
+        formattedValue.startsWith("--> ")
+        || formattedValue.startsWith("<-- ")
+      ) {
         return colorizeMessageArrows(formattedValue)
       }
       return formattedValue
@@ -403,17 +415,15 @@ function colorizeMessageArrows(text: string): string {
 
   if (arrowPattern.test(text)) {
     return text
-      .replace(/(-->)/g, "\x1b[33m$1\x1b[0m")    // yellow outgoing
-      .replace(/(<--)/g, "\x1b[32m$1\x1b[0m")    // green incoming
+      .replaceAll(/(-->)/g, "\x1b[33m$1\x1b[0m") // yellow outgoing
+      .replaceAll(/(<--)/g, "\x1b[32m$1\x1b[0m") // green incoming
   }
 
   // For messages like:
   //   --> GET /api/admin/info <-- 200
   const fullPattern = /(-->|<--)/g
-  return text.replace(fullPattern, (match) => {
-    return match === "-->"
-      ? "\x1b[33m-->\x1b[0m"
-      : "\x1b[32m<--\x1b[0m"
+  return text.replaceAll(fullPattern, (match) => {
+    return match === "-->" ? "\x1b[33m-->\x1b[0m" : "\x1b[32m<--\x1b[0m"
   })
 }
 
@@ -439,7 +449,10 @@ function formatStructuredLogLine(
   const segments = [`[${timestamp}]`, source, level, message]
   const seen = new Set<string>(["message"])
 
-  const requestedModel = typeof payload.model_requested === "string" ? payload.model_requested : undefined
+  const requestedModel =
+    typeof payload.model_requested === "string" ?
+      payload.model_requested
+    : undefined
 
   for (const key of STRUCTURED_FIELD_ORDER) {
     const formatted = formatStructuredField(key, payload[key], requestedModel)
@@ -449,7 +462,7 @@ function formatStructuredLogLine(
     }
   }
 
-  const remaining: string[] = []
+  const remaining: Array<string> = []
   for (const [key, value] of Object.entries(payload)) {
     if (seen.has(key)) {
       continue
@@ -598,12 +611,17 @@ function createLoggedProcess(
 async function startServices() {
   const existingPids = loadPids()
   if (existingPids) {
-    const backendRunning = existingPids.backend && isProcessRunning(existingPids.backend)
-    const frontendRunning = existingPids.frontend && isProcessRunning(existingPids.frontend)
+    const backendRunning =
+      existingPids.backend && isProcessRunning(existingPids.backend)
+    const frontendRunning =
+      existingPids.frontend && isProcessRunning(existingPids.frontend)
 
     if (backendRunning || frontendRunning) {
-      consola.warn("Services are already running. Use 'stop' first or 'restart' to restart them.")
-      return await showStatus()
+      consola.warn(
+        "Services are already running. Use 'stop' first or 'restart' to restart them.",
+      )
+      await showStatus()
+      return
     }
   }
 
@@ -638,14 +656,14 @@ async function startServices() {
   // Build Go backend: build locally first, then copy to ~/.local/bin
   const isWindows = process.platform === "win32"
   const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
-  const installPath = isWindows
-    ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+  const installPath =
+    isWindows ?
+      `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
     : `${homedir()}/.local/bin/omnimodel`
 
   consola.info("🔨 Building Golang backend...")
-  const goExe = process.platform === "win32"
-    ? `C:\\Program Files\\Go\\bin\\go.exe`
-    : `go`
+  const goExe =
+    process.platform === "win32" ? `C:\\Program Files\\Go\\bin\\go.exe` : `go`
   const buildResult = Bun.spawn([goExe, "build", "-o", localBin, "main.go"], {
     stdout: "inherit",
     stderr: "inherit",
@@ -673,7 +691,13 @@ async function startServices() {
   const frontendProc = createLoggedProcess("frontend", {
     color: "32",
     cmd: bunExe,
-    args: ["node_modules/vite/bin/vite.js", "--config", "frontend/vite.config.ts", "--port", frontendPort],
+    args: [
+      "node_modules/vite/bin/vite.js",
+      "--config",
+      "frontend/vite.config.ts",
+      "--port",
+      frontendPort,
+    ],
   })
 
   // Save PIDs
@@ -744,7 +768,7 @@ async function stopServices() {
 
   // Then find any stray OmniModel processes by command signature
   const matchingPids = await findMatchingPids()
-  const extraPids = matchingPids.filter(pid => !killed.has(pid))
+  const extraPids = matchingPids.filter((pid) => !killed.has(pid))
 
   for (const pid of extraPids) {
     const ok = await killPid(pid)
@@ -761,7 +785,9 @@ async function stopServices() {
   if (killed.size === 0) {
     consola.info("ℹ️  No running services found")
   } else {
-    consola.success(`🎉 Stopped ${killed.size} process${killed.size > 1 ? 'es' : ''}`)
+    consola.success(
+      `🎉 Stopped ${killed.size} process${killed.size > 1 ? "es" : ""}`,
+    )
   }
 }
 
@@ -783,9 +809,11 @@ async function showStatus() {
   const backendPortBusy = !(await checkPortAvailable(Number(serverPort)))
 
   console.log(`🔥 Backend (Go):`)
-  console.log(`   Status: ${backendRunning ? '🟢 Running' : '🔴 Stopped'}`)
-  console.log(`   PID: ${pids.backend || 'N/A'}`)
-  console.log(`   Port: ${serverPort} ${backendPortBusy ? '(🔒 Busy)' : '(🔓 Free)'}`)
+  console.log(`   Status: ${backendRunning ? "🟢 Running" : "🔴 Stopped"}`)
+  console.log(`   PID: ${pids.backend || "N/A"}`)
+  console.log(
+    `   Port: ${serverPort} ${backendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
+  )
   console.log(`   URL: http://localhost:${serverPort}`)
 
   // Frontend status
@@ -793,9 +821,11 @@ async function showStatus() {
   const frontendPortBusy = !(await checkPortAvailable(Number(frontendPort)))
 
   console.log(`🌐 Frontend:`)
-  console.log(`   Status: ${frontendRunning ? '🟢 Running' : '🔴 Stopped'}`)
-  console.log(`   PID: ${pids.frontend || 'N/A'}`)
-  console.log(`   Port: ${frontendPort} ${frontendPortBusy ? '(🔒 Busy)' : '(🔓 Free)'}`)
+  console.log(`   Status: ${frontendRunning ? "🟢 Running" : "🔴 Stopped"}`)
+  console.log(`   PID: ${pids.frontend || "N/A"}`)
+  console.log(
+    `   Port: ${frontendPort} ${frontendPortBusy ? "(🔒 Busy)" : "(🔓 Free)"}`,
+  )
   console.log(`   URL: http://localhost:${frontendPort}`)
   console.log(`   Admin UI: http://localhost:${frontendPort}/admin/`)
 
@@ -822,7 +852,7 @@ function showLogs({ follow = false } = {}) {
   if (!follow) {
     try {
       const logs = readFileSync(LOG_FILE, "utf8")
-      const lines = logs.split("\n").filter(line => line.trim())
+      const lines = logs.split("\n").filter((line) => line.trim())
       const recentLines = lines.slice(-50) // Show last 50 lines
 
       consola.info("📋 Recent Service Logs (last 50 lines):")
@@ -838,7 +868,7 @@ function showLogs({ follow = false } = {}) {
 
   // ── Follow mode: tail last 50 lines then stream new ones ──────────────────
   const logs = readFileSync(LOG_FILE, "utf8")
-  const allLines = logs.split("\n").filter(line => line.trim())
+  const allLines = logs.split("\n").filter((line) => line.trim())
   const tailLines = allLines.slice(-50)
 
   consola.info("📋 Streaming logs (last 50 lines, then live)…")
@@ -862,7 +892,7 @@ function showLogs({ follow = false } = {}) {
     if (stopped) return
     try {
       const content = readFileSync(LOG_FILE, "utf8")
-      const currentLines = content.split("\n").filter(line => line.trim())
+      const currentLines = content.split("\n").filter((line) => line.trim())
 
       // Only process new lines since our last check
       if (currentLines.length > processedLineCount) {
@@ -902,7 +932,9 @@ function printLogLine(rawLine: string) {
   if (pipeSegments.length >= 4 && /^\[.+\]$/.test(pipeSegments[0])) {
     const level = pipeSegments[2] ?? "INFO"
     const clean = stripAnsi(trimmed)
-    process.stdout.write(`${colorizeLogLine(clean, pipeSegments[1] ?? "backend", level)}\n`)
+    process.stdout.write(
+      `${colorizeLogLine(clean, pipeSegments[1] ?? "backend", level)}\n`,
+    )
     return
   }
 
@@ -926,7 +958,9 @@ function printLogLine(rawLine: string) {
         inferTextLogLevel(trimmed, false),
       )
       const levelSeg = formatted.split(" | ")[2] ?? "INFO"
-      process.stdout.write(`${colorizeLogLine(formatted, "backend", levelSeg)}\n`)
+      process.stdout.write(
+        `${colorizeLogLine(formatted, "backend", levelSeg)}\n`,
+      )
       return
     }
   } catch {
@@ -944,62 +978,85 @@ function printLogLine(rawLine: string) {
 // Main command handling
 if (values.help || command === "help") {
   showHelp()
-} else if (command === "start") {
-  await startServices()
-} else if (command === "stop") {
-  await stopServices()
-} else if (command === "restart") {
-  await stopServices()
-  await Bun.sleep(2000)
-  if (rebuild) {
-    // Rebuild Go backend: build locally first, then copy to ~/.local/bin
-    const isWindows = process.platform === "win32"
-    const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
-    const installPath = isWindows
-      ? `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
-      : `${homedir()}/.local/bin/omnimodel`
-    consola.info("🔨 Rebuilding Golang backend...")
-    const goExe = process.platform === "win32"
-      ? `C:\\Program Files\\Go\\bin\\go.exe`
-      : `go`
-    const backendBuild = Bun.spawn([goExe, "build", "-o", localBin, "main.go"], {
-      stdout: "inherit",
-      stderr: "inherit",
-    })
-    await backendBuild.exited
-    if (backendBuild.exitCode !== 0) {
-      consola.error("❌ Failed to rebuild Golang backend")
-      process.exit(1)
-    }
+} else
+  switch (command) {
+    case "start": {
+      await startServices()
 
-    // Copy to install path
-    const { copyFileSync } = await import("node:fs")
-    copyFileSync(localBin, installPath)
-    consola.success("✅ Golang backend rebuilt successfully")
-    // Rebuild frontend
-    consola.info("🔨 Rebuilding frontend...")
-    const frontendBuild = Bun.spawn([process.execPath, "run", "build"], {
-      stdout: "inherit",
-      stderr: "inherit",
-    })
-    await frontendBuild.exited
-    if (frontendBuild.exitCode !== 0) {
-      consola.error("❌ Failed to rebuild frontend")
+      break
+    }
+    case "stop": {
+      await stopServices()
+
+      break
+    }
+    case "restart": {
+      await stopServices()
+      await Bun.sleep(2000)
+      if (rebuild) {
+        // Rebuild Go backend: build locally first, then copy to ~/.local/bin
+        const isWindows = process.platform === "win32"
+        const localBin = isWindows ? "omnimodel.exe" : "omnimodel"
+        const installPath =
+          isWindows ?
+            `${process.env.USERPROFILE}/.local/bin/omnimodel.exe`
+          : `${homedir()}/.local/bin/omnimodel`
+        consola.info("🔨 Rebuilding Golang backend...")
+        const goExe =
+          process.platform === "win32" ?
+            `C:\\Program Files\\Go\\bin\\go.exe`
+          : `go`
+        const backendBuild = Bun.spawn(
+          [goExe, "build", "-o", localBin, "main.go"],
+          {
+            stdout: "inherit",
+            stderr: "inherit",
+          },
+        )
+        await backendBuild.exited
+        if (backendBuild.exitCode !== 0) {
+          consola.error("❌ Failed to rebuild Golang backend")
+          process.exit(1)
+        }
+
+        // Copy to install path
+        const { copyFileSync } = await import("node:fs")
+        copyFileSync(localBin, installPath)
+        consola.success("✅ Golang backend rebuilt successfully")
+        // Rebuild frontend
+        consola.info("🔨 Rebuilding frontend...")
+        const frontendBuild = Bun.spawn([process.execPath, "run", "build"], {
+          stdout: "inherit",
+          stderr: "inherit",
+        })
+        await frontendBuild.exited
+        if (frontendBuild.exitCode !== 0) {
+          consola.error("❌ Failed to rebuild frontend")
+          process.exit(1)
+        }
+        consola.success("✅ Frontend rebuilt successfully")
+      }
+      await startServices()
+
+      break
+    }
+    case "status": {
+      await showStatus()
+
+      break
+    }
+    case "logs": {
+      showLogs({ follow })
+
+      break
+    }
+    default: {
+      consola.error(`❌ Unknown command: ${command}`)
+      console.log()
+      showHelp()
       process.exit(1)
     }
-    consola.success("✅ Frontend rebuilt successfully")
   }
-  await startServices()
-} else if (command === "status") {
-  await showStatus()
-} else if (command === "logs") {
-  showLogs({ follow })
-} else {
-  consola.error(`❌ Unknown command: ${command}`)
-  console.log()
-  showHelp()
-  process.exit(1)
-}
 
 // Graceful shutdown handling
 process.on("SIGINT", async () => {

@@ -73,11 +73,21 @@ function MaterialEndpointItem({
 }) {
   const getMethodColor = (method: string) => {
     switch (method) {
-      case "GET": return "success"
-      case "POST": return "primary"
-      case "PUT": return "warning"
-      case "DELETE": return "error"
-      default: return "default"
+      case "GET": {
+        return "success"
+      }
+      case "POST": {
+        return "primary"
+      }
+      case "PUT": {
+        return "warning"
+      }
+      case "DELETE": {
+        return "error"
+      }
+      default: {
+        return "default"
+      }
     }
   }
 
@@ -192,8 +202,12 @@ export function MaterialAboutPageComplete({
         </Box>
         <Grid container spacing={3}>
           {Array.from({ length: 4 }).map((_, i) => (
-            <Grid key={i} sx={{ width: { xs: '100%', md: '50%' } }}>
-              <Skeleton variant="rectangular" height={200} sx={{ borderRadius: 2 }} />
+            <Grid key={i} sx={{ width: { xs: "100%", md: "50%" } }}>
+              <Skeleton
+                variant="rectangular"
+                height={200}
+                sx={{ borderRadius: 2 }}
+              />
             </Grid>
           ))}
         </Grid>
@@ -234,23 +248,50 @@ export function MaterialAboutPageComplete({
 
       <Grid container spacing={3}>
         {/* Server Info */}
-        <Grid sx={{ width: { xs: '100%', md: '50%' } }}>
+        <Grid sx={{ width: { xs: "100%", md: "50%" } }}>
           <Card>
             <CardContent>
-              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={2}
+                sx={{ mb: 2 }}
+              >
                 <InfoIcon color="primary" />
                 <Typography variant="h6">Server Info</Typography>
               </Stack>
               <List dense>
-                <MaterialDataRow label="Version" value={info.version ?? "—"} accent />
+                <MaterialDataRow
+                  label="Version"
+                  value={info.version ?? "—"}
+                  accent
+                />
                 <Divider />
                 <MaterialDataRow label="Port" value={`:${info.port}`} accent />
                 <Divider />
-                <ListItem sx={{ px: 0, py: 1, flexDirection: "column", alignItems: "stretch" }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                <ListItem
+                  sx={{
+                    px: 0,
+                    py: 1,
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                  }}
+                >
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    gutterBottom
+                  >
                     Base URL
                   </Typography>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mt: 1,
+                    }}
+                  >
                     <Paper
                       elevation={0}
                       sx={{
@@ -273,7 +314,9 @@ export function MaterialAboutPageComplete({
                     <Tooltip title="Copy base URL">
                       <IconButton
                         size="small"
-                        onClick={() => handleCopy(`http://localhost:${port}`, "base URL")}
+                        onClick={() =>
+                          handleCopy(`http://localhost:${port}`, "base URL")
+                        }
                       >
                         <CopyIcon fontSize="small" />
                       </IconButton>
@@ -286,10 +329,15 @@ export function MaterialAboutPageComplete({
         </Grid>
 
         {/* Runtime State */}
-        <Grid sx={{ width: { xs: '100%', md: '50%' } }}>
+        <Grid sx={{ width: { xs: "100%", md: "50%" } }}>
           <Card>
             <CardContent>
-              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={2}
+                sx={{ mb: 2 }}
+              >
                 <SpeedIcon color="primary" />
                 <Typography variant="h6">Runtime State</Typography>
               </Stack>
@@ -325,9 +373,9 @@ export function MaterialAboutPageComplete({
                 <MaterialDataRow
                   label="Rate Limit"
                   value={
-                    status.rateLimitSeconds !== null
-                      ? `${status.rateLimitSeconds}s`
-                      : "None"
+                    status.rateLimitSeconds !== null ?
+                      `${status.rateLimitSeconds}s`
+                    : "None"
                   }
                 />
                 <Divider />
@@ -353,10 +401,15 @@ export function MaterialAboutPageComplete({
         </Grid>
 
         {/* API Endpoints */}
-        <Grid sx={{ width: { xs: '100%', md: '50%' } }}>
+        <Grid sx={{ width: { xs: "100%", md: "50%" } }}>
           <Card>
             <CardContent>
-              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={2}
+                sx={{ mb: 2 }}
+              >
                 <ApiIcon color="primary" />
                 <Typography variant="h6">API Endpoints</Typography>
               </Stack>
@@ -387,10 +440,15 @@ export function MaterialAboutPageComplete({
         </Grid>
 
         {/* Quick Copy */}
-        <Grid sx={{ width: { xs: '100%', md: '50%' } }}>
+        <Grid sx={{ width: { xs: "100%", md: "50%" } }}>
           <Card>
             <CardContent>
-              <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={2}
+                sx={{ mb: 2 }}
+              >
                 <CopyIcon color="primary" />
                 <Typography variant="h6">Quick Copy</Typography>
               </Stack>
@@ -398,12 +456,16 @@ export function MaterialAboutPageComplete({
                 <MaterialCopyableField
                   label="OpenAI Base URL"
                   value={`http://localhost:${port}/v1`}
-                  onCopy={() => handleCopy(`http://localhost:${port}/v1`, "OpenAI base URL")}
+                  onCopy={() =>
+                    handleCopy(`http://localhost:${port}/v1`, "OpenAI base URL")
+                  }
                 />
                 <MaterialCopyableField
                   label="Claude API Base"
                   value={`http://localhost:${port}`}
-                  onCopy={() => handleCopy(`http://localhost:${port}`, "Claude API base")}
+                  onCopy={() =>
+                    handleCopy(`http://localhost:${port}`, "Claude API base")
+                  }
                 />
               </Stack>
             </CardContent>

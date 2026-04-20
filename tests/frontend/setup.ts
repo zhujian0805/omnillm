@@ -4,7 +4,7 @@
  * Provides mocking utilities, fixtures, and helper functions for component testing
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from "bun:test"
+import { describe, expect, beforeEach, afterEach, mock } from "bun:test"
 
 // ─── LocalStorage & SessionStorage Mocks ─────────────────────────────────────
 
@@ -65,13 +65,15 @@ export class EventSourceMock {
 
   removeEventListener(event: string, listener: (event: Event) => void) {
     if (this.listeners[event]) {
-      this.listeners[event] = this.listeners[event].filter(l => l !== listener)
+      this.listeners[event] = this.listeners[event].filter(
+        (l) => l !== listener,
+      )
     }
   }
 
   dispatchEvent(event: Event): boolean {
     const handlers = this.listeners[(event as any).type] ?? []
-    handlers.forEach(h => h(event))
+    for (const h of handlers) h(event)
     return true
   }
 
@@ -123,13 +125,15 @@ export class WebSocketMock {
 
   removeEventListener(event: string, listener: (event: Event) => void) {
     if (this.listeners[event]) {
-      this.listeners[event] = this.listeners[event].filter(l => l !== listener)
+      this.listeners[event] = this.listeners[event].filter(
+        (l) => l !== listener,
+      )
     }
   }
 
   dispatchEvent(event: Event): boolean {
     const handlers = this.listeners[(event as any).type] ?? []
-    handlers.forEach(h => h(event))
+    for (const h of handlers) h(event)
     return true
   }
 
@@ -174,43 +178,53 @@ type FetchResponse = {
   body: ReadableStream<Uint8Array> | null
 }
 
-type FetchMockSetup = Record<string, Record<string, { response: any; status?: number; error?: Error }>>
+type FetchMockSetup = Record<
+  string,
+  Record<string, { response: any; status?: number; error?: Error }>
+>
 
-export function setupFetchMocks(globalThis: any, endpoints: FetchMockSetup = {}) {
+export function setupFetchMocks(
+  globalThis: any,
+  endpoints: FetchMockSetup = {},
+) {
   const originalFetch = globalThis.fetch
   const mockResponses: Map<string, FetchResponse> = new Map()
 
-  const mockFetch = mock(async (url: string, init?: RequestInit): Promise<FetchResponse> => {
-    const urlObj = new URL(url, "http://localhost:4141")
-    const method = init?.method ?? "GET"
-    const path = urlObj.pathname
+  const mockFetch = mock(
+    async (url: string, init?: RequestInit): Promise<FetchResponse> => {
+      const urlObj = new URL(url, "http://localhost:4141")
+      const method = init?.method ?? "GET"
+      const path = urlObj.pathname
 
-    const key = `${method} ${path}`
-    let endpointConfig = endpoints[path]?.[method] ?? endpoints[`${method} ${path}`]
+      const key = `${method} ${path}`
+      const endpointConfig =
+        endpoints[path]?.[method] ?? endpoints[`${method} ${path}`]
 
-    if (endpointConfig && endpointConfig.error) {
-      throw endpointConfig.error
-    }
-
-    if (!endpointConfig) {
-      return {
-        ok: false,
-        status: 404,
-        json: async () => ({ error: "Endpoint not found" }),
-        text: async () => "Not Found",
-        body: null
+      if (endpointConfig && endpointConfig.error) {
+        throw endpointConfig.error
       }
-    }
 
-    const status = endpointConfig.status ?? (endpointConfig.response ? 200 : 500)
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      json: async () => endpointConfig.response,
-      text: async () => JSON.stringify(endpointConfig.response),
-      body: null
-    }
-  })
+      if (!endpointConfig) {
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ error: "Endpoint not found" }),
+          text: async () => "Not Found",
+          body: null,
+        }
+      }
+
+      const status =
+        endpointConfig.status ?? (endpointConfig.response ? 200 : 500)
+      return {
+        ok: status >= 200 && status < 300,
+        status,
+        json: async () => endpointConfig.response,
+        text: async () => JSON.stringify(endpointConfig.response),
+        body: null,
+      }
+    },
+  )
 
   globalThis.fetch = mockFetch
   return mockFetch
@@ -228,7 +242,7 @@ export function createMockProvider(overrides: any = {}) {
     enabledModelCount: 5,
     totalModelCount: 10,
     priority: 1,
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -238,7 +252,7 @@ export function createMockModelInfo(overrides: any = {}) {
     display_name: "GPT-4",
     name: "gpt-4",
     owned_by: "openai",
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -250,7 +264,7 @@ export function createMockChatSession(overrides: any = {}) {
     api_shape: "openai",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -262,7 +276,7 @@ export function createMockStatus(overrides: any = {}) {
     rateLimitSeconds: null,
     rateLimitWait: false,
     authFlow: null,
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -270,7 +284,7 @@ export function createMockServerInfo(overrides: any = {}) {
   return {
     version: "0.1.0",
     port: 4141,
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -278,7 +292,7 @@ export function createMockChatMessage(overrides: any = {}) {
   return {
     role: "user" as const,
     content: "Hello!",
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -292,10 +306,10 @@ export function createMockChatResponse(overrides: any = {}) {
       {
         index: 0,
         message: { role: "assistant" as const, content: "Hi there!" },
-        finish_reason: "stop"
-      }
+        finish_reason: "stop",
+      },
     ],
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -304,12 +318,10 @@ export function createMockAnthropicResponse(overrides: any = {}) {
     id: "msg-123",
     type: "message",
     role: "assistant",
-    content: [
-      { type: "text" as const, text: "Hello!" }
-    ],
+    content: [{ type: "text" as const, text: "Hello!" }],
     model: "claude-3",
     stop_reason: "end_turn",
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -323,12 +335,10 @@ export function createMockResponsesResponse(overrides: any = {}) {
         type: "message",
         id: "msg-1",
         role: "assistant",
-        content: [
-          { type: "output_text" as const, text: "Hello!" }
-        ]
-      }
+        content: [{ type: "output_text" as const, text: "Hello!" }],
+      },
     ],
-    ...overrides
+    ...overrides,
   }
 }
 
@@ -336,31 +346,37 @@ export function createMockUsageData(overrides: any = {}) {
   return {
     access_type_sku: "copilot_pro",
     copilot_plan: "pro",
-    quota_reset_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    quota_reset_date: new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    ).toISOString(),
     chat_enabled: true,
     assigned_date: new Date().toISOString(),
     quota_snapshots: {
-      "copilot_chat_operations": {
+      copilot_chat_operations: {
         entitlement: 100,
         remaining: 75,
         percent_remaining: 75,
-        unlimited: false
-      }
+        unlimited: false,
+      },
     },
-    ...overrides
+    ...overrides,
   }
 }
 
 // ─── Test Assertions ─────────────────────────────────────────────────────────
 
-export function expectFunctionCalled(fn: any, expectedArgs?: any[]) {
+export function expectFunctionCalled(fn: any, expectedArgs?: Array<any>) {
   expect(fn).toHaveBeenCalled()
   if (expectedArgs) {
     expect(fn).toHaveBeenCalledWith(...expectedArgs)
   }
 }
 
-export function expectToastShown(showToast: any, message: string, type: string = "error") {
+export function expectToastShown(
+  showToast: any,
+  message: string,
+  type: string = "error",
+) {
   expect(showToast).toHaveBeenCalledWith(expect.stringContaining(message), type)
 }
 
@@ -368,12 +384,11 @@ export function expectToastShown(showToast: any, message: string, type: string =
 
 export function setupTestEnvironment() {
   setupStorageMocks(globalThis)
-
   ;(globalThis as any).document = {
     querySelector: (selector: string) => {
       if (selector === 'meta[name="omnimodel-api-key"]') {
         return {
-          getAttribute: (name: string) => name === "content" ? "" : null,
+          getAttribute: (name: string) => (name === "content" ? "" : null),
         }
       }
       return null
@@ -384,7 +399,10 @@ export function setupTestEnvironment() {
   ;(globalThis as any).EventSource = EventSourceMock
   ;(globalThis as any).WebSocket = WebSocketMock
   ;(globalThis as any).MessageEvent = class MessageEvent extends Event {
-    constructor(type: string, public data: any) {
+    constructor(
+      type: string,
+      public data: any,
+    ) {
       super(type)
     }
   }
@@ -400,16 +418,16 @@ export function setupTestEnvironment() {
     port: "5173",
     protocol: "http:",
     hash: "",
-    pathname: "/"
+    pathname: "/",
   }
 }
 
 export function resetTestEnvironment() {
   if (globalThis.localStorage instanceof StorageMock) {
-    (globalThis.localStorage as StorageMock).clear()
+    globalThis.localStorage.clear()
   }
   if (globalThis.sessionStorage instanceof StorageMock) {
-    (globalThis.sessionStorage as StorageMock).clear()
+    globalThis.sessionStorage.clear()
   }
 }
 

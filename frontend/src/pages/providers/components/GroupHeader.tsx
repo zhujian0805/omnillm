@@ -1,7 +1,11 @@
 import { useState } from "react"
 
 import type { Provider } from "@/api"
-import { PROVIDER_ICONS, TYPE_NAMES } from "@/pages/providers/constants/providerRegistry"
+
+import {
+  PROVIDER_ICONS,
+  TYPE_NAMES,
+} from "@/pages/providers/constants/providerRegistry"
 
 export function GroupHeader({
   providerType,
@@ -11,7 +15,7 @@ export function GroupHeader({
   onToggle,
 }: {
   providerType: string
-  typeProviders: Provider[]
+  typeProviders: Array<Provider>
   isCollapsed: boolean
   accent: string
   onToggle: () => void
@@ -32,20 +36,22 @@ export function GroupHeader({
         marginBottom: isCollapsed ? 0 : 12,
         cursor: clickable ? "pointer" : "default",
         userSelect: "none",
-        ...(isCollapsed
-          ? {
-              background: hovered
-                ? "color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-text))"
-                : "var(--color-bg-elevated)",
-              borderRadius: "var(--radius-lg)",
-              border: `1px solid ${hovered ? `${accent}40` : "var(--color-separator)"}`,
-              boxShadow: hovered
-                ? "var(--shadow-card), 0 0 0 1px rgba(48,209,88,0.15)"
-                : "var(--shadow-card)",
-              padding: "14px 18px",
-              transition: "all 0.2s var(--ease)",
-            }
-          : {}),
+        ...(isCollapsed ?
+          {
+            background:
+              hovered ?
+                "color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-text))"
+              : "var(--color-bg-elevated)",
+            borderRadius: "var(--radius-lg)",
+            border: `1px solid ${hovered ? `${accent}40` : "var(--color-separator)"}`,
+            boxShadow:
+              hovered ?
+                "var(--shadow-card), 0 0 0 1px rgba(48,209,88,0.15)"
+              : "var(--shadow-card)",
+            padding: "14px 18px",
+            transition: "all 0.2s var(--ease)",
+          }
+        : {}),
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -62,7 +68,9 @@ export function GroupHeader({
             color: accent,
           }}
         >
-          {PROVIDER_ICONS[providerType] ?? <span style={{ fontSize: 14 }}>◌</span>}
+          {PROVIDER_ICONS[providerType] ?? (
+            <span style={{ fontSize: 14 }}>◌</span>
+          )}
         </div>
         <div>
           <span
@@ -85,7 +93,8 @@ export function GroupHeader({
                 fontWeight: 400,
               }}
             >
-              {typeProviders.length} {typeProviders.length === 1 ? "account" : "accounts"}
+              {typeProviders.length}{" "}
+              {typeProviders.length === 1 ? "account" : "accounts"}
             </span>
           )}
           {isCollapsed && activeCount > 0 && (
@@ -106,8 +115,20 @@ export function GroupHeader({
         </div>
       </div>
       {isCollapsed && (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ color: "var(--color-text-tertiary)" }}>
-          <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          style={{ color: "var(--color-text-tertiary)" }}
+        >
+          <path
+            d="M6 4l4 4-4 4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       )}
     </div>

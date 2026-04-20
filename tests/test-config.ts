@@ -46,8 +46,8 @@ export const TEST_CONFIG = {
 }
 
 export const RUN_DANGEROUS_TESTS =
-  process.env.OMNIMODEL_RUN_DANGEROUS_TESTS === "1" ||
-  process.env.OMNIMODEL_RUN_DANGEROUS_TESTS === "true"
+  process.env.OMNIMODEL_RUN_DANGEROUS_TESTS === "1"
+  || process.env.OMNIMODEL_RUN_DANGEROUS_TESTS === "true"
 
 export const DANGEROUS_TESTS_ENV_VAR = "OMNIMODEL_RUN_DANGEROUS_TESTS"
 

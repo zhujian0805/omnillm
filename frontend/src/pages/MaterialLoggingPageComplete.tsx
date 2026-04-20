@@ -27,13 +27,7 @@ import {
   FormControlLabel,
 } from "@mui/material"
 import { alpha, type Theme } from "@mui/material/styles"
-import {
-  Fragment,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react"
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react"
 
 import {
   getLogLevel,
@@ -175,9 +169,6 @@ function MaterialLogLine({ line }: { line: string }) {
     >
       {parsed.level}
     </Typography>,
-  )
-
-  segments.push(
     <Typography
       key="message"
       variant="body2"
@@ -512,7 +503,9 @@ export function MaterialLoggingPageComplete({
                 <Select
                   value={logLevel ?? "info"}
                   label="Log Level"
-                  onChange={(e) => handleLogLevelChange(e.target.value as LogLevel)}
+                  onChange={(e) =>
+                    handleLogLevelChange(e.target.value as LogLevel)
+                  }
                 >
                   {LOG_LEVELS.map((level) => (
                     <MenuItem key={level.value} value={level.value}>

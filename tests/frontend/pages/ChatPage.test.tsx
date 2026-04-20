@@ -11,17 +11,7 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
-import {
-  setupTestEnvironment,
-  resetTestEnvironment,
-  createMockModelInfo,
-  createMockChatSession,
-  createMockChatMessage,
-  createMockChatResponse,
-  createMockAnthropicResponse,
-  createMockResponsesResponse,
-  setupFetchMocks
-} from "../setup"
+
 import {
   MOCK_MODELS_RESPONSE,
   MOCK_CHAT_SESSIONS,
@@ -29,8 +19,13 @@ import {
   MOCK_CHAT_COMPLETION_OPENAI,
   MOCK_CHAT_COMPLETION_ANTHROPIC,
   MOCK_CHAT_COMPLETION_RESPONSES,
-  buildEndpointMap
+  buildEndpointMap,
 } from "../fixtures/api-responses"
+import {
+  setupTestEnvironment,
+  resetTestEnvironment,
+  setupFetchMocks,
+} from "../setup"
 
 describe("ChatPage Component Tests", () => {
   let mockShowToast: ReturnType<typeof mock>
@@ -96,7 +91,7 @@ describe("ChatPage Component Tests", () => {
       const mockGetModels = mock(async () => ({
         object: "list",
         data: [],
-        has_more: false
+        has_more: false,
       }))
 
       // Act
@@ -137,7 +132,7 @@ describe("ChatPage Component Tests", () => {
       const availableModels = MOCK_MODELS_RESPONSE.data
 
       // Act
-      if (!availableModels.some(m => m.id === selectedModel)) {
+      if (!availableModels.some((m) => m.id === selectedModel)) {
         selectedModel = availableModels[0]?.id ?? ""
       }
 
@@ -198,7 +193,8 @@ describe("ChatPage Component Tests", () => {
       const inputValue = "Hello"
       const selectedModel = "gpt-4"
       const isLoading = true
-      const canSend = inputValue.trim().length > 0 && selectedModel.length > 0 && !isLoading
+      const canSend =
+        inputValue.trim().length > 0 && selectedModel.length > 0 && !isLoading
 
       expect(canSend).toBe(false)
     })
@@ -207,7 +203,8 @@ describe("ChatPage Component Tests", () => {
       const inputValue = "Hello"
       const selectedModel = "gpt-4"
       const isLoading = false
-      const canSend = inputValue.trim().length > 0 && selectedModel.length > 0 && !isLoading
+      const canSend =
+        inputValue.trim().length > 0 && selectedModel.length > 0 && !isLoading
 
       expect(canSend).toBe(true)
     })
@@ -240,8 +237,11 @@ describe("ChatPage Component Tests", () => {
 
     test("should handle Responses API format", () => {
       const response = MOCK_CHAT_COMPLETION_RESPONSES
-      const messageItems = response.output.filter((item: any) => item.type === "message")
-      const textBlocks = messageItems[0]?.content?.filter((b: any) => b.type === "output_text") ?? []
+      const messageItem = response.output.find(
+        (item: any) => item.type === "message",
+      )
+      const textBlocks =
+        messageItem?.content?.filter((b: any) => b.type === "output_text") ?? []
       const messageContent = textBlocks.map((b: any) => b.text ?? "").join("")
 
       expect(messageContent).toBe("Here's a helpful response to your question!")
@@ -251,7 +251,7 @@ describe("ChatPage Component Tests", () => {
       const openaiRequest = {
         model: "gpt-4",
         messages: [{ role: "user" as const, content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       // Should transform to:
@@ -259,7 +259,7 @@ describe("ChatPage Component Tests", () => {
         model: openaiRequest.model,
         max_tokens: 1024,
         messages: openaiRequest.messages,
-        stream: openaiRequest.stream
+        stream: openaiRequest.stream,
       }
 
       expect(anthropicRequest.model).toBe("gpt-4")
@@ -270,18 +270,18 @@ describe("ChatPage Component Tests", () => {
       const openaiRequest = {
         model: "gpt-4",
         messages: [{ role: "user" as const, content: "Hello" }],
-        stream: false
+        stream: false,
       }
 
       const responsesRequest = {
         model: openaiRequest.model,
-        input: openaiRequest.messages.map(msg => ({
+        input: openaiRequest.messages.map((msg) => ({
           type: "message",
           role: msg.role,
-          content: msg.content
+          content: msg.content,
         })),
         max_output_tokens: 1024,
-        stream: openaiRequest.stream
+        stream: openaiRequest.stream,
       }
 
       expect(responsesRequest.model).toBe("gpt-4")
@@ -310,14 +310,14 @@ describe("ChatPage Component Tests", () => {
       // Arrange
       const mockCreateSession = mock(async (body: Record<string, unknown>) => ({
         ok: true,
-        session_id: body.session_id
+        session_id: body.session_id,
       }))
 
       const sessionData = {
         session_id: "new-session-123",
         title: "New Chat",
         model_id: "gpt-4",
-        api_shape: "openai"
+        api_shape: "openai",
       }
 
       // Act
@@ -330,14 +330,16 @@ describe("ChatPage Component Tests", () => {
 
     test("should add message to session", async () => {
       // Arrange
-      const mockAddMessage = mock(async (sessionId: string, message: Record<string, unknown>) => ({
-        ok: true
-      }))
+      const mockAddMessage = mock(
+        async (sessionId: string, message: Record<string, unknown>) => ({
+          ok: true,
+        }),
+      )
 
       const messageData = {
         message_id: "msg-123",
         role: "user",
-        content: "Hello!"
+        content: "Hello!",
       }
 
       // Act
@@ -351,7 +353,7 @@ describe("ChatPage Component Tests", () => {
     test("should delete single session", async () => {
       // Arrange
       const mockDeleteSession = mock(async (sessionId: string) => ({
-        ok: true
+        ok: true,
       }))
 
       // Act
@@ -364,7 +366,7 @@ describe("ChatPage Component Tests", () => {
     test("should delete all sessions", async () => {
       // Arrange
       const mockDeleteAll = mock(async () => ({
-        ok: true
+        ok: true,
       }))
 
       // Act
@@ -389,11 +391,13 @@ describe("ChatPage Component Tests", () => {
 
   describe("Message History", () => {
     test("should maintain conversation history", () => {
-      const messages: any[] = []
+      const messages: Array<any> = []
 
-      messages.push({ role: "user" as const, content: "Hello" })
-      messages.push({ role: "assistant" as const, content: "Hi!" })
-      messages.push({ role: "user" as const, content: "How are you?" })
+      messages.push(
+        { role: "user" as const, content: "Hello" },
+        { role: "assistant" as const, content: "Hi!" },
+        { role: "user" as const, content: "How are you?" },
+      )
 
       expect(messages).toHaveLength(3)
       expect(messages[0].role).toBe("user")
@@ -402,9 +406,9 @@ describe("ChatPage Component Tests", () => {
     })
 
     test("should clear messages", () => {
-      let messages: any[] = [
+      let messages: Array<any> = [
         { role: "user" as const, content: "Hello" },
-        { role: "assistant" as const, content: "Hi!" }
+        { role: "assistant" as const, content: "Hi!" },
       ]
 
       messages = []
@@ -413,9 +417,7 @@ describe("ChatPage Component Tests", () => {
     })
 
     test("should add messages to existing conversation", () => {
-      const messages: any[] = [
-        { role: "user" as const, content: "Hello" }
-      ]
+      const messages: Array<any> = [{ role: "user" as const, content: "Hello" }]
 
       const newAssistantMessage = { role: "assistant" as const, content: "Hi!" }
       messages.push(newAssistantMessage)
@@ -425,12 +427,14 @@ describe("ChatPage Component Tests", () => {
     })
 
     test("should preserve message order", () => {
-      const messages: any[] = []
+      const messages: Array<any> = []
 
-      messages.push({ role: "user" as const, content: "First" })
-      messages.push({ role: "assistant" as const, content: "Response 1" })
-      messages.push({ role: "user" as const, content: "Second" })
-      messages.push({ role: "assistant" as const, content: "Response 2" })
+      messages.push(
+        { role: "user" as const, content: "First" },
+        { role: "assistant" as const, content: "Response 1" },
+        { role: "user" as const, content: "Second" },
+        { role: "assistant" as const, content: "Response 2" },
+      )
 
       expect(messages[0].content).toBe("First")
       expect(messages[1].content).toBe("Response 1")
@@ -444,7 +448,7 @@ describe("ChatPage Component Tests", () => {
       const event = {
         key: "Enter",
         shiftKey: false,
-        preventDefault: mock()
+        preventDefault: mock(),
       }
 
       if (event.key === "Enter" && !event.shiftKey) {
@@ -459,7 +463,7 @@ describe("ChatPage Component Tests", () => {
       const event = {
         key: "Enter",
         shiftKey: true,
-        preventDefault: mock()
+        preventDefault: mock(),
       }
 
       if (event.key === "Enter" && event.shiftKey) {
@@ -473,7 +477,7 @@ describe("ChatPage Component Tests", () => {
       const event = {
         key: "a",
         shiftKey: false,
-        preventDefault: mock()
+        preventDefault: mock(),
       }
 
       if (event.key === "Enter") {
@@ -508,7 +512,8 @@ describe("ChatPage Component Tests", () => {
 
     test("should handle invalid response format", () => {
       const response = {}
-      const hasChoices = "choices" in response && Array.isArray((response as any).choices)
+      const hasChoices =
+        "choices" in response && Array.isArray((response as any).choices)
 
       expect(hasChoices).toBe(false)
     })
@@ -540,16 +545,14 @@ describe("ChatPage Component Tests", () => {
     })
 
     test("should show empty state when no messages", () => {
-      const messages: any[] = []
+      const messages: Array<any> = []
       const isEmpty = messages.length === 0
 
       expect(isEmpty).toBe(true)
     })
 
     test("should show content when messages exist", () => {
-      const messages: any[] = [
-        { role: "user" as const, content: "Hello" }
-      ]
+      const messages: Array<any> = [{ role: "user" as const, content: "Hello" }]
       const isEmpty = messages.length === 0
 
       expect(isEmpty).toBe(false)
@@ -589,7 +592,7 @@ describe("ChatPage Component Tests", () => {
 
     test("should clear current chat", () => {
       let currentSessionId: string | null = "session-1"
-      let messages: any[] = [{ role: "user" as const, content: "Hello" }]
+      let messages: Array<any> = [{ role: "user" as const, content: "Hello" }]
       let inputValue = "test"
 
       // Clear chat
@@ -657,7 +660,7 @@ describe("ChatPage Component Tests", () => {
 
     test("should scroll when messages change", () => {
       const mockScroll = mock()
-      let messages = [{ role: "user" as const, content: "Hello" }]
+      const messages = [{ role: "user" as const, content: "Hello" }]
 
       // Simulate effect trigger
       if (messages.length > 0) {

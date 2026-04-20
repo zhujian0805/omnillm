@@ -320,9 +320,7 @@ function MaterialAuthForm({
               <InputLabel>API Mode</InputLabel>
               <Select
                 value={values.plan || "standard"}
-                onChange={(e) =>
-                  setValues({ ...values, plan: e.target.value })
-                }
+                onChange={(e) => setValues({ ...values, plan: e.target.value })}
                 label="API Mode"
               >
                 <MenuItem value="standard">
@@ -366,15 +364,13 @@ function MaterialAuthForm({
               fullWidth
               label="DashScope API Key"
               type="password"
-              placeholder={
-                values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"
-              }
+              placeholder={values.plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
               value={values.apiKey || ""}
               onChange={(e) =>
                 setValues({
                   ...values,
                   method: "api-key",
-                  apiKey: e.target.value
+                  apiKey: e.target.value,
                 })
               }
               sx={{ mb: 2 }}
@@ -508,9 +504,7 @@ function MaterialAuthForm({
               type="password"
               placeholder="Leave empty for open endpoints (e.g. Ollama)"
               value={values.apiKey || ""}
-              onChange={(e) =>
-                setValues({ ...values, apiKey: e.target.value })
-              }
+              onChange={(e) => setValues({ ...values, apiKey: e.target.value })}
               sx={{ mb: 2 }}
               helperText="Leave blank for unauthenticated local endpoints."
             />

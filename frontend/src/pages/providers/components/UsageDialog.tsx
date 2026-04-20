@@ -3,11 +3,7 @@ import { useState } from "react"
 import { getProviderUsage, type Provider, type UsageData } from "@/api"
 import { Spinner } from "@/components/Spinner"
 
-export function UsageDialog({
-  provider,
-}: {
-  provider: Provider
-}) {
+export function UsageDialog({ provider }: { provider: Provider }) {
   const [data, setData] = useState<UsageData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,7 +27,9 @@ export function UsageDialog({
   }
 
   const getBarColor = (pct: number) =>
-    pct > 90 ? "var(--color-red)" : pct > 75 ? "var(--color-orange)" : "var(--color-green)"
+    pct > 90 ? "var(--color-red)"
+    : pct > 75 ? "var(--color-orange)"
+    : "var(--color-green)"
 
   return (
     <>
@@ -59,10 +57,17 @@ export function UsageDialog({
                 {provider.name} — Usage
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={load}
+                  disabled={loading}
+                >
                   Refresh
                 </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setOpen(false)}
+                >
                   Done
                 </button>
               </div>
@@ -95,153 +100,186 @@ export function UsageDialog({
                 </div>
               )}
               {data && !loading && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 20 }}
+                >
                   {(() => {
                     const metaFields = [
                       { label: "Plan", value: data.copilot_plan },
                       { label: "SKU", value: data.access_type_sku },
                       {
                         label: "Quota Resets",
-                        value: data.quota_reset_date ? new Date(data.quota_reset_date).toLocaleDateString() : undefined,
+                        value:
+                          data.quota_reset_date ?
+                            new Date(data.quota_reset_date).toLocaleDateString()
+                          : undefined,
                       },
                       {
                         label: "Assigned",
-                        value: data.assigned_date ? new Date(data.assigned_date).toLocaleDateString() : undefined,
+                        value:
+                          data.assigned_date ?
+                            new Date(data.assigned_date).toLocaleDateString()
+                          : undefined,
                       },
                       {
                         label: "Chat",
                         value:
-                          data.chat_enabled !== undefined
-                            ? data.chat_enabled
-                              ? "Enabled"
-                              : "Disabled"
-                            : undefined,
+                          data.chat_enabled !== undefined ?
+                            data.chat_enabled ?
+                              "Enabled"
+                            : "Disabled"
+                          : undefined,
                       },
                     ].filter((f) => f.value !== undefined)
 
-                    return metaFields.length > 0 ? (
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: "12px 24px",
-                          padding: "14px 16px",
-                          background: "rgba(255,255,255,0.04)",
-                          borderRadius: "var(--radius-md)",
-                          border: "1px solid var(--color-separator)",
-                        }}
-                      >
-                        {metaFields.map(({ label, value }) => (
-                          <div key={label}>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: "var(--color-text-tertiary)",
-                                marginBottom: 3,
-                              }}
-                            >
-                              {label}
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 13,
-                                color: "var(--color-text)",
-                                textTransform: "capitalize",
-                              }}
-                            >
-                              {value}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null
-                  })()}
-
-                  {data.quota_snapshots && Object.keys(data.quota_snapshots).length > 0 ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                      {Object.entries(data.quota_snapshots).map(([key, value]) => {
-                        const { entitlement, percent_remaining, unlimited } = value
-                        const remaining = value.quota_remaining ?? value.remaining
-                        const pctUsed = unlimited ? 0 : 100 - percent_remaining
-                        const used = unlimited ? "N/A" : (entitlement - remaining).toLocaleString()
-                        const barColor = unlimited ? "var(--color-blue)" : getBarColor(pctUsed)
-                        return (
-                          <div key={key}>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                marginBottom: 8,
-                                alignItems: "baseline",
-                              }}
-                            >
-                              <span
+                    return metaFields.length > 0 ?
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "12px 24px",
+                            padding: "14px 16px",
+                            background: "rgba(255,255,255,0.04)",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--color-separator)",
+                          }}
+                        >
+                          {metaFields.map(({ label, value }) => (
+                            <div key={label}>
+                              <div
                                 style={{
-                                  fontSize: 13,
-                                  fontWeight: 500,
-                                  textTransform: "capitalize",
-                                  color: "var(--color-text)",
+                                  fontSize: 11,
+                                  color: "var(--color-text-tertiary)",
+                                  marginBottom: 3,
                                 }}
                               >
-                                {key.replaceAll("_", " ")}
-                              </span>
-                              {unlimited ? (
-                                <span
-                                  style={{
-                                    fontSize: 11,
-                                    padding: "2px 8px",
-                                    background: "var(--color-blue-fill)",
-                                    borderRadius: "var(--radius-pill)",
-                                    color: "var(--color-blue)",
-                                    fontWeight: 500,
-                                  }}
-                                >
-                                  Unlimited
-                                </span>
-                              ) : (
-                                <span
-                                  style={{
-                                    fontSize: 12,
-                                    fontFamily: "var(--font-mono)",
-                                    color: pctUsed > 75 ? barColor : "var(--color-text-secondary)",
-                                  }}
-                                >
-                                  {pctUsed.toFixed(1)}% used
-                                </span>
-                              )}
-                            </div>
-                            <div className="progress-track">
+                                {label}
+                              </div>
                               <div
-                                className="progress-bar"
                                 style={{
-                                  width: `${unlimited ? 100 : pctUsed}%`,
-                                  background: barColor,
+                                  fontSize: 13,
+                                  color: "var(--color-text)",
+                                  textTransform: "capitalize",
                                 }}
-                              />
+                              >
+                                {value}
+                              </div>
                             </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                marginTop: 5,
-                                fontSize: 12,
-                                color: "var(--color-text-secondary)",
-                                fontFamily: "var(--font-mono)",
-                              }}
-                            >
-                              <span>
-                                {used} / {unlimited ? "∞" : entitlement.toLocaleString()}
-                              </span>
-                              <span>
-                                {unlimited ? "∞" : remaining.toLocaleString()} remaining
-                              </span>
+                          ))}
+                        </div>
+                      : null
+                  })()}
+
+                  {(
+                    data.quota_snapshots
+                    && Object.keys(data.quota_snapshots).length > 0
+                  ) ?
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 18,
+                      }}
+                    >
+                      {Object.entries(data.quota_snapshots).map(
+                        ([key, value]) => {
+                          const { entitlement, percent_remaining, unlimited } =
+                            value
+                          const remaining =
+                            value.quota_remaining ?? value.remaining
+                          const pctUsed =
+                            unlimited ? 0 : 100 - percent_remaining
+                          const used =
+                            unlimited ? "N/A" : (
+                              (entitlement - remaining).toLocaleString()
+                            )
+                          const barColor =
+                            unlimited ? "var(--color-blue)" : (
+                              getBarColor(pctUsed)
+                            )
+                          return (
+                            <div key={key}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  marginBottom: 8,
+                                  alignItems: "baseline",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    textTransform: "capitalize",
+                                    color: "var(--color-text)",
+                                  }}
+                                >
+                                  {key.replaceAll("_", " ")}
+                                </span>
+                                {unlimited ?
+                                  <span
+                                    style={{
+                                      fontSize: 11,
+                                      padding: "2px 8px",
+                                      background: "var(--color-blue-fill)",
+                                      borderRadius: "var(--radius-pill)",
+                                      color: "var(--color-blue)",
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    Unlimited
+                                  </span>
+                                : <span
+                                    style={{
+                                      fontSize: 12,
+                                      fontFamily: "var(--font-mono)",
+                                      color:
+                                        pctUsed > 75 ? barColor : (
+                                          "var(--color-text-secondary)"
+                                        ),
+                                    }}
+                                  >
+                                    {pctUsed.toFixed(1)}% used
+                                  </span>
+                                }
+                              </div>
+                              <div className="progress-track">
+                                <div
+                                  className="progress-bar"
+                                  style={{
+                                    width: `${unlimited ? 100 : pctUsed}%`,
+                                    background: barColor,
+                                  }}
+                                />
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  marginTop: 5,
+                                  fontSize: 12,
+                                  color: "var(--color-text-secondary)",
+                                  fontFamily: "var(--font-mono)",
+                                }}
+                              >
+                                <span>
+                                  {used} /{" "}
+                                  {unlimited ?
+                                    "∞"
+                                  : entitlement.toLocaleString()}
+                                </span>
+                                <span>
+                                  {unlimited ? "∞" : remaining.toLocaleString()}{" "}
+                                  remaining
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        },
+                      )}
                     </div>
-                  ) : (
-                    <div>
+                  : <div>
                       <div
                         style={{
                           fontSize: 12,
@@ -266,7 +304,7 @@ export function UsageDialog({
                         {JSON.stringify(data, null, 2)}
                       </pre>
                     </div>
-                  )}
+                  }
                 </div>
               )}
             </div>

@@ -10,7 +10,12 @@ interface EmptyStateProps {
   }
 }
 
-export function EmptyState({ icon, title, description, action }: EmptyStateProps) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+}: EmptyStateProps) {
   return (
     <div
       className="animate-slide-in"
