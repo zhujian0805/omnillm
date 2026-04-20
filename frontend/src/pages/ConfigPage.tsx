@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-dynamic-delete,@typescript-eslint/no-unsafe-argument,@typescript-eslint/use-unknown-in-catch-callback-variable,no-nested-ternary */
 import {
   Save,
   RotateCcw,
@@ -214,9 +215,7 @@ function parseTOML(text: string): CodexConfig {
     if (!line || line.startsWith("#")) continue
 
     // Sub-section like [profiles.xxx.windows] — skip subsections
-    const multiDotMatch = line.match(
-      /^\[([^\]][^.\]]*\.[^\]][^.\]]*\.[^\]]+)\]$/,
-    )
+    const multiDotMatch = line.match(/^\[[^\]][^.\]]*\.[^\]][^.\]]*\.[^\]]+\]$/)
     if (multiDotMatch) {
       currentSection = "__skip__"
       continue
@@ -253,7 +252,7 @@ function parseTOML(text: string): CodexConfig {
 
     if (currentSection === "__skip__") continue
 
-    const kvMatch = line.match(/^([\w.]+)\s*=\s*(.+)$/)
+    const kvMatch = line.match(/^([\w.]+)\s*=\s*(\S.*)$/)
     if (!kvMatch) continue
 
     const key = kvMatch[1]
@@ -314,7 +313,7 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
       continue
     }
 
-    const kvMatch = line.trim().match(/^([\w.]+)\s*=\s*(.+)$/)
+    const kvMatch = line.trim().match(/^([\w.]+)\s*=\s*\S.*$/)
     if (kvMatch) {
       const key = kvMatch[1]
 
@@ -675,7 +674,14 @@ function ClaudeCodeEditor({
         count={
           Object.keys(settings).filter(
             (k) =>
-              !["model", "env", "enabledPlugins", "extraKnownMarketplaces", "autoUpdatesChannel", "skipDangerousModePermissionPrompt"].includes(k),
+              ![
+                "autoUpdatesChannel",
+                "enabledPlugins",
+                "env",
+                "extraKnownMarketplaces",
+                "model",
+                "skipDangerousModePermissionPrompt",
+              ].includes(k),
           ).length
         }
         defaultOpen={false}
@@ -683,7 +689,14 @@ function ClaudeCodeEditor({
         {Object.entries(settings)
           .filter(
             ([key]) =>
-              !["model", "env", "enabledPlugins", "extraKnownMarketplaces", "autoUpdatesChannel", "skipDangerousModePermissionPrompt"].includes(key),
+              ![
+                "autoUpdatesChannel",
+                "enabledPlugins",
+                "env",
+                "extraKnownMarketplaces",
+                "model",
+                "skipDangerousModePermissionPrompt",
+              ].includes(key),
           )
           .map(([key, value]) => (
             <div
@@ -707,7 +720,9 @@ function ClaudeCodeEditor({
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
               <input
-                value={typeof value === "string" ? value : JSON.stringify(value)}
+                value={
+                  typeof value === "string" ? value : JSON.stringify(value)
+                }
                 onChange={(e) =>
                   onChange({ ...settings, [key]: e.target.value })
                 }
@@ -876,7 +891,14 @@ function CodexEditor({
         {Object.entries(config)
           .filter(
             ([key]) =>
-              !["model", "model_reasoning_effort", "profile", "model_providers", "profiles", "projects"].includes(key),
+              ![
+                "model",
+                "model_providers",
+                "model_reasoning_effort",
+                "profile",
+                "profiles",
+                "projects",
+              ].includes(key),
           )
           .map(([key, value]) => (
             <div
@@ -893,17 +915,18 @@ function CodexEditor({
                 onChange={(e) => {
                   const newConfig = { ...config }
                   delete (newConfig as Record<string, unknown>)[key]
-                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  ;(newConfig as Record<string, unknown>)[e.target.value] =
+                    value
                   onChange(newConfig)
                 }}
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
               <input
-                value={typeof value === "string" ? value : JSON.stringify(value)}
-                onChange={(e) =>
-                  onChange({ ...config, [key]: e.target.value })
+                value={
+                  typeof value === "string" ? value : JSON.stringify(value)
                 }
+                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
                 placeholder="value"
                 style={{ ...smallInputStyle, flex: 1 }}
               />
@@ -1352,7 +1375,9 @@ function OpenCodeEditor({
         <Field label="API Key Env Var">
           <input
             value={config.api_key_env ?? ""}
-            onChange={(e) => onChange({ ...config, api_key_env: e.target.value })}
+            onChange={(e) =>
+              onChange({ ...config, api_key_env: e.target.value })
+            }
             style={inputStyle}
             placeholder="API_KEY_jzhu_1677_resource"
           />
@@ -1370,7 +1395,16 @@ function OpenCodeEditor({
         {Object.entries(config)
           .filter(
             ([key]) =>
-              !["provider", "model", "endpoint", "api_key_env", "features", "mcp", "skills", "generated_on"].includes(key),
+              ![
+                "api_key_env",
+                "endpoint",
+                "features",
+                "generated_on",
+                "mcp",
+                "model",
+                "provider",
+                "skills",
+              ].includes(key),
           )
           .map(([key, value]) => (
             <div
@@ -1387,17 +1421,18 @@ function OpenCodeEditor({
                 onChange={(e) => {
                   const newConfig = { ...config }
                   delete (newConfig as Record<string, unknown>)[key]
-                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  ;(newConfig as Record<string, unknown>)[e.target.value] =
+                    value
                   onChange(newConfig)
                 }}
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
               <input
-                value={typeof value === "string" ? value : JSON.stringify(value)}
-                onChange={(e) =>
-                  onChange({ ...config, [key]: e.target.value })
+                value={
+                  typeof value === "string" ? value : JSON.stringify(value)
                 }
+                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
                 placeholder="value"
                 style={{ ...smallInputStyle, flex: 1 }}
               />
@@ -1472,8 +1507,10 @@ function OpenCodeEditor({
               }
               style={{ accentColor: "var(--color-blue)" }}
             />
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              {key.replace(/_/g, " ")}
+            <span
+              style={{ fontSize: 12, color: "var(--color-text-secondary)" }}
+            >
+              {key.replaceAll("_", " ")}
             </span>
           </label>
         ))}
@@ -1550,16 +1587,26 @@ function OpenCodeEditor({
       </Section>
 
       {/* MCP Servers */}
-      <Section title="MCP Servers" icon={Plug} count={mcpServers.length} defaultOpen={false}>
-        {mcpServers.length === 0 ? (
-          <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+      <Section
+        title="MCP Servers"
+        icon={Plug}
+        count={mcpServers.length}
+        defaultOpen={false}
+      >
+        {mcpServers.length === 0 ?
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--color-text-tertiary)",
+              padding: "8px 0",
+            }}
+          >
             No MCP servers configured
           </div>
-        ) : (
-          <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+        : <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
             MCP servers are configured via raw JSON
           </div>
-        )}
+        }
       </Section>
     </div>
   )
@@ -1598,8 +1645,7 @@ function AMPEditor({
         {/* Custom settings */}
         {Object.entries(config)
           .filter(
-            ([key]) =>
-              !["models", "features", "ui", "logging"].includes(key),
+            ([key]) => !["features", "logging", "models", "ui"].includes(key),
           )
           .map(([key, value]) => (
             <div
@@ -1616,17 +1662,18 @@ function AMPEditor({
                 onChange={(e) => {
                   const newConfig = { ...config }
                   delete (newConfig as Record<string, unknown>)[key]
-                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  ;(newConfig as Record<string, unknown>)[e.target.value] =
+                    value
                   onChange(newConfig)
                 }}
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
               <input
-                value={typeof value === "string" ? value : JSON.stringify(value)}
-                onChange={(e) =>
-                  onChange({ ...config, [key]: e.target.value })
+                value={
+                  typeof value === "string" ? value : JSON.stringify(value)
                 }
+                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
                 placeholder="value"
                 style={{ ...smallInputStyle, flex: 1 }}
               />
@@ -1679,7 +1726,9 @@ function AMPEditor({
 
       {/* Features */}
       <Section title="Features" icon={Plug}>
-        {(["streaming", "tool_use", "auto_context", "code_completion"] as const).map((key) => (
+        {(
+          ["streaming", "tool_use", "auto_context", "code_completion"] as const
+        ).map((key) => (
           <label
             key={key}
             style={{
@@ -1701,8 +1750,10 @@ function AMPEditor({
               }
               style={{ accentColor: "var(--color-blue)" }}
             />
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              {key.replace(/_/g, " ")}
+            <span
+              style={{ fontSize: 12, color: "var(--color-text-secondary)" }}
+            >
+              {key.replaceAll("_", " ")}
             </span>
           </label>
         ))}
@@ -1749,8 +1800,10 @@ function AMPEditor({
               }
               style={{ accentColor: "var(--color-blue)" }}
             />
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              {key.replace(/_/g, " ")}
+            <span
+              style={{ fontSize: 12, color: "var(--color-text-secondary)" }}
+            >
+              {key.replaceAll("_", " ")}
             </span>
           </label>
         ))}
@@ -1769,8 +1822,21 @@ function AMPEditor({
               background: "var(--color-surface)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--font-mono)", color: "var(--color-blue)" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--color-blue)",
+                }}
+              >
                 {provider.name}
               </span>
               <button
@@ -1781,7 +1847,13 @@ function AMPEditor({
                     models: { ...config.models, providers: newProviders },
                   })
                 }}
-                style={{ padding: 2, border: "none", background: "transparent", color: "var(--color-red, #f87171)", cursor: "pointer" }}
+                style={{
+                  padding: 2,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
               >
                 <Trash2 size={12} />
               </button>
@@ -1791,8 +1863,24 @@ function AMPEditor({
               { key: "base_url", label: "Base URL" },
               { key: "api_key", label: "API Key" },
             ].map(({ key, label }) => (
-              <div key={key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", minWidth: 70 }}>{label}</span>
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    minWidth: 70,
+                  }}
+                >
+                  {label}
+                </span>
                 <input
                   value={(provider as Record<string, string>)[key]}
                   onChange={(e) =>
@@ -1801,7 +1889,7 @@ function AMPEditor({
                       models: {
                         ...config.models,
                         providers: providers.map((p, i) =>
-                          i === idx ? { ...p, [key]: e.target.value } : p
+                          i === idx ? { ...p, [key]: e.target.value } : p,
                         ),
                       },
                     })
@@ -1815,7 +1903,12 @@ function AMPEditor({
       </Section>
 
       {/* Custom Models */}
-      <Section title="Custom Models" icon={Settings2} count={models.length} defaultOpen={false}>
+      <Section
+        title="Custom Models"
+        icon={Settings2}
+        count={models.length}
+        defaultOpen={false}
+      >
         {models.map((model, idx) => (
           <div
             key={model.id}
@@ -1827,8 +1920,21 @@ function AMPEditor({
               background: "var(--color-surface)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--font-mono)", color: "var(--color-blue)" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--color-blue)",
+                }}
+              >
                 {model.display_name || model.model_name}
               </span>
               <button
@@ -1839,7 +1945,13 @@ function AMPEditor({
                     models: { ...config.models, custom: newModels },
                   })
                 }}
-                style={{ padding: 2, border: "none", background: "transparent", color: "var(--color-red, #f87171)", cursor: "pointer" }}
+                style={{
+                  padding: 2,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
               >
                 <Trash2 size={12} />
               </button>
@@ -1848,8 +1960,24 @@ function AMPEditor({
               { key: "model_name", label: "Model Name" },
               { key: "display_name", label: "Display Name" },
             ].map(({ key, label }) => (
-              <div key={key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", minWidth: 90 }}>{label}</span>
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    minWidth: 90,
+                  }}
+                >
+                  {label}
+                </span>
                 <input
                   value={(model as Record<string, string>)[key]}
                   onChange={(e) =>
@@ -1858,7 +1986,7 @@ function AMPEditor({
                       models: {
                         ...config.models,
                         custom: models.map((m, i) =>
-                          i === idx ? { ...m, [key]: e.target.value } : m
+                          i === idx ? { ...m, [key]: e.target.value } : m,
                         ),
                       },
                     })
@@ -1897,7 +2025,10 @@ function DroidEditor({
                 ...config,
                 providers: {
                   ...config.providers,
-                  default: { ...config.providers?.default, baseUrl: e.target.value },
+                  default: {
+                    ...config.providers?.default,
+                    baseUrl: e.target.value,
+                  },
                 },
               })
             }
@@ -1913,7 +2044,10 @@ function DroidEditor({
                 ...config,
                 providers: {
                   ...config.providers,
-                  default: { ...config.providers?.default, apiKey: e.target.value },
+                  default: {
+                    ...config.providers?.default,
+                    apiKey: e.target.value,
+                  },
                 },
               })
             }
@@ -1926,7 +2060,14 @@ function DroidEditor({
         {Object.entries(config)
           .filter(
             ([key]) =>
-              !["customModels", "providers", "features", "logging", "ui", "enabledPlugins"].includes(key),
+              ![
+                "customModels",
+                "enabledPlugins",
+                "features",
+                "logging",
+                "providers",
+                "ui",
+              ].includes(key),
           )
           .map(([key, value]) => (
             <div
@@ -1943,17 +2084,18 @@ function DroidEditor({
                 onChange={(e) => {
                   const newConfig = { ...config }
                   delete (newConfig as Record<string, unknown>)[key]
-                  ;(newConfig as Record<string, unknown>)[e.target.value] = value
+                  ;(newConfig as Record<string, unknown>)[e.target.value] =
+                    value
                   onChange(newConfig)
                 }}
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
               <input
-                value={typeof value === "string" ? value : JSON.stringify(value)}
-                onChange={(e) =>
-                  onChange({ ...config, [key]: e.target.value })
+                value={
+                  typeof value === "string" ? value : JSON.stringify(value)
                 }
+                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
                 placeholder="value"
                 style={{ ...smallInputStyle, flex: 1 }}
               />
@@ -2006,7 +2148,9 @@ function DroidEditor({
 
       {/* Features */}
       <Section title="Features" icon={Plug}>
-        {(["streaming", "toolUse", "imageSupport", "functionCalling"] as const).map((key) => (
+        {(
+          ["streaming", "toolUse", "imageSupport", "functionCalling"] as const
+        ).map((key) => (
           <label
             key={key}
             style={{
@@ -2028,8 +2172,10 @@ function DroidEditor({
               }
               style={{ accentColor: "var(--color-blue)" }}
             />
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              {key.replace(/([A-Z])/g, " $1").toLowerCase()}
+            <span
+              style={{ fontSize: 12, color: "var(--color-text-secondary)" }}
+            >
+              {key.replaceAll(/([A-Z])/g, " $1").toLowerCase()}
             </span>
           </label>
         ))}
@@ -2075,8 +2221,10 @@ function DroidEditor({
               }
               style={{ accentColor: "var(--color-blue)" }}
             />
-            <span style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>
-              {key.replace(/([A-Z])/g, " $1").toLowerCase()}
+            <span
+              style={{ fontSize: 12, color: "var(--color-text-secondary)" }}
+            >
+              {key.replaceAll(/([A-Z])/g, " $1").toLowerCase()}
             </span>
           </label>
         ))}
@@ -2095,8 +2243,21 @@ function DroidEditor({
               background: "var(--color-surface)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, fontFamily: "var(--font-mono)", color: "var(--color-blue)" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--color-blue)",
+                }}
+              >
                 {model.displayName || model.model}
               </span>
               <button
@@ -2104,7 +2265,13 @@ function DroidEditor({
                   const newModels = models.filter((_, i) => i !== idx)
                   onChange({ ...config, customModels: newModels })
                 }}
-                style={{ padding: 2, border: "none", background: "transparent", color: "var(--color-red, #f87171)", cursor: "pointer" }}
+                style={{
+                  padding: 2,
+                  border: "none",
+                  background: "transparent",
+                  color: "var(--color-red, #f87171)",
+                  cursor: "pointer",
+                }}
               >
                 <Trash2 size={12} />
               </button>
@@ -2116,15 +2283,31 @@ function DroidEditor({
               { key: "apiKey", label: "API Key" },
               { key: "provider", label: "Provider" },
             ].map(({ key, label }) => (
-              <div key={key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", minWidth: 90 }}>{label}</span>
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    minWidth: 90,
+                  }}
+                >
+                  {label}
+                </span>
                 <input
                   value={(model as Record<string, string>)[key]}
                   onChange={(e) =>
                     onChange({
                       ...config,
                       customModels: models.map((m, i) =>
-                        i === idx ? { ...m, [key]: e.target.value } : m
+                        i === idx ? { ...m, [key]: e.target.value } : m,
                       ),
                     })
                   }
@@ -2133,14 +2316,59 @@ function DroidEditor({
               </div>
             ))}
             {/* Model Parameters */}
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--color-separator)" }}>
-              <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", display: "block", marginBottom: 6 }}>Parameters</span>
+            <div
+              style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: "1px solid var(--color-separator)",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  display: "block",
+                  marginBottom: 6,
+                }}
+              >
+                Parameters
+              </span>
               {[
-                { key: "temperature", label: "Temperature", type: "number", step: 0.1, min: 0, max: 2 },
-                { key: "topP", label: "Top P", type: "number", step: 0.01, min: 0, max: 1 },
+                {
+                  key: "temperature",
+                  label: "Temperature",
+                  type: "number",
+                  step: 0.1,
+                  min: 0,
+                  max: 2,
+                },
+                {
+                  key: "topP",
+                  label: "Top P",
+                  type: "number",
+                  step: 0.01,
+                  min: 0,
+                  max: 1,
+                },
               ].map(({ key, label, type, step, min, max }) => (
-                <div key={key} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", minWidth: 90 }}>{label}</span>
+                <div
+                  key={key}
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    marginBottom: 4,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary)",
+                      minWidth: 90,
+                    }}
+                  >
+                    {label}
+                  </span>
                   <input
                     type={type}
                     step={step}
@@ -2151,7 +2379,9 @@ function DroidEditor({
                       onChange({
                         ...config,
                         customModels: models.map((m, i) =>
-                          i === idx ? { ...m, [key]: parseFloat(e.target.value) } : m
+                          i === idx ?
+                            { ...m, [key]: Number.parseFloat(e.target.value) }
+                          : m,
                         ),
                       })
                     }
@@ -2210,15 +2440,17 @@ function ToolCard({
   // Map config names to their actual file paths
   const configPaths: Record<string, string> = {
     "claude-code": "~/.claude/settings.json",
-    "codex": "~/.codex/config.toml",
-    "droid": "~/.factory/settings.json",
-    "opencode": "~/.opencode/config.json",
-    "amp": "~/.amp/config.json",
+    codex: "~/.codex/config.toml",
+    droid: "~/.factory/settings.json",
+    opencode: "~/.opencode/config.json",
+    amp: "~/.amp/config.json",
   }
 
-  const desc = configPaths[entry.name] || (
-    entry.language === "json" ? "~/.config/settings.json" : "~/.config/config.toml"
-  )
+  const desc =
+    configPaths[entry.name]
+    || (entry.language === "json" ?
+      "~/.config/settings.json"
+    : "~/.config/config.toml")
 
   return (
     <button
@@ -2308,7 +2540,14 @@ function ToolCard({
       </div>
 
       {/* Badges */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: "auto" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          marginTop: "auto",
+        }}
+      >
         <span
           style={{
             fontSize: 9,
@@ -2362,7 +2601,9 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const [claudeSettings, setClaudeSettings] =
     useState<ClaudeCodeSettings | null>(null)
   const [codexConfig, setCodexConfig] = useState<CodexConfig | null>(null)
-  const [opencodeConfig, setOpenCodeConfig] = useState<OpenCodeConfig | null>(null)
+  const [opencodeConfig, setOpenCodeConfig] = useState<OpenCodeConfig | null>(
+    null,
+  )
   const [ampConfig, setAMPConfig] = useState<AMPConfig | null>(null)
   const [droidConfig, setDroidConfig] = useState<DroidConfig | null>(null)
 
@@ -2422,7 +2663,11 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             // Normalize the config
             setAMPConfig({
               ...parsed,
-              models: parsed.models ?? { default: "", providers: [], custom: [] },
+              models: parsed.models ?? {
+                default: "",
+                providers: [],
+                custom: [],
+              },
               features: parsed.features ?? {},
               ui: parsed.ui ?? {},
               logging: parsed.logging ?? {},
@@ -2593,11 +2838,11 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const activeEntry = configs.find((c) => c.name === activeConfig)
   const showStructured =
     viewMode === "structured"
-    && ((activeConfig === "claude-code" && claudeSettings != null)
-      || (activeConfig === "codex" && codexConfig != null)
-      || (activeConfig === "opencode" && opencodeConfig != null)
-      || (activeConfig === "amp" && ampConfig != null)
-      || (activeConfig === "droid" && droidConfig != null))
+    && ((activeConfig === "claude-code" && claudeSettings !== null)
+      || (activeConfig === "codex" && codexConfig !== null)
+      || (activeConfig === "opencode" && opencodeConfig !== null)
+      || (activeConfig === "amp" && ampConfig !== null)
+      || (activeConfig === "droid" && droidConfig !== null))
 
   return (
     <div>
@@ -2633,7 +2878,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
           display: "grid",
           gridTemplateColumns: "repeat(5, 1fr)", // Exactly 5 equal columns for all tools
           gap: 14,
-          marginBottom: 24
+          marginBottom: 24,
         }}
       >
         {configs.map((cfg) => (

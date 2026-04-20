@@ -42,6 +42,7 @@ function formatMessage(level: string, message: string, meta: unknown): string {
 function emit(level: LogLevel, message: string, meta?: unknown): void {
   if (!shouldLog(level)) return
   const formatted = formatMessage(level, message, meta)
+  // eslint-disable-next-line default-case -- LogLevel union is exhaustive
   switch (level) {
     case "fatal":
     case "error": {

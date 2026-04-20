@@ -48,7 +48,6 @@ async function checkPortAvailable(port: number): Promise<boolean> {
   }
 }
 
-// eslint-disable-next-line max-params
 function run(label: string, color: string, cmd: string, args: Array<string>) {
   const labelColor = `\x1b[${color}m`
   const resetColor = `\x1b[0m`

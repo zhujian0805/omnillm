@@ -21,7 +21,13 @@ describe("vmodels helpers", () => {
       { model_id: "gpt-4o", provider_id: undefined },
       {
         providers: [
-          { id: "p1", type: "openai", name: "OpenAI", isActive: true, authStatus: "authenticated" },
+          {
+            id: "p1",
+            type: "openai",
+            name: "OpenAI",
+            isActive: true,
+            authStatus: "authenticated",
+          },
         ],
         providerModels: {
           p1: [{ id: "gpt-4o", name: "GPT-4o", enabled: true }],
@@ -39,8 +45,20 @@ describe("vmodels helpers", () => {
       { model_id: "shared-model", provider_id: undefined },
       {
         providers: [
-          { id: "p1", type: "a", name: "A", isActive: true, authStatus: "authenticated" },
-          { id: "p2", type: "b", name: "B", isActive: true, authStatus: "authenticated" },
+          {
+            id: "p1",
+            type: "a",
+            name: "A",
+            isActive: true,
+            authStatus: "authenticated",
+          },
+          {
+            id: "p2",
+            type: "b",
+            name: "B",
+            isActive: true,
+            authStatus: "authenticated",
+          },
         ],
         providerModels: {
           p1: [{ id: "shared-model", name: "Shared", enabled: true }],
@@ -65,8 +83,20 @@ describe("vmodels helpers", () => {
       },
       {
         providers: [
-          { id: "p1", type: "openai", name: "OpenAI A", isActive: true, authStatus: "authenticated" },
-          { id: "p2", type: "openai", name: "OpenAI B", isActive: true, authStatus: "authenticated" },
+          {
+            id: "p1",
+            type: "openai",
+            name: "OpenAI A",
+            isActive: true,
+            authStatus: "authenticated",
+          },
+          {
+            id: "p2",
+            type: "openai",
+            name: "OpenAI B",
+            isActive: true,
+            authStatus: "authenticated",
+          },
         ],
         providerModels: {},
         providerNameById: { p1: "OpenAI A", p2: "OpenAI B" },

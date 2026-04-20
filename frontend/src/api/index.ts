@@ -197,9 +197,7 @@ function getApiKey(): string {
     return cachedApiKey
   }
 
-  const meta = globalThis.document?.querySelector?.(
-    'meta[name="omnillm-api-key"]',
-  )
+  const meta = globalThis.document.querySelector('meta[name="omnillm-api-key"]')
   const content = meta?.getAttribute("content")?.trim() ?? ""
   cachedApiKey =
     content || (typeof __API_KEY__ !== "undefined" ? __API_KEY__ : "")
@@ -548,7 +546,7 @@ export const createChatCompletion = async (
   apiShape: "openai" | "responses" = "openai",
 ) => {
   let endpoint: string
-  let requestBody: Record<string, unknown> = {}
+  let requestBody: Record<string, unknown>
 
   switch (apiShape) {
     case "responses": {
@@ -656,7 +654,7 @@ export const listChatSessions = async () => {
   >("/api/admin/chat/sessions")
   const sessions =
     Array.isArray(response) ? response : (response.sessions ?? [])
-  return sessions.map(normalizeSessionSummary)
+  return sessions.map((s) => normalizeSessionSummary(s))
 }
 
 export const getChatSession = async (sessionId: string) => {
@@ -672,11 +670,11 @@ export const getChatSession = async (sessionId: string) => {
         typed.session as unknown as Record<string, unknown>,
       ),
       messages: typed.messages.map((msg) => ({
-        message_id: String(msg.message_id ?? ""),
-        session_id: String(msg.session_id ?? sessionId),
-        role: String(msg.role ?? ""),
-        content: String(msg.content ?? ""),
-        created_at: String(msg.created_at ?? ""),
+        message_id: msg.message_id,
+        session_id: msg.session_id,
+        role: msg.role,
+        content: msg.content,
+        created_at: msg.created_at,
       })),
     }
   }
@@ -688,12 +686,19 @@ export const getChatSession = async (sessionId: string) => {
     session: normalizeSessionSummary(raw),
     messages: rawMessages.map((msg) => {
       const rawMsg = msg as Record<string, unknown>
+      let messageId = ""
+      if (typeof rawMsg.message_id === "string") {
+        messageId = rawMsg.message_id
+      } else if (typeof rawMsg.id === "string") {
+        messageId = rawMsg.id
+      }
       return {
-        message_id: String(rawMsg.message_id ?? rawMsg.id ?? ""),
+        message_id: messageId,
         session_id: sessionId,
-        role: String(rawMsg.role ?? ""),
-        content: String(rawMsg.content ?? ""),
-        created_at: String(rawMsg.created_at ?? ""),
+        role: typeof rawMsg.role === "string" ? rawMsg.role : "",
+        content: typeof rawMsg.content === "string" ? rawMsg.content : "",
+        created_at:
+          typeof rawMsg.created_at === "string" ? rawMsg.created_at : "",
       }
     }),
   }
@@ -769,7 +774,7 @@ export interface VirtualModelPayload {
 
 export const listVirtualModels = () =>
   apiFetch<{ data: Array<VirtualModel> }>("/api/admin/vmodels").then(
-    (r) => r.data ?? [],
+    (r) => r.data,
   )
 
 export const getVirtualModel = (id: string) =>
