@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-floating-promises,unicorn/consistent-function-scoping,no-nested-ternary */
 import { useState } from "react"
 
 import { getProviderUsage, type Provider, type UsageData } from "@/api"

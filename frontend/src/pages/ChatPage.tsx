@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unsafe-return,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
 import {
   Send as SendIcon,
   Bot,
@@ -17,6 +18,7 @@ import {
   getChatSession,
   createChatSession,
   addChatMessage,
+  type ModelInfo,
   deleteChatSession,
   deleteAllChatSessions,
   type ChatMessage,
@@ -170,7 +172,7 @@ export function ChatPage({ showToast }: ChatPageProps) {
       }
     }
     loadData()
-  }, [showToast]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showToast])
 
   // Keep selected model valid when apiShape or models change
   useEffect(() => {

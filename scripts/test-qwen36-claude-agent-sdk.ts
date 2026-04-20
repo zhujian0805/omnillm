@@ -263,8 +263,7 @@ function printSummary(summary: RunSummary): void {
 async function main(): Promise<void> {
   const baseUrl = process.env.OMNILLM_CLAUDE_BASE_URL ?? DEFAULT_BASE_URL
   const model = process.env.OMNILLM_CLAUDE_MODEL ?? DEFAULT_MODEL
-  const apiKey =
-    process.env.OMNILLM_CLAUDE_API_KEY ?? "sk-omnillm-local-test"
+  const apiKey = process.env.OMNILLM_CLAUDE_API_KEY ?? "sk-omnillm-local-test"
   const prompt = process.env.OMNILLM_CLAUDE_PROMPT ?? DEFAULT_PROMPT
   const timeoutMs = parsePositiveInt(
     process.env.OMNILLM_CLAUDE_TIMEOUT_MS,
