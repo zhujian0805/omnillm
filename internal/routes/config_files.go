@@ -21,6 +21,20 @@ var configFilePaths = map[string]string{
 	"amp":         expandHomePath("~/.amp/config.json"),
 }
 
+// ConfigFilePathsForTest returns a shallow copy of the current config file path map.
+func ConfigFilePathsForTest() map[string]string {
+	copyMap := make(map[string]string, len(configFilePaths))
+	for k, v := range configFilePaths {
+		copyMap[k] = v
+	}
+	return copyMap
+}
+
+// SetConfigFilePathsForTest replaces config file paths for tests.
+func SetConfigFilePathsForTest(paths map[string]string) {
+	configFilePaths = paths
+}
+
 // configMetadata holds display info for each config file.
 var configMetadata = map[string]struct {
 	Label       string `json:"label"`

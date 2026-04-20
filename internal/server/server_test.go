@@ -260,6 +260,40 @@ func TestProtectedRoutesRequireAuth(t *testing.T) {
 	}
 }
 
+func TestResponsesRouteRejectsInvalidJSON(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(t, srv.URL+"/v1/responses", `{"model":`, nil)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "Invalid request format") {
+		t.Fatalf("unexpected body: %s", body)
+	}
+}
+
+func TestResponsesRouteRequiresAuth(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/responses", strings.NewReader(`{"model":"gpt-5.4-mini","input":"hi"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", resp.StatusCode, body)
+	}
+}
+
 func TestChatCompletions_NoActiveProvider(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()

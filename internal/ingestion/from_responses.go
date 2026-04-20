@@ -118,7 +118,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 			if err := json.Unmarshal(itemBytes, &inputItem); err != nil {
 				continue
 			}
-			msgs, err := translateInputItem(inputItem, itemMap)
+			msgs, err := translateInputItem(inputItem)
 			if err != nil {
 				return nil, err
 			}
@@ -130,7 +130,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 	}
 }
 
-func translateInputItem(item InputItem, raw map[string]interface{}) ([]cif.CIFMessage, error) {
+func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
 	switch item.Type {
 	case "message":
 		content, err := translateInputContent(item.Content)
@@ -139,7 +139,7 @@ func translateInputItem(item InputItem, raw map[string]interface{}) ([]cif.CIFMe
 		}
 
 		switch item.Role {
-		case "system":
+		case "system", "developer":
 			text := extractInputText(item.Content)
 			return []cif.CIFMessage{
 				cif.CIFSystemMessage{Role: "system", Content: text},
@@ -310,3 +310,4 @@ func translateResponsesToolChoice(toolChoice interface{}) interface{} {
 		return nil
 	}
 }
+
