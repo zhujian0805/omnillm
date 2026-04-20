@@ -21,7 +21,7 @@ var CheckUsageCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
-		configDir := filepath.Join(homeDir, ".local", "share", "omnillm")
+		configDir := filepath.Join(homeDir, ".config", "omnillm")
 		if err := database.InitializeDatabase(configDir); err != nil {
 			return fmt.Errorf("failed to initialize database: %w", err)
 		}

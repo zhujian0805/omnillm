@@ -31,7 +31,7 @@ var DebugCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
 		}
-		configDir := filepath.Join(homeDir, ".local", "share", "omnillm")
+		configDir := filepath.Join(homeDir, ".config", "omnillm")
 		dbPath := filepath.Join(configDir, "database.sqlite")
 
 		fmt.Println("Paths:")
