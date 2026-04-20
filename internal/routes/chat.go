@@ -18,33 +18,42 @@ import (
 	"omnillm/internal/serialization"
 )
 
-var (
-	modelCache     = modelrouting.NewModelCache()
+var modelCache = modelrouting.NewModelCache()
+
+type ChatCompletionOptions struct {
+	RateLimiter    *ratelimit.RateLimiter
+	ManualApproval bool
+}
+
+type chatCompletionHandler struct {
 	rateLimiter    *ratelimit.RateLimiter
 	manualApproval bool
-)
-
-func SetupChatCompletionRoutes(router *gin.RouterGroup) {
-	rateLimiter = ratelimit.NewRateLimiter(0, false)
-	manualApproval = false
-
-	router.POST("/chat/completions", handleChatCompletions)
 }
 
-func ConfigureChatCompletionOptions(rl *ratelimit.RateLimiter, manual bool) {
-	if rl != nil {
-		rateLimiter = rl
+func SetupChatCompletionRoutes(router *gin.RouterGroup, options ChatCompletionOptions) {
+	handler := newChatCompletionHandler(options)
+	router.POST("/chat/completions", handler.handleChatCompletions)
+}
+
+func newChatCompletionHandler(options ChatCompletionOptions) *chatCompletionHandler {
+	rl := options.RateLimiter
+	if rl == nil {
+		rl = ratelimit.NewRateLimiter(0, false)
 	}
-	manualApproval = manual
+
+	return &chatCompletionHandler{
+		rateLimiter:    rl,
+		manualApproval: options.ManualApproval,
+	}
 }
 
-func handleChatCompletions(c *gin.Context) {
+func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 	requestID, _ := c.Get("request_id")
 	requestIDStr := fmt.Sprintf("%v", requestID)
 	startTime := time.Now()
 
 	// Check rate limits
-	if err := rateLimiter.CheckAndWait(); err != nil {
+	if err := h.rateLimiter.CheckAndWait(); err != nil {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error": gin.H{
 				"message": err.Error(),
@@ -55,7 +64,7 @@ func handleChatCompletions(c *gin.Context) {
 	}
 
 	// Manual approval if enabled
-	if manualApproval {
+	if h.manualApproval {
 		if err := approval.AwaitApproval(); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": gin.H{

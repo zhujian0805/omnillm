@@ -29,16 +29,16 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	// Configure routes with a no-op rate limiter
-	rl := ratelimit.NewRateLimiter(0, false)
-	routes.ConfigureChatCompletionOptions(rl, false)
-
 	os.Exit(m.Run())
 }
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	r := buildRouter(0, "test-api-key")
+	chatOptions := routes.ChatCompletionOptions{
+		RateLimiter:    ratelimit.NewRateLimiter(0, false),
+		ManualApproval: false,
+	}
+	r := buildRouter(0, "test-api-key", chatOptions)
 	return httptest.NewServer(r)
 }
 

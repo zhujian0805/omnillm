@@ -16,8 +16,17 @@ import (
 )
 
 var (
-	httpClient   = &http.Client{Timeout: 120 * time.Second}
-	streamClient = &http.Client{}
+	httpClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		},
+	}
+	streamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+		},
+	}
 )
 
 // APIError preserves upstream HTTP failures so adapters can decide whether to
