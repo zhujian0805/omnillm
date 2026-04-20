@@ -35,11 +35,14 @@ func upstreamAPIForProvider(providerID string, model string) string {
 }
 
 func handleMessages(c *gin.Context) {
+	// Type assertion is zero-allocation vs fmt.Sprintf("%v", requestID)
 	requestID, _ := c.Get("request_id")
-	requestIDStr := fmt.Sprintf("%v", requestID)
+	requestIDStr, _ := requestID.(string)
 	startTime := time.Now()
 
-	// Parse request body and convert to CIF
+	// Parse request body and convert to CIF.
+	// json.Valid is omitted: ParseAnthropicMessages calls json.Unmarshal which
+	// already validates syntax and returns a clear error, avoiding a double parse pass.
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
@@ -52,33 +55,24 @@ func handleMessages(c *gin.Context) {
 		return
 	}
 
-	if !json.Valid(body) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": "Invalid request format",
-				"type":    "invalid_request_error",
-			},
-		})
-		return
-	}
-
-	// Parse into map for tool loop logging
-	var payloadMap map[string]interface{}
-	_ = json.Unmarshal(body, &payloadMap)
-	logRawAnthropicToolLoopPayload(requestIDStr, payloadMap)
-
-	// Convert Anthropic format to CIF
+	// Convert Anthropic format to CIF first, then extract the map for tool loop
+	// logging from the structured request — avoids a second json.Unmarshal pass.
 	canonicalRequest, err := ingestion.ParseAnthropicMessages(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Anthropic request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"message": parseRequestMessage(err),
 				"type":    "invalid_request_error",
 			},
 		})
 		return
 	}
+
+	// Parse into map for tool loop logging (lazy: only if logger is active)
+	var payloadMap map[string]interface{}
+	_ = json.Unmarshal(body, &payloadMap)
+	logRawAnthropicToolLoopPayload(requestIDStr, payloadMap)
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)

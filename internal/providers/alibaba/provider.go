@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"omnillm/internal/database"
 	"omnillm/internal/providers/shared"
@@ -33,12 +34,14 @@ var Models = []types.Model{
 
 // Provider implements types.Provider for Alibaba DashScope.
 type Provider struct {
-	instanceID   string
-	name         string
-	token        string
-	baseURL      string
-	config       map[string]interface{}
-	configLoaded bool
+	instanceID string
+	name       string
+	token      string
+	baseURL    string
+	config     map[string]interface{}
+	// configOnce ensures config is loaded from the database exactly once,
+	// even under concurrent requests.  Replaces the racy configLoaded bool.
+	configOnce sync.Once
 }
 
 // NewProvider creates a new Alibaba Provider.
@@ -87,21 +90,21 @@ func (p *Provider) GetConfig() map[string]interface{} {
 }
 
 func (p *Provider) ensureConfig() {
-	if p.configLoaded {
-		return
-	}
-	p.configLoaded = true
-	store := database.NewProviderConfigStore()
-	rec, err := store.Get(p.instanceID)
-	if err != nil || rec == nil {
-		return
-	}
-	var cfg map[string]interface{}
-	if err := json.Unmarshal([]byte(rec.ConfigData), &cfg); err != nil {
-		log.Warn().Err(err).Str("provider", p.instanceID).Msg("alibaba: failed to parse config")
-		return
-	}
-	p.applyConfig(cfg)
+	// sync.Once guarantees this runs exactly once across concurrent goroutines,
+	// replacing the racy if p.configLoaded { return } pattern.
+	p.configOnce.Do(func() {
+		store := database.NewProviderConfigStore()
+		rec, err := store.Get(p.instanceID)
+		if err != nil || rec == nil {
+			return
+		}
+		var cfg map[string]interface{}
+		if err := json.Unmarshal([]byte(rec.ConfigData), &cfg); err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("alibaba: failed to parse config")
+			return
+		}
+		p.applyConfig(cfg)
+	})
 }
 
 func (p *Provider) applyConfig(cfg map[string]interface{}) {
@@ -149,7 +152,9 @@ func (p *Provider) LoadFromDB() error {
 		p.applyConfig(config)
 	}
 	p.name = APIKeyProviderName(p.config)
-	p.configLoaded = true
+	// Mark configOnce as done so ensureConfig is a no-op — credentials were
+	// already loaded above via LoadFromDB (called at startup by the registry).
+	p.configOnce.Do(func() {})
 	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Alibaba: loaded from DB")
 	return nil
 }

@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,8 +48,9 @@ func newChatCompletionHandler(options ChatCompletionOptions) *chatCompletionHand
 }
 
 func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
+	// Type assertion is zero-allocation vs fmt.Sprintf("%v", requestID)
 	requestID, _ := c.Get("request_id")
-	requestIDStr := fmt.Sprintf("%v", requestID)
+	requestIDStr, _ := requestID.(string)
 	startTime := time.Now()
 
 	// Check rate limits
@@ -77,20 +77,12 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		}
 	}
 
-	// Parse request body and convert to CIF
+	// Parse request body and convert to CIF.
+	// json.Valid is omitted: ParseOpenAIChatCompletions calls json.Unmarshal which
+	// already validates syntax and returns a clear error, avoiding a double parse pass.
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to read request body")
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": "Invalid request format",
-				"type":    "invalid_request_error",
-			},
-		})
-		return
-	}
-
-	if !json.Valid(body) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
 				"message": "Invalid request format",
@@ -105,7 +97,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse OpenAI request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"message": parseRequestMessage(err),
 				"type":    "invalid_request_error",
 			},
 		})

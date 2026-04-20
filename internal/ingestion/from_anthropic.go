@@ -151,14 +151,9 @@ func convertAnthropicMessageContent(content interface{}) ([]cif.CIFContentPart, 
 			if !ok {
 				continue
 			}
-			blockBytes, err := json.Marshal(blockMap)
-			if err != nil {
-				return nil, err
-			}
-			var block AnthropicContentBlock
-			if err := json.Unmarshal(blockBytes, &block); err != nil {
-				return nil, err
-			}
+			// Build typed block directly from the map to avoid a
+			// marshal→unmarshal roundtrip for each content block.
+			block := anthropicBlockFromMap(blockMap)
 			cifPart, err := convertAnthropicContentBlock(block)
 			if err != nil {
 				return nil, err
@@ -171,6 +166,36 @@ func convertAnthropicMessageContent(content interface{}) ([]cif.CIFContentPart, 
 	default:
 		return nil, fmt.Errorf("unsupported Anthropic message content type: %T", content)
 	}
+}
+
+// anthropicBlockFromMap extracts AnthropicContentBlock fields directly from a
+// map[string]interface{} produced by the top-level json.Unmarshal call.  This
+// avoids a second marshal+unmarshal cycle for every content block.
+func anthropicBlockFromMap(m map[string]interface{}) AnthropicContentBlock {
+	block := AnthropicContentBlock{}
+	block.Type, _ = m["type"].(string)
+	block.Text, _ = m["text"].(string)
+	block.Thinking, _ = m["thinking"].(string)
+	block.Signature, _ = m["signature"].(string)
+	block.ID, _ = m["id"].(string)
+	block.ToolUseID, _ = m["tool_use_id"].(string)
+	block.Name, _ = m["name"].(string)
+	block.Content = m["content"]
+	block.Input, _ = m["input"].(map[string]interface{})
+
+	if srcRaw, ok := m["source"].(map[string]interface{}); ok {
+		src := &AnthropicImageSource{}
+		src.Type, _ = srcRaw["type"].(string)
+		src.MediaType, _ = srcRaw["media_type"].(string)
+		src.Data, _ = srcRaw["data"].(string)
+		block.Source = src
+	}
+
+	if isErr, ok := m["is_error"].(bool); ok {
+		block.IsError = &isErr
+	}
+
+	return block
 }
 
 func convertAnthropicContentBlock(block AnthropicContentBlock) (cif.CIFContentPart, error) {

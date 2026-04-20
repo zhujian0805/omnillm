@@ -23,8 +23,9 @@ func SetupResponseRoutes(router *gin.RouterGroup) {
 }
 
 func handleResponses(c *gin.Context) {
+	// Type assertion is zero-allocation vs fmt.Sprintf("%v", requestID)
 	requestID, _ := c.Get("request_id")
-	requestIDStr := fmt.Sprintf("%v", requestID)
+	requestIDStr, _ := requestID.(string)
 	startTime := time.Now()
 
 	body, err := io.ReadAll(c.Request.Body)
@@ -39,24 +40,15 @@ func handleResponses(c *gin.Context) {
 		return
 	}
 
-	// Validate JSON syntax before parsing
-	if !json.Valid(body) {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": gin.H{
-				"message": "Invalid request format",
-				"type":    "invalid_request_error",
-			},
-		})
-		return
-	}
-
-	// Convert Responses API format to CIF
+	// Convert Responses API format to CIF.
+	// json.Valid is omitted: ParseResponsesPayload calls json.Unmarshal which
+	// already validates syntax and returns a clear error, avoiding a double parse pass.
 	canonicalRequest, err := ingestion.ParseResponsesPayload(body)
 	if err != nil {
 		log.Error().Err(err).Str("request_id", requestIDStr).Msg("Failed to parse Responses API request")
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": gin.H{
-				"message": fmt.Sprintf("Failed to parse request: %v", err),
+				"message": parseRequestMessage(err),
 				"type":    "invalid_request_error",
 			},
 		})

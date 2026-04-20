@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"omnillm/internal/cif"
@@ -63,13 +64,15 @@ const alibabaUserAgent = alibabapkg.UserAgent
 // The struct fields are kept identical to the original to preserve backward compatibility
 // for callers that use *GenericProvider type assertions (e.g., admin.go).
 type GenericProvider struct {
-	id           string
-	instanceID   string
-	name         string
-	token        string
-	baseURL      string
-	config       map[string]interface{}
-	configLoaded bool
+	id         string
+	instanceID string
+	name       string
+	token      string
+	baseURL    string
+	config     map[string]interface{}
+	// configOnce ensures config is loaded from the database exactly once,
+	// even under concurrent requests.  Replaces the racy configLoaded bool.
+	configOnce sync.Once
 }
 
 // GenericAdapter wraps GenericProvider for the ProviderAdapter interface.
@@ -275,24 +278,23 @@ func (p *GenericProvider) GetBaseURL() string {
 }
 
 func (p *GenericProvider) loadConfigFromDB() {
-	if p.configLoaded {
-		return
-	}
-	configStore := database.NewProviderConfigStore()
-	record, err := configStore.Get(p.instanceID)
-	if err != nil || record == nil {
-		p.configLoaded = true
-		return
-	}
+	// sync.Once guarantees this runs exactly once across concurrent goroutines,
+	// replacing the racy if p.configLoaded { return } pattern.
+	p.configOnce.Do(func() {
+		configStore := database.NewProviderConfigStore()
+		record, err := configStore.Get(p.instanceID)
+		if err != nil || record == nil {
+			return
+		}
 
-	var config map[string]interface{}
-	if err := json.Unmarshal([]byte(record.ConfigData), &config); err != nil {
-		log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to parse provider config")
-		return
-	}
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(record.ConfigData), &config); err != nil {
+			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to parse provider config")
+			return
+		}
 
-	p.applyConfig(config)
-	p.configLoaded = true
+		p.applyConfig(config)
+	})
 }
 
 func (p *GenericProvider) applyConfig(config map[string]interface{}) {
