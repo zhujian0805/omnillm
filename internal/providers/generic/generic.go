@@ -947,8 +947,31 @@ func convertCanonicalToolChoiceToOpenAI(toolChoice interface{}) interface{} {
 // ─── HTTP execution helpers ───────────────────────────────────────────────────
 
 var (
-	genericHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	genericStreamClient = &http.Client{}
+	genericHTTPClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	genericStreamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 // executeOpenAIWithPayload performs a non-streaming OpenAI-compatible HTTP request.

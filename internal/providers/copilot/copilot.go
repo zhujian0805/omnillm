@@ -30,8 +30,31 @@ import (
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
 var (
-	copilotHTTPClient    = &http.Client{Timeout: 120 * time.Second}
-	copilotStreamClient  = &http.Client{} // no timeout for streaming
+	copilotHTTPClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	copilotStreamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 type GitHubCopilotProvider struct {
@@ -1024,8 +1047,7 @@ func (a *CopilotAdapter) parseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIF
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
+	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
 	var streamStartSent bool
 	var contentBlockIndex int
 
@@ -1169,8 +1191,7 @@ func (a *CopilotAdapter) parseResponsesSSE(body io.ReadCloser, eventCh chan cif.
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
-
+	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
 	state := &copilotResponsesStreamState{
 		textBlockIndices:  make(map[string]int),
 		textBlockHasDelta: make(map[string]bool),

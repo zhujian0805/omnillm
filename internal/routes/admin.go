@@ -2,6 +2,8 @@ package routes
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1818,6 +1820,14 @@ func handleGetChatSessions(c *gin.Context) {
 	})
 }
 
+func generateSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("session-%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("session-%s", hex.EncodeToString(b))
+}
+
 func handleCreateChatSession(c *gin.Context) {
 	var req struct {
 		SessionID string `json:"session_id"`
@@ -1836,7 +1846,7 @@ func handleCreateChatSession(c *gin.Context) {
 
 	sessionID := req.SessionID
 	if sessionID == "" {
-		sessionID = fmt.Sprintf("session-%d", time.Now().UnixNano())
+		sessionID = generateSessionID()
 	}
 
 	chatStore := database.NewChatStore()
@@ -1971,7 +1981,6 @@ func handleLogsStream(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
-	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("X-Accel-Buffering", "no")
 
 	sub := &logSubscriber{

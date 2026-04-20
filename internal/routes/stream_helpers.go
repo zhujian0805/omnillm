@@ -2,9 +2,9 @@ package routes
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -83,14 +83,18 @@ func formatResponsesSSE(events []map[string]interface{}) string {
 	if len(events) == 0 {
 		return ""
 	}
-	var out string
+	var sb strings.Builder
 	for _, evt := range events {
 		eventType, _ := evt["type"].(string)
 		jsonBytes, err := json.Marshal(evt)
 		if err != nil {
 			continue
 		}
-		out += fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonBytes))
+		sb.WriteString("event: ")
+		sb.WriteString(eventType)
+		sb.WriteString("\ndata: ")
+		sb.Write(jsonBytes)
+		sb.WriteString("\n\n")
 	}
-	return out
+	return sb.String()
 }

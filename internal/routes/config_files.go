@@ -179,12 +179,12 @@ func handleSaveConfig(c *gin.Context) {
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create directory: %v", err)})
 		return
 	}
 
-	if err := os.WriteFile(filePath, []byte(req.Content), 0o644); err != nil {
+	if err := os.WriteFile(filePath, []byte(req.Content), 0o600); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to write file: %v", err)})
 		return
 	}
@@ -234,12 +234,12 @@ func handleImportConfig(c *gin.Context) {
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create directory: %v", err)})
 		return
 	}
 
-	if err := os.WriteFile(filePath, content, 0o644); err != nil {
+	if err := os.WriteFile(filePath, content, 0o600); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to write file: %v", err)})
 		return
 	}

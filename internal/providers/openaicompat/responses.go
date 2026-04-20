@@ -386,7 +386,7 @@ func ParseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer close(eventCh)
 
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 256*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
 
 	state := &responsesStreamState{
 		textBlockIndices:  make(map[string]int),

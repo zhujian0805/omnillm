@@ -32,8 +32,31 @@ import (
 // ─── HTTP clients ─────────────────────────────────────────────────────────────
 
 var (
-	httpClient   = &http.Client{Timeout: 120 * time.Second}
-	streamClient = &http.Client{}
+	httpClient = &http.Client{
+		Timeout: 120 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	streamClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   20,
+			MaxConnsPerHost:       50,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 )
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
