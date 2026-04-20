@@ -443,6 +443,7 @@ func ParseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	}
 }
 
+//nolint:gocyclo,funlen // SSE event dispatch handles many event types from upstream API
 func handleResponsesSSEEvent(eventType, data string, state *responsesStreamState, eventCh chan cif.CIFStreamEvent) {
 	if data == "" {
 		return

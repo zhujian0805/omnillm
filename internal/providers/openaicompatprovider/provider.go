@@ -331,7 +331,7 @@ func (a *Adapter) forceChatCompletions(request *cif.CanonicalRequest) bool {
 		*request.Extensions.ForceChatCompletions
 }
 
-func dashScopeChatExtras(baseURL, model string, request *cif.CanonicalRequest) map[string]interface{} {
+func dashScopeChatExtras(baseURL, model string, request *cif.CanonicalRequest) map[string]any {
 	if !isDashScopeBaseURL(baseURL) || !isDashScopeReasoningModel(model) || request == nil {
 		return nil
 	}

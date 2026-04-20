@@ -137,6 +137,7 @@ func handleResponses(c *gin.Context) {
 	writeProviderFailure(c, "server_error", lastErr)
 }
 
+//nolint:dupl // structurally similar to chat.go but serves different API shape (responses vs chat)
 func handleResponsesNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	response, err := adapter.Execute(c.Request.Context(), canonicalRequest)
 	if err != nil {

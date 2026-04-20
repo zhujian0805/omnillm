@@ -34,11 +34,11 @@ type StreamOptions struct {
 
 // Message is one conversation turn (system / user / assistant / tool).
 type Message struct {
-	Role             string      `json:"role"`
-	Content          interface{} `json:"content"` // string or []ContentPart
-	ToolCalls        []ToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID       string      `json:"tool_call_id,omitempty"`
-	ReasoningContent string      `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
+	Role             string     `json:"role"`
+	Content          any        `json:"content"` // string or []ContentPart
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"` // Qwen3 / o1-style
 }
 
 // ContentPart is one element of a multipart content array.
