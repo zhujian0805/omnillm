@@ -4,8 +4,11 @@ import { createRoot } from "react-dom/client"
 import "./index.css"
 import App from "./App"
 
-createRoot(document.querySelector("#root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const rootEl = document.querySelector("#root")
+if (rootEl) {
+  createRoot(rootEl).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}

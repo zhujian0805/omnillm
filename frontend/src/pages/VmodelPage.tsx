@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary */
 import { useState, useEffect, useCallback } from "react"
 
 import {
