@@ -8,6 +8,7 @@ import (
 
 type ProviderID string
 
+// Supported provider identifiers.
 const (
 	ProviderGitHubCopilot    ProviderID = "github-copilot"
 	ProviderAntigravity      ProviderID = "antigravity"

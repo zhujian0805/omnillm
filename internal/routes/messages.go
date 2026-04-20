@@ -197,6 +197,7 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 	return nil
 }
 
+//nolint:gocyclo // streaming response handler with multiple content-type branches
 func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, canonicalRequest *cif.CanonicalRequest, requestID, originalModel, providerID string, startTime time.Time) error {
 	eventCh, err := adapter.ExecuteStream(c.Request.Context(), canonicalRequest)
 	if err != nil {

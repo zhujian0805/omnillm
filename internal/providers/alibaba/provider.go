@@ -52,8 +52,13 @@ func NewProvider(instanceID, name string) *Provider {
 	}
 }
 
-func (p *Provider) GetID() string           { return "alibaba" }
-func (p *Provider) GetInstanceID() string   { return p.instanceID }
+// GetID returns the provider type identifier.
+func (p *Provider) GetID() string { return "alibaba" }
+
+// GetInstanceID returns the unique instance identifier.
+func (p *Provider) GetInstanceID() string { return p.instanceID }
+
+// GetName returns the human-readable provider name.
 func (p *Provider) GetName() string         { return p.name }
 func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
 

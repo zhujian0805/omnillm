@@ -118,6 +118,9 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 	return sorted
 }
 
+// ResolveProvidersForModel determines which providers and models to use for a given request.
+//
+//nolint:gocyclo // model resolution involves multiple fallback strategies
 func ResolveProvidersForModel(requestedModel, normalizedModel string, cache *ModelCache) (*ResolvedModelRoute, error) {
 	reg := registry.GetProviderRegistry()
 	activeProviders := reg.GetActiveProviders()

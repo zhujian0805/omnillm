@@ -11,7 +11,7 @@ import (
 
 const (
 	apiKeyFileName = "api-key"
-	apiKeyEnvVar   = "OMNILLM_API_KEY"
+	apiKeyEnvVar   = "OMNILLM_API_KEY" //nolint:gosec // environment variable name, not a credential
 )
 
 func resolveAPIKey(configDir, explicit string) (string, error) {

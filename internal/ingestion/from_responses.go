@@ -12,14 +12,14 @@ import (
 
 type ResponsesPayload struct {
 	Model           string          `json:"model"`
-	Input           interface{}     `json:"input"` // string or []InputItem
+	Input           any             `json:"input"` // string or []InputItem
 	Instructions    *string         `json:"instructions,omitempty"`
 	Stream          *bool           `json:"stream,omitempty"`
 	Temperature     *float64        `json:"temperature,omitempty"`
 	TopP            *float64        `json:"top_p,omitempty"`
 	MaxOutputTokens *int            `json:"max_output_tokens,omitempty"`
 	Tools           []ResponsesTool `json:"tools,omitempty"`
-	ToolChoice      interface{}     `json:"tool_choice,omitempty"`
+	ToolChoice      any             `json:"tool_choice,omitempty"`
 }
 
 type ResponsesTool struct {
