@@ -102,7 +102,6 @@ function applyTheme(theme: Theme) {
 
 applyTheme(loadTheme())
 
-// eslint-disable-next-line max-lines-per-function, complexity
 export default function AppComponent() {
   const [tab, setTab] = useState<Tab>(loadTab())
   const { showToast } = useToast()

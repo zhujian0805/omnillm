@@ -7,8 +7,8 @@ type DeviceAuthCopy = {
 }
 
 export function getDeviceAuthCopy(
-  authFlow: AuthFlow | null | undefined,
-  providers: Array<Provider>,
+  _authFlow: AuthFlow | null | undefined,
+  _providers: Array<Provider>,
 ): DeviceAuthCopy {
   return {
     codeLabel: "Enter this code:",
