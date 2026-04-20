@@ -31,6 +31,7 @@ type ProcessInfo = {
 
 type StructuredLogPayload = Record<string, unknown>
 
+// eslint-disable-next-line no-control-regex -- intentional: strip ANSI escape codes
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g
 const STRUCTURED_FIELD_ORDER = [
   "request_id",
@@ -411,7 +412,7 @@ function colorizeMessageArrows(text: string): string {
   //   --> POST /v1/chat/completions <-- 200
   //   --> REQUEST
   //   <-- RESPONSE
-  const arrowPattern = /^(-->|<--)(.*)?$/
+  const arrowPattern = /^(?:-->|<--).*$/
 
   if (arrowPattern.test(text)) {
     return text
@@ -421,7 +422,7 @@ function colorizeMessageArrows(text: string): string {
 
   // For messages like:
   //   --> GET /api/admin/info <-- 200
-  const fullPattern = /(-->|<--)/g
+  const fullPattern = /-->|<--/g
   return text.replaceAll(fullPattern, (match) => {
     return match === "-->" ? "\x1b[33m-->\x1b[0m" : "\x1b[32m<--\x1b[0m"
   })
@@ -517,8 +518,8 @@ function colorizeLogLine(line: string, source: string, level: string): string {
   const [timestamp, sourceSegment, levelSegment, ...rest] = segments
   return [
     timestamp,
-    colorizeSegment(sourceSegment ?? source, SOURCE_COLORS[source]),
-    colorizeSegment(levelSegment ?? level, LEVEL_COLORS[level]),
+    colorizeSegment(sourceSegment, SOURCE_COLORS[source]),
+    colorizeSegment(levelSegment, LEVEL_COLORS[level]),
     ...rest,
   ].join(" | ")
 }
@@ -585,7 +586,7 @@ function createLoggedProcess(
   label: string,
   options: { color: string; cmd: string; args: Array<string> },
 ) {
-const env = {
+  const env = {
     ...process.env,
     GO_PORT: serverPort,
     SERVER_PORT: serverPort,

@@ -17,7 +17,7 @@ describe("rendered config components", () => {
     )
 
     expect(html).toContain("API Key")
-    expect(html).toContain("value=\"secret\"")
+    expect(html).toContain('value="secret"')
   })
 
   test("Section renders title, count, and children when open", () => {

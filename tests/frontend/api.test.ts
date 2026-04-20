@@ -75,9 +75,10 @@ describe("frontend api helpers", () => {
 
     expect(result.success).toBe(true)
 
-    const call = mockFetch.mock.calls.find(([url]) =>
-      new URL(String(url), "http://localhost:4141").pathname
-      === "/api/admin/providers/provider-1/activate"
+    const call = mockFetch.mock.calls.find(
+      ([url]) =>
+        new URL(String(url), "http://localhost:4141").pathname
+        === "/api/admin/providers/provider-1/activate",
     )
     expect(call?.[1]?.method).toBe("POST")
   })
@@ -146,8 +147,10 @@ describe("frontend api helpers", () => {
 
     expect("object" in result && result.object).toBe("realtime.response")
 
-    const call = mockFetch.mock.calls.find(([url]) =>
-      new URL(String(url), "http://localhost:4141").pathname === "/v1/responses"
+    const call = mockFetch.mock.calls.find(
+      ([url]) =>
+        new URL(String(url), "http://localhost:4141").pathname
+        === "/v1/responses",
     )
     expect(call).toBeDefined()
     const body = JSON.parse(String(call?.[1]?.body))
@@ -266,7 +269,6 @@ describe("frontend api helpers", () => {
 
     expect(es).toBeInstanceOf(EventSourceMock)
     expect((es as EventSourceMock).url).toContain("/api/admin/logs/stream")
-
     ;(es as EventSourceMock)._triggerMessage("hello")
     expect(lines).toHaveLength(1)
     expect((lines[0] as unknown as { data: string }).data).toBe("hello")

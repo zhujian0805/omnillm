@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-control-regex -- intentional: strip ANSI escape codes
 const ANSI_PATTERN = /\u001b\[[0-9;]*m/g
 const PIPE_SEPARATOR = " | "
 const LEGACY_LOG_PATTERN =
