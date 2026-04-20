@@ -585,12 +585,11 @@ function createLoggedProcess(
   label: string,
   options: { color: string; cmd: string; args: Array<string> },
 ) {
-  const env = {
+const env = {
     ...process.env,
     GO_PORT: serverPort,
     SERVER_PORT: serverPort,
     FRONTEND_PORT: frontendPort,
-    OMNIMODEL_API_KEY: "",
   }
 
   const logFd = openSync(LOG_FILE, "a")
