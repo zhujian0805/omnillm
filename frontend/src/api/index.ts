@@ -42,6 +42,7 @@ export interface Status {
 export interface ServerInfo {
   version: string
   port: number
+  authRequired?: boolean
 }
 
 export type LogLevel =
@@ -195,6 +196,20 @@ export interface UsageData {
 // Auto-detect backend port at runtime
 let detectedBackendPort: number | null = null
 let detectionPromise: Promise<number> | null = null
+let cachedApiKey: string | null = null
+
+declare const __API_KEY__: string | undefined
+
+function getApiKey(): string {
+  if (cachedApiKey !== null) {
+    return cachedApiKey
+  }
+
+  const meta = globalThis.document?.querySelector?.('meta[name="omnimodel-api-key"]')
+  const content = meta?.getAttribute("content")?.trim() ?? ""
+  cachedApiKey = content || (typeof __API_KEY__ !== "undefined" ? __API_KEY__ : "")
+  return cachedApiKey
+}
 
 async function detectBackendPort(): Promise<number> {
   if (detectedBackendPort) {
@@ -293,13 +308,22 @@ async function apiFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const backendBase = await getBackendBase()
   const fullUrl = `${backendBase}${path}`
   const method = opts.method || "GET"
+  const apiKey = getApiKey()
 
   const t0 = performance.now()
   log.trace(`${method} ${path}`, { url: fullUrl })
 
+  const headers = new Headers(opts.headers ?? {})
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+  if (apiKey) {
+    headers.set("Authorization", `Bearer ${apiKey}`)
+  }
+
   const res = await fetch(fullUrl, {
-    headers: { "Content-Type": "application/json" },
     ...opts,
+    headers,
   })
 
   const ms = Math.round(performance.now() - t0)
@@ -471,8 +495,9 @@ export async function subscribeToLogs(
 ): Promise<EventSource> {
   const backendBase = await getBackendBase()
   const url = `${backendBase}/api/admin/logs/stream`
+  const apiKey = getApiKey()
 
-  const es = new EventSource(url)
+  const es = new EventSource(apiKey ? `${url}?api_key=${encodeURIComponent(apiKey)}` : url)
   es.addEventListener("message", (e: Event) => {
     const event = e as MessageEvent
     onLine(event.data as string)
@@ -557,7 +582,8 @@ export const createChatCompletion = async (
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "text/event-stream"
+        "Accept": "text/event-stream",
+        ...(getApiKey() ? { Authorization: `Bearer ${getApiKey()}` } : {}),
       },
       body: JSON.stringify(requestBody),
     })

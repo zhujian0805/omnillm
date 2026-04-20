@@ -157,6 +157,7 @@ const server = run("go-server", "31", binaryPath, [
   "--port",
   serverPort,
   "--verbose",
+  "--enable-config-edit",
 ])
 
 // Wait for backend to be ready

@@ -664,7 +664,7 @@ async function startServices() {
   const backendProc = createLoggedProcess("go-backend", {
     color: "31",
     cmd: installPath,
-    args: ["start", "--port", serverPort],
+    args: ["start", "--port", serverPort, "--enable-config-edit"],
   })
 
   // Wait a bit for backend to start

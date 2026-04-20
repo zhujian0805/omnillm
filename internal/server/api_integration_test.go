@@ -186,9 +186,26 @@ func postJSON(t *testing.T, url string, body string, headers map[string]string) 
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-api-key")
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	return resp
+}
+
+func getWithAuth(t *testing.T, url string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-api-key")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -311,10 +328,7 @@ func TestModelsEndpointReturnsOnlyActiveProviderModels(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/models")
-	if err != nil {
-		t.Fatalf("GET /models: %v", err)
-	}
+	resp := getWithAuth(t, srv.URL+"/models")
 	body := readBody(t, resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
@@ -368,10 +382,7 @@ func TestModelsEndpointReturnsEmptyListWithoutActiveProviders(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/models")
-	if err != nil {
-		t.Fatalf("GET /models: %v", err)
-	}
+	resp := getWithAuth(t, srv.URL+"/models")
 	body := readBody(t, resp)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
@@ -436,10 +447,7 @@ func TestCreateChatSessionHonorsProvidedSessionID(t *testing.T) {
 		t.Fatalf("expected session_id %q, got %q", sessionID, createPayload.SessionID)
 	}
 
-	getResp, err := http.Get(srv.URL + "/api/admin/chat/sessions/" + sessionID)
-	if err != nil {
-		t.Fatalf("GET /api/admin/chat/sessions/:id failed: %v", err)
-	}
+	getResp := getWithAuth(t, srv.URL+"/api/admin/chat/sessions/"+sessionID)
 	getBody := readBody(t, getResp)
 	if getResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 fetching created session, got %d: %s", getResp.StatusCode, getBody)

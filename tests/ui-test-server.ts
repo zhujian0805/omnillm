@@ -116,7 +116,7 @@ async function waitForServer(options: {
     }
 
     try {
-      const response = await fetch(`${baseUrl}/api/admin/status`)
+      const response = await fetch(`${baseUrl}/api/admin/info`)
       if (response.ok) {
         return
       }

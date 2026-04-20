@@ -152,14 +152,16 @@ func (u *fakeOpenAICompatUpstream) chatRequestCount() int {
 	return len(u.chatRequests)
 }
 
-func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL string, apiKey string) string {
+func registerOpenAICompatibleProvider(t *testing.T, upstreamBaseURL string, apiKey string, modelID string) string {
 	t.Helper()
 
 	instanceID := fmt.Sprintf("openai-compatible-test-%d", time.Now().UnixNano())
 	provider := openaicompatprovider.NewProvider(instanceID, "OpenAI-Compatible Test")
 	if err := provider.SetupAuth(&providertypes.AuthOptions{
-		Endpoint: upstreamBaseURL,
-		APIKey:   apiKey,
+		Endpoint:            upstreamBaseURL,
+		APIKey:              apiKey,
+		Models:              fmt.Sprintf("[\"%s\"]", modelID),
+		AllowLocalEndpoints: true,
 	}); err != nil {
 		t.Fatalf("setup openai-compatible provider: %v", err)
 	}
@@ -183,7 +185,7 @@ func TestOpenAICompatibleAnthropicStreamingIsBufferedDownstream(t *testing.T) {
 	modelID := fmt.Sprintf("compat-buffered-%d", time.Now().UnixNano())
 	upstream := newFakeOpenAICompatUpstream(t, modelID)
 	apiKey := fmt.Sprintf("sk-compat-%d", time.Now().UnixNano())
-	registerOpenAICompatibleProvider(t, upstream.baseURL(), apiKey)
+	registerOpenAICompatibleProvider(t, upstream.baseURL(), apiKey, modelID)
 
 	backend := newTestServer(t)
 	defer backend.Close()

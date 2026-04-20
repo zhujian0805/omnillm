@@ -1,187 +1,116 @@
 # OmniModel
 
-OmniModel is an enterprise-ready multi-provider LLM gateway that standardizes access to heterogeneous model backends behind a single operational surface.
+<p align="center">Enterprise-ready multi-provider LLM gateway.</p>
 
-It provides OpenAI-compatible and Anthropic-compatible APIs, centralized provider administration, live backend switching, and a redesigned web console for authentication, model inspection, and runtime visibility.
-
-OmniModel is designed for teams that need to route AI traffic through a controlled internal endpoint instead of binding applications directly to individual providers.
-
-## 🆕 Golang Backend Available
-
-This repository now includes **two backend implementations**:
-- **TypeScript/Node.js backend** (original, feature-complete)
-- **🚀 Golang backend** (new, high-performance alternative)
-
-Both backends implement the same API and can be used interchangeably. Choose based on your team's preferences and deployment requirements.
+<p align="center">
+  <a href="#quick-start">Quick Start</a> |
+  <a href="#core-capabilities">Capabilities</a> |
+  <a href="#supported-providers">Providers</a> |
+  <a href="#api-compatibility-surface">API Reference</a> |
+  <a href="#security">Security</a> |
+  <a href="#development">Development</a>
+</p>
 
 ---
 
-## Executive Summary
+OmniModel acts as a control plane and gateway for model access. It exposes OpenAI-compatible and Anthropic-compatible APIs, centralizes provider administration, enables live backend switching, and provides a redesigned web admin console for authentication, model inspection, and runtime visibility.
 
-OmniModel acts as a control plane and gateway for model access.
-
-It helps teams:
-
-- present a stable API to internal tools and agents
-- switch providers without changing client integrations
-- centralize authentication and provider lifecycle management
-- expose operational visibility through a web admin console
-- support both local developer workflows and self-hosted deployments
-
-Typical use cases include:
-
-- internal AI gateways for engineering teams
-- local or shared model routing for agent tooling
-- provider abstraction for experimentation and failover
-- controlled access to reverse-engineered or nonstandard backends
-
----
-
-## Core Capabilities
-
-### Unified API compatibility
-
-OmniModel exposes endpoints compatible with both OpenAI-style and Anthropic-style clients, allowing existing applications to migrate with minimal integration changes.
-
-### Multi-provider routing
-
-A single deployment can manage multiple providers and switch the active backend without requiring a process restart.
-
-### Centralized authentication
-
-Provider authentication is handled through CLI and admin workflows, reducing the need for each downstream client to manage provider-specific credentials.
-
-### Operational visibility
-
-The admin console provides provider status, model discovery, usage visibility, and runtime metadata in one place.
-
-### Developer and agent integration
-
-OmniModel works well as a local gateway for tools such as Claude Code and other clients that expect OpenAI-compatible or Anthropic-compatible endpoints.
-
----
-
-## Supported Providers
-
-| Provider | Authentication | Operational Notes |
-|---|---|---|
-| **GitHub Copilot** | OAuth device flow or token | Requires active Copilot subscription |
-| **Antigravity** | Google OAuth (browser) | Requires Google OAuth client credentials |
-| **Alibaba DashScope** | API key or OAuth | Supports global and China regions |
-
-Provider support is not uniform. Authentication model, quota behavior, and operational stability vary by backend.
-
----
-
-## Reference Architecture
-
-At a high level, OmniModel sits between client applications and upstream model providers.
-
-```text
-Clients / Agents / Internal Apps
-            |
-            v
-        OmniModel
-   - API compatibility layer
-   - provider auth management
-   - active provider selection
-   - admin control surface
-            |
-            v
-  GitHub Copilot / Antigravity / Alibaba
-```
-
-This architecture allows client applications to target a single internal endpoint while provider-specific concerns remain isolated inside OmniModel.
-
----
-
-## Deployment Modes
-
-### 1. Local developer workstation
-
-Recommended for individual experimentation, agent workflows, and local tool integration.
-
-### 2. Shared internal service
-
-Recommended for teams that want a common gateway endpoint, centralized provider administration, and a consistent integration surface across internal applications.
-
-### 3. Containerized deployment
-
-Recommended when standardizing runtime packaging, mounting persistent state, and integrating with existing infrastructure automation.
-
----
+Route AI traffic through a controlled internal endpoint instead of binding applications directly to individual providers.
 
 ## Quick Start
 
 ### Prerequisites
 
 - [Bun](https://bun.sh) >= 1.2
-- [Go](https://golang.org) >= 1.22 (for Golang backend)
+- [Go](https://golang.org) >= 1.22
 
-### Development mode (foreground, Ctrl+C to stop)
+### Development mode
 
 ```sh
 bun run dev
 ```
 
-Starts both backend and frontend. The frontend is available at `http://localhost:5080` and proxies API calls to the Go backend at `http://localhost:5002`.
+Starts both backend (Go, port 5000) and frontend (Vite, port 5080). Admin UI at `http://localhost:5080/admin/`.
 
-Options:
+### API key setup
+
+All API routes are protected by an API key. On first start, OmniModel auto-generates a random key and persists it to `~/.config/omnimodel/api-key`. You can either set a known key upfront or use the auto-generated one.
+
+**Option A: Set a known key (recommended)**
 
 ```sh
-# Use TypeScript backend
-bun run dev --backend node
+# Via CLI flag
+bun run omni start --api-key my-secret-key
 
-# Custom ports
-bun run dev --server-port 8000 --frontend-port 3000
+# Or via environment variable
+OMNIMODEL_API_KEY=my-secret-key bun run omni start
 ```
 
-### Background mode with service management
+On Windows (PowerShell), set the environment variable before running:
 
-For persistent services with start/stop/status/log management:
-
-```sh
-# Start both backend and frontend (runs in background)
-bun run omni start
-
-# Check service status
-bun run omni status
-
-# Stop all services
-bun run omni stop
-
-# View recent logs
-bun run omni logs
-
-# Restart services
-bun run omni restart
-
-# Rebuild and restart (rebuilds Go binary + frontend)
-bun run omni restart --rebuild
-
-# Rebuild entire stack with custom ports and verbose logging
+```powershell
+$env:OMNIMODEL_API_KEY = "my-secret-key"
 bun run omni restart --rebuild --server-port 5000 --frontend-port 5080 -v
 ```
 
-Options:
+**Option B: Pre-create the key file**
 
 ```sh
-# Custom ports
-bun run omni start --server-port 8000 --frontend-port 3000
-
-# Use TypeScript backend instead of Go
-bun run omni start --backend node
-
-# Verbose logging
-bun run omni start --verbose
+# macOS / Linux
+mkdir -p ~/.config/omnimodel
+echo -n "my-secret-key" > ~/.config/omnimodel/api-key
 ```
 
-Available endpoints:
+On Windows (PowerShell):
 
-| Backend | API | Admin UI |
-|---|---|---|
-| Go (default) | `http://localhost:5002` | `http://localhost:5080/admin/` |
-| Node (`--backend node`) | `http://localhost:4141` | `http://localhost:4141/admin/` |
+```powershell
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\omnimodel"
+"my-secret-key" | Set-Content -NoNewline -Path "$env:USERPROFILE\.config\omnimodel\api-key"
+```
+
+**Option C: Use the auto-generated key**
+
+Start normally, then read the key from the persisted file:
+
+```sh
+# macOS / Linux
+cat ~/.config/omnimodel/api-key
+
+# Windows (PowerShell)
+cat "$env:USERPROFILE\.config\omnimodel\api-key"
+```
+
+Once you have the key, include it in API requests:
+
+```sh
+# Bearer token header
+curl -H "Authorization: Bearer <your-api-key>" http://localhost:5000/v1/models
+
+# Or x-api-key header
+curl -H "x-api-key: <your-api-key>" http://localhost:5000/v1/models
+
+# Or query parameter (for SSE streams)
+curl "http://localhost:5000/api/admin/logs/stream?api_key=<your-api-key>"
+```
+
+Or on Windows (PowerShell):
+
+```powershell
+$headers = @{ Authorization = "Bearer my-secret-key" }
+Invoke-RestMethod -Uri "http://localhost:5000/v1/models" -Headers $headers
+```
+
+The admin UI automatically injects the key via a `<meta>` tag, so no manual auth is needed in the browser.
+
+### Background mode with service management
+
+```sh
+bun run omni start          # start both services
+bun run omni status         # check status
+bun run omni stop           # stop all services
+bun run omni restart        # restart services
+bun run omni restart --rebuild  # rebuild Go binary + frontend, then restart
+```
 
 ### Run with bunx
 
@@ -196,43 +125,125 @@ docker build -t omnimodel .
 docker run -p 4141:4141 -v $(pwd)/proxy-data:/root/.local/share/omnimodel omnimodel
 ```
 
-Example with direct GitHub token injection:
+The auto-generated API key persists in the mounted volume, so restarts reuse the same key. To set a known key:
 
 ```sh
-docker run -p 4141:4141 -e GH_TOKEN=your_token omnimodel
+docker run -p 4141:4141 -e OMNIMODEL_API_KEY=my-secret-key omnimodel
 ```
 
 ---
 
-## Administration Experience
+## Core Capabilities
 
-The redesigned admin console is available at `http://localhost:4141/admin/`.
+### Unified API compatibility
 
-### Provider operations
+OpenAI-style (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/responses`) and Anthropic-style (`/v1/messages`, `/v1/messages/count_tokens`) endpoints from a single gateway. Existing applications migrate with minimal integration changes.
 
-Administrators can:
+### Multi-provider routing
 
-- view registered providers and authentication state
-- identify the currently active provider
-- switch providers without restarting the service
-- trigger provider authentication flows
-- inspect available models per provider
-- review usage and quota information where supported
+Manage multiple providers simultaneously. Switch the active backend without restarting. Provider priorities enable automatic failover.
 
-### Runtime visibility
+### Centralized authentication
 
-The console also exposes:
+Provider authentication through CLI and admin workflows — OAuth device flow for GitHub Copilot, API key for Alibaba DashScope, and token-based auth for all others. Credentials are persisted in SQLite and restored on restart.
 
-- server metadata
-- active provider details
-- model inventory context
-- rate-limit configuration visibility
+### Operational visibility
 
-This makes the UI suitable as a lightweight operational console for day-to-day administration.
+Admin console with provider status, model discovery, usage visibility, runtime metadata, live log streaming via SSE, and dynamic log-level control.
+
+### Config file management
+
+View, edit, and import configuration files for popular AI coding agents directly from the admin UI: Claude Code, Codex, Droid, OpenCode, and Amp. Editing is gated behind the `--enable-config-edit` flag.
+
+### Developer and agent integration
+
+Works as a local gateway for Claude Code and other clients. Auto-generated API key injected into the admin UI via `<meta>` tag for seamless frontend authentication.
 
 ---
 
-## CLI Operations
+## Supported Providers
+
+| Provider | Authentication | Notes |
+|---|---|---|
+| **GitHub Copilot** | OAuth device flow or token | Requires active Copilot subscription |
+| **Alibaba DashScope** | API key | Supports global and China regions; coding plan variant |
+| **OpenAI-Compatible** | API key (optional) | Any OpenAI-compatible endpoint: Ollama, vLLM, LM Studio, llama.cpp, OpenAI |
+| **Azure OpenAI** | API key | Configurable endpoint, API version, and deployments |
+| **Google** | API key | Generic Google provider |
+| **Kimi** | API key | Generic Kimi provider |
+| **Antigravity** | Google OAuth | Requires Google OAuth client credentials |
+
+New providers are registered with canonical instance IDs derived from their endpoint URL and API key suffix, ensuring stable identification across restarts.
+
+---
+
+## Architecture
+
+```
+Clients / Agents / Internal Apps
+            |
+            v
+        OmniModel
+   - API compatibility layer (OpenAI + Anthropic)
+   - inbound API key auth (Bearer / x-api-key / SSE query)
+   - provider auth management (OAuth, API key, token)
+   - active provider selection + priority-based failover
+   - admin control surface + log streaming
+   - SSRF protection for openai-compatible endpoints
+            |
+            v
+  GitHub Copilot / Alibaba / Ollama / vLLM / OpenAI / Azure / Google / Kimi
+```
+
+---
+
+## Security
+
+OmniModel introduces several security controls to protect the gateway and upstream providers.
+
+### Inbound API authentication
+
+All API routes are protected by an API key. The key is resolved in this order:
+
+1. `--api-key` CLI flag
+2. `OMNIMODEL_API_KEY` environment variable
+3. Persisted file at `~/.config/omnimodel/api-key`
+4. Auto-generated random key (persisted to the file above)
+
+Authentication accepts `Authorization: Bearer <key>`, `x-api-key: <key>`, or `?api_key=<key>` query parameter for SSE streams.
+
+### SSRF protection
+
+OpenAI-compatible provider endpoints are validated against SSRF attacks. Localhost, loopback, private, and link-local addresses are rejected unless `--allow-local-endpoints` is set.
+
+```sh
+# Allow local endpoints (e.g. Ollama at localhost:11434)
+bun run omni start --allow-local-endpoints
+```
+
+### CORS
+
+CORS is restricted to `localhost`, `127.0.0.1`, and `::1` origins. EventSource connections receive appropriate headers for SSE streaming.
+
+### Token masking
+
+The `/token` endpoint returns masked tokens by default (first 4 + last 4 characters visible). Full tokens are only exposed when `--show-token` is enabled.
+
+### Config editing guard
+
+External config file editing (Claude Code, OpenCode, etc.) is disabled by default and must be explicitly enabled with `--enable-config-edit`.
+
+### Recommended production controls
+
+- Run behind an internal reverse proxy or API gateway
+- Restrict admin access to trusted operators
+- Isolate persistent state with controlled filesystem permissions
+- Avoid exposing diagnostic/token endpoints on public networks
+- Review each provider's contractual and compliance posture before shared organizational use
+
+---
+
+## CLI Reference
 
 ### Commands
 
@@ -248,8 +259,8 @@ This makes the UI suitable as a lightweight operational console for day-to-day a
 
 | Option | Alias | Default | Description |
 |---|---|---|---|
-| `--port` | `-p` | `4141` | Listening port |
-| `--provider` | | `github-copilot` | Active provider (`github-copilot`, `antigravity`, `alibaba`) |
+| `--port` | `-p` | `5005` | Listening port |
+| `--provider` | | `github-copilot` | Active provider |
 | `--verbose` | `-v` | `false` | Enable verbose logging |
 | `--account-type` | `-a` | `individual` | Copilot plan (`individual`, `business`, `enterprise`) |
 | `--rate-limit` | `-r` | none | Minimum seconds between requests |
@@ -259,37 +270,9 @@ This makes the UI suitable as a lightweight operational console for day-to-day a
 | `--claude-code` | `-c` | `false` | Guided Claude Code setup |
 | `--show-token` | | `false` | Print tokens during fetch/refresh |
 | `--proxy-env` | | `false` | Read proxy settings from environment variables |
-
-### Example operational commands
-
-```sh
-# Start with default provider
-bun run start
-
-# Start on a custom port with Antigravity
-bun run start --provider antigravity --port 8080
-
-# Start with Alibaba DashScope
-bun run start --provider alibaba
-
-# Enforce a 30-second minimum interval and wait instead of failing
-bun run start --rate-limit 30 --wait
-
-# Use Copilot business plan behavior
-bun run start --account-type business
-
-# Run guided Claude Code setup
-bun run start --claude-code
-
-# Authenticate providers only
-bun run auth
-
-# Inspect Copilot quota
-bun run check-usage
-
-# Print runtime diagnostics
-bun run debug
-```
+| `--api-key` | | auto-generated | Inbound API key for route protection |
+| `--allow-local-endpoints` | | `false` | Allow localhost/private OpenAI-compatible endpoints |
+| `--enable-config-edit` | | `false` | Allow editing external config files via admin API |
 
 ---
 
@@ -302,6 +285,7 @@ bun run debug
 | `POST` | `/v1/chat/completions` | Chat completions |
 | `GET` | `/v1/models` | List available models |
 | `POST` | `/v1/embeddings` | Text embeddings |
+| `POST` | `/v1/responses` | Responses API |
 
 ### Anthropic-compatible endpoints
 
@@ -309,48 +293,62 @@ bun run debug
 |---|---|---|
 | `POST` | `/v1/messages` | Messages API |
 | `POST` | `/v1/messages/count_tokens` | Token counting |
-| `POST` | `/v1/responses` | Responses API |
 
 ### Utility endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/usage` | Active provider usage and quota |
-| `GET` | `/token` | Current provider token |
+| `GET` | `/token` | Current provider token (masked by default) |
+| `GET` | `/health` | Health check with timestamp |
+| `GET` | `/healthz` | Minimal health check |
 
 ### Admin API
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/admin/providers` | List providers with auth status |
-| `POST` | `/api/admin/providers/switch` | Switch active provider |
-| `GET` | `/api/admin/providers/:id/models` | List models for a provider |
-| `POST` | `/api/admin/providers/:id/auth` | Authenticate a provider |
+| `GET` | `/api/admin/info` | Version, port, backend type, uptime |
 | `GET` | `/api/admin/status` | Server and provider status |
-| `GET` | `/api/admin/auth-status` | Current auth flow state |
-| `GET` | `/api/admin/info` | Version and port information |
-
----
-
-## Security and Compliance Considerations
-
-OmniModel centralizes provider access, but it does not eliminate the need for organizational review.
-
-Before production deployment, evaluate:
-
-- whether each provider is contractually approved for your environment
-- whether reverse-engineered providers are acceptable under your legal and compliance policies
-- how provider credentials are stored, rotated, and audited
-- whether `/token` and admin endpoints should be restricted behind network controls or authentication layers
-- whether logs, usage data, or prompts contain regulated or sensitive information
-
-Recommended production controls:
-
-- run behind an internal reverse proxy or API gateway
-- restrict admin access to trusted operators
-- isolate persistent state with controlled filesystem permissions
-- avoid exposing diagnostic/token endpoints on public networks
-- review provider-specific terms before enabling shared organizational use
+| `GET` | `/api/admin/providers` | List providers with auth status and model counts |
+| `POST` | `/api/admin/providers/switch` | Switch active provider |
+| `POST` | `/api/admin/providers/add/:type` | Add a new provider instance |
+| `POST` | `/api/admin/providers/auth-and-create/:type` | Authenticate and create provider in one step |
+| `DELETE` | `/api/admin/providers/:id` | Delete a provider instance |
+| `GET` | `/api/admin/providers/:id/models` | List models for a provider |
+| `POST` | `/api/admin/providers/:id/models/refresh` | Force-refresh model list from upstream |
+| `POST` | `/api/admin/providers/:id/models/toggle` | Enable/disable a model |
+| `GET` | `/api/admin/providers/:id/models/:modelId/version` | Get model version string |
+| `PUT` | `/api/admin/providers/:id/models/:modelId/version` | Set model version string |
+| `GET` | `/api/admin/providers/:id/usage` | Provider-specific usage |
+| `POST` | `/api/admin/providers/:id/auth` | Authenticate a provider |
+| `POST` | `/api/admin/providers/:id/auth/initiate-device-code` | Start OAuth device code flow |
+| `POST` | `/api/admin/providers/:id/auth/complete-device-code` | Complete OAuth device code flow |
+| `PUT` | `/api/admin/providers/:id/config` | Update provider configuration |
+| `POST` | `/api/admin/providers/:id/activate` | Activate a provider |
+| `POST` | `/api/admin/providers/:id/deactivate` | Deactivate a provider |
+| `GET` | `/api/admin/providers/priorities` | Get provider failover priorities |
+| `POST` | `/api/admin/providers/priorities` | Set provider failover priorities |
+| `GET` | `/api/admin/auth-status` | Current OAuth flow state |
+| `POST` | `/api/admin/auth/cancel` | Cancel active OAuth flow |
+| `GET` | `/api/admin/settings/log-level` | Get current log level |
+| `PUT` | `/api/admin/settings/log-level` | Change log level dynamically |
+| `GET` | `/api/admin/logs/stream` | SSE log stream |
+| `GET` | `/api/admin/chat/sessions` | List chat sessions |
+| `POST` | `/api/admin/chat/sessions` | Create chat session |
+| `GET` | `/api/admin/chat/sessions/:id` | Get chat session with messages |
+| `PUT` | `/api/admin/chat/sessions/:id` | Update chat session title |
+| `POST` | `/api/admin/chat/sessions/:id/messages` | Add message to session |
+| `DELETE` | `/api/admin/chat/sessions/:id` | Delete chat session |
+| `DELETE` | `/api/admin/chat/sessions` | Delete all chat sessions |
+| `GET` | `/api/admin/config` | List available config files |
+| `GET` | `/api/admin/config/:name` | Read a config file |
+| `PUT` | `/api/admin/config/:name` | Save a config file |
+| `POST` | `/api/admin/config/:name/import` | Import config from uploaded file |
+| `GET` | `/api/admin/vmodels` | List virtual models |
+| `POST` | `/api/admin/vmodels` | Create virtual model |
+| `GET` | `/api/admin/vmodels/:id` | Get virtual model detail |
+| `PUT` | `/api/admin/vmodels/:id` | Update virtual model |
+| `DELETE` | `/api/admin/vmodels/:id` | Delete virtual model |
 
 ---
 
@@ -362,14 +360,12 @@ Recommended production controls:
 bun run start --claude-code
 ```
 
-This flow helps operators choose a primary model and a small/fast model, then prepares a ready-to-run Claude Code command.
-
 ### Manual `.claude/settings.json` example
 
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:4141",
+    "ANTHROPIC_BASE_URL": "http://localhost:5000",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
     "ANTHROPIC_MODEL": "gpt-4.1",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-4.1",
@@ -381,65 +377,19 @@ This flow helps operators choose a primary model and a small/fast model, then pr
 }
 ```
 
-This allows Claude Code to target OmniModel as its Anthropic-compatible endpoint.
+### Caveat: Using Claude Code with GitHub Copilot Upstream
 
----
+When routing Claude Code through OmniModel with GitHub Copilot as the upstream provider, **GitHub Copilot is charged per request** — not per token. Claude Code makes many small background calls (sub-agents, tool-use, haiku-class models) that silently add up.
 
-### ⚠️ Caveat: Using Claude Code with GitHub Copilot Upstream
+Override small/fast models to a free or low-cost model:
 
-When you route Claude Code through OmniModel with GitHub Copilot as the upstream provider, **GitHub Copilot is charged per request** — not per token. Claude Code makes many small background calls that silently add up:
-
-- **Sub-agent calls** — spawned for parallel tasks (search, file exploration, etc.)
-- **Tool-use calls** — quick validation and formatting requests
-- **Small/fast model calls** — Claude Code's internal use of "haiku" class models for lightweight tasks
-
-**If you don't override the `_MODEL` environment variables**, Claude Code defaults to Anthropic's Haiku model for all these small tasks, which means every sub-agent invocation and tool call becomes a separate request billed against your Copilot quota.
-
-#### Solution: Override small/fast models to a free or low-cost model
-
-Set these environment variables to route Claude Code's lightweight calls to a cheaper or free model instead of your primary Copilot upstream.
-
-#### Windows (PowerShell)
-
-```powershell
-$env:ANTHROPIC_DEFAULT_HAIKU_MODEL = "gpt-5-mini"
-$env:ANTHROPIC_SMALL_FAST_MODEL = "gpt-5-mini"
-$env:CLAUDE_CODE_SUBAGENT_MODEL = "gpt-5-mini"
-```
-
-#### Windows (CMD)
-
-```cmd
-set ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5-mini
-set ANTHROPIC_SMALL_FAST_MODEL=gpt-5-mini
-set CLAUDE_CODE_SUBAGENT_MODEL=gpt-5-mini
-```
-
-#### Linux / macOS (Bash, Zsh, etc.)
-
-```sh
-export ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-5-mini
-export ANTHROPIC_SMALL_FAST_MODEL=gpt-5-mini
-export CLAUDE_CODE_SUBAGENT_MODEL=gpt-5-mini
-```
-
-#### Persisting across sessions
-
-**Windows (PowerShell profile)** — add to `$PROFILE`:
-```powershell
-$env:ANTHROPIC_DEFAULT_HAIKU_MODEL = "qwen3.6-plus"
-$env:ANTHROPIC_SMALL_FAST_MODEL = "qwen3.6-plus"
-$env:CLAUDE_CODE_SUBAGENT_MODEL = "qwen3.6-plus"
-```
-
-**Linux / macOS** — add to `~/.bashrc`, `~/.zshrc`, or `~/.profile`:
 ```sh
 export ANTHROPIC_DEFAULT_HAIKU_MODEL=qwen3.6-plus
 export ANTHROPIC_SMALL_FAST_MODEL=qwen3.6-plus
 export CLAUDE_CODE_SUBAGENT_MODEL=qwen3.6-plus
 ```
 
-Alternatively, set them in `.env.local` or `.claude/settings.json`:
+Or in `.claude/settings.json`:
 
 ```json
 {
@@ -454,28 +404,27 @@ Alternatively, set them in `.env.local` or `.claude/settings.json`:
 }
 ```
 
-This ensures only your main conversation requests go through the per-request-billed provider, while all the small background traffic is handled by your free or flat-rate subscription — potentially saving dozens or hundreds of unnecessary Copilot requests per session.
-
 ---
 
 ## Operations and Troubleshooting
 
 ### Common checks
 
-- confirm the service is listening on the expected port
-- open `/admin/` and verify provider auth state
-- run `bun run debug` to inspect runtime paths and token presence
-- run `bun run check-usage` when validating Copilot quota behavior
-- verify the active provider has available models before routing traffic
+- Confirm the service is listening on the expected port
+- Open `/admin/` and verify provider auth state
+- Run `bun run debug` to inspect runtime paths and token presence
+- Run `bun run check-usage` when validating Copilot quota behavior
+- Verify the active provider has available models before routing traffic
 
 ### Common failure modes
 
-| Symptom | Likely Cause | Operator Action |
+| Symptom | Likely Cause | Action |
 |---|---|---|
 | No authenticated providers | Auth flow not completed | Run `omnimodel auth` or authenticate in admin UI |
-| 401 / Unauthorized | Expired or invalid provider credentials | Re-authenticate provider |
+| 401 / Unauthorized | Expired or invalid provider credentials, or missing inbound API key | Re-authenticate provider; include `Authorization: Bearer <api-key>` in requests |
 | No models returned | Provider auth incomplete or upstream issue | Recheck auth and provider availability |
 | Rate-limit failures | Request volume exceeds configured threshold | Increase interval or use `--wait` |
+| Endpoint rejected | SSRF protection blocking localhost/private IPs | Use `--allow-local-endpoints` for local services like Ollama |
 
 ---
 
@@ -484,15 +433,14 @@ This ensures only your main conversation requests go through the per-request-bil
 ```sh
 bun install
 
-# Start backend + frontend dev servers (foreground)
+# Start backend + frontend (foreground)
 bun run dev
 
 # Custom ports
 bun run dev --server-port 8080 --frontend-port 3000
 
-# Background mode with service management
+# Background mode
 bun run omni start
-bun run omni status
 bun run omni stop
 
 # Backend only (TypeScript)
@@ -508,7 +456,9 @@ bun run build
 bun run typecheck
 ```
 
-Frontend source lives in `frontend/` and uses Vite + React + Tailwind v4. In development mode, Vite proxies `/api/*`, `/v1/*`, and `/usage` to the backend.
+Frontend source lives in `frontend/` and uses Vite + React + Tailwind v4. In development mode, Vite proxies `/api/*`, `/v1/*`, and `/usage` to the Go backend.
+
+The frontend auto-detects the backend port at runtime by probing known ports, so it works correctly even when served on non-standard ports.
 
 ---
 

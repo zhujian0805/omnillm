@@ -276,11 +276,18 @@ func createAndActivateAlibabaProvider(t *testing.T, backendURL string, upstreamB
 		t.Fatalf("marshal auth request: %v", err)
 	}
 
-	resp, err := http.Post(
+	req, err := http.NewRequest(
+		http.MethodPost,
 		backendURL+"/api/admin/providers/auth-and-create/alibaba",
-		"application/json",
 		bytes.NewReader(body),
 	)
+	if err != nil {
+		t.Fatalf("create Alibaba provider request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-api-key")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("create Alibaba provider: %v", err)
 	}

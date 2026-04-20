@@ -26,18 +26,21 @@ import (
 )
 
 type StartOptions struct {
-	Port          int
-	Verbose       bool
-	AccountType   string
-	Manual        bool
-	RateLimit     *int
-	RateLimitWait bool
-	GithubToken   string
-	ClaudeCode    bool
-	Console       bool
-	ShowToken     bool
-	ProxyEnv      bool
-	Provider      string
+	Port                int
+	Verbose             bool
+	AccountType         string
+	Manual              bool
+	RateLimit           *int
+	RateLimitWait       bool
+	GithubToken         string
+	ClaudeCode          bool
+	Console             bool
+	ShowToken           bool
+	ProxyEnv            bool
+	Provider            string
+	APIKey              string
+	AllowLocalEndpoints bool
+	EnableConfigEdit    bool
 }
 
 func RunServer(options StartOptions) error {
@@ -54,6 +57,16 @@ func RunServer(options StartOptions) error {
 	if err := database.InitializeDatabase(configDir); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
+
+	apiKey, err := resolveAPIKey(configDir, options.APIKey)
+	if err != nil {
+		return fmt.Errorf("failed to resolve api key: %w", err)
+	}
+	options.APIKey = apiKey
+	routes.ConfigureSecurityOptions(routes.SecurityOptions{
+		ShowToken:        options.ShowToken,
+		EnableConfigEdit: options.EnableConfigEdit,
+	})
 
 	// Initialize provider registry
 	providerRegistry := registry.GetProviderRegistry()
@@ -76,7 +89,7 @@ func RunServer(options StartOptions) error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := buildRouter(options.Port)
+	r := buildRouter(options.Port, options.APIKey)
 
 	// Claude Code mode output
 	if options.ClaudeCode {
@@ -92,12 +105,16 @@ func RunServer(options StartOptions) error {
 		Str("admin", adminURL).
 		Msg("OmniModel server starting")
 
+	log.Info().Str("api_key_path", filepath.Join(configDir, apiKeyFileName)).Msg("Inbound API authentication enabled")
+
 	return r.Run(fmt.Sprintf(":%d", options.Port))
 }
 
-func buildRouter(port int) *gin.Engine {
+func buildRouter(port int, apiKey string) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
+
+	auth := newAuthConfig(apiKey)
 
 	// Structured logging middleware with request ID
 	r.Use(func(c *gin.Context) {
@@ -123,9 +140,9 @@ func buildRouter(port int) *gin.Engine {
 
 	// Configure CORS
 	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowOrigins = []string{"*"}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
-	corsConfig.AllowHeaders = []string{"*"}
+	corsConfig.AllowHeaders = []string{"Authorization", "Content-Type", "Accept", "Cache-Control"}
+	corsConfig.AllowOriginFunc = isAllowedOrigin
 	r.Use(cors.New(corsConfig))
 
 	r.SetTrustedProxies([]string{"127.0.0.1", "::1", "localhost"})
@@ -136,8 +153,10 @@ func buildRouter(port int) *gin.Engine {
 			c.Header("Content-Type", "text/event-stream")
 			c.Header("Cache-Control", "no-cache")
 			c.Header("Connection", "keep-alive")
-			c.Header("Access-Control-Allow-Origin", "*")
-			c.Header("Access-Control-Allow-Headers", "Cache-Control")
+			if origin := c.GetHeader("Origin"); origin != "" && isAllowedOrigin(origin) {
+				c.Header("Access-Control-Allow-Origin", origin)
+			}
+			c.Header("Access-Control-Allow-Headers", "Cache-Control, Authorization")
 		}
 		c.Next()
 	})
@@ -163,7 +182,7 @@ func buildRouter(port int) *gin.Engine {
 	})
 
 	// API routes
-	api := r.Group("/")
+	api := r.Group("/", auth.middleware())
 	routes.SetupChatCompletionRoutes(api)
 	routes.SetupModelRoutes(api)
 	routes.SetupEmbeddingRoutes(api)
@@ -171,7 +190,7 @@ func buildRouter(port int) *gin.Engine {
 	routes.SetupTokenRoutes(api)
 
 	// v1 compatibility routes
-	v1 := r.Group("/v1")
+	v1 := r.Group("/v1", auth.middleware())
 	routes.SetupChatCompletionRoutes(v1)
 	routes.SetupModelRoutes(v1)
 	routes.SetupEmbeddingRoutes(v1)
@@ -179,7 +198,10 @@ func buildRouter(port int) *gin.Engine {
 	routes.SetupResponseRoutes(v1)
 
 	// Admin routes
-	adminAPI := r.Group("/api/admin")
+	adminPublic := r.Group("/api/admin")
+	adminPublic.GET("/info", routes.MakePublicInfoHandler(port))
+
+	adminAPI := r.Group("/api/admin", auth.middleware())
 	routes.SetupAdminRoutes(adminAPI, port)
 	routes.SetupVirtualModelRoutes(adminAPI)
 
@@ -187,6 +209,7 @@ func buildRouter(port int) *gin.Engine {
 	r.GET("/admin", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/admin/")
 	})
+	registerAdminUIRoutes(r, apiKey)
 
 	return r
 }

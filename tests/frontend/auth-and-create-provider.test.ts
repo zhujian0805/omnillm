@@ -61,6 +61,7 @@ describe("authAndCreateProvider", () => {
 
     expect(authCall).toBeDefined()
     expect(authCall?.[1]?.method).toBe("POST")
+    expect((authCall?.[1]?.headers as Headers | undefined)?.get?.("Authorization") ?? (authCall?.[1]?.headers as Record<string, string> | undefined)?.Authorization).toBeUndefined()
     expect(authCall?.[1]?.body).toBe(
       JSON.stringify({ method: "token", token: "gh-test-token" }),
     )

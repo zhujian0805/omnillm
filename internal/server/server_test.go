@@ -38,8 +38,18 @@ func TestMain(m *testing.M) {
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	r := buildRouter(0)
+	r := buildRouter(0, "test-api-key")
 	return httptest.NewServer(r)
+}
+
+func newAuthenticatedRequest(t *testing.T, method, url string, body io.Reader) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer test-api-key")
+	return req
 }
 
 // ─── Health endpoints ───
@@ -118,7 +128,8 @@ func TestGetModels_V1Path(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/v1/models")
+	req := newAuthenticatedRequest(t, http.MethodGet, srv.URL+"/v1/models", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /v1/models: %v", err)
 	}
@@ -146,7 +157,8 @@ func TestGetModels_RootPath(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/models")
+	req := newAuthenticatedRequest(t, http.MethodGet, srv.URL+"/models", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /models: %v", err)
 	}
@@ -163,7 +175,8 @@ func TestAdminGetProviders(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/admin/providers")
+	req := newAuthenticatedRequest(t, http.MethodGet, srv.URL+"/api/admin/providers", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /api/admin/providers: %v", err)
 	}
@@ -185,7 +198,8 @@ func TestAdminGetStatus(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/admin/status")
+	req := newAuthenticatedRequest(t, http.MethodGet, srv.URL+"/api/admin/status", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /api/admin/status: %v", err)
 	}
@@ -201,7 +215,8 @@ func TestAdminGetAuthStatus(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/admin/auth-status")
+	req := newAuthenticatedRequest(t, http.MethodGet, srv.URL+"/api/admin/auth-status", nil)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET /api/admin/auth-status: %v", err)
 	}
@@ -229,18 +244,30 @@ func TestAdminGetInfo(t *testing.T) {
 	}
 }
 
-// ─── Chat completions endpoint ───
+func TestProtectedRoutesRequireAuth(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/admin/providers")
+	if err != nil {
+		t.Fatalf("GET /api/admin/providers: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 401, got %d: %s", resp.StatusCode, string(body))
+	}
+}
 
 func TestChatCompletions_NoActiveProvider(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
 	reqBody := `{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}]}`
-	resp, err := http.Post(
-		srv.URL+"/v1/chat/completions",
-		"application/json",
-		strings.NewReader(reqBody),
-	)
+	req := newAuthenticatedRequest(t, http.MethodPost, srv.URL+"/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /v1/chat/completions: %v", err)
 	}
@@ -256,11 +283,9 @@ func TestChatCompletions_InvalidJSON(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	resp, err := http.Post(
-		srv.URL+"/v1/chat/completions",
-		"application/json",
-		strings.NewReader(`not-json`),
-	)
+	req := newAuthenticatedRequest(t, http.MethodPost, srv.URL+"/v1/chat/completions", strings.NewReader(`not-json`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("POST /v1/chat/completions: %v", err)
 	}

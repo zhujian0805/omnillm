@@ -24,6 +24,7 @@ import (
 	"omnimodel/internal/providers/openaicompat"
 	"omnimodel/internal/providers/shared"
 	"omnimodel/internal/providers/types"
+	"omnimodel/internal/security"
 
 	"github.com/rs/zerolog/log"
 )
@@ -44,6 +45,7 @@ type Provider struct {
 	token        string // API key — may be empty for open endpoints
 	baseURL      string // required; e.g. "http://localhost:11434/v1"
 	config       map[string]interface{}
+	allowLocal   bool
 	configLoaded bool
 }
 
@@ -126,6 +128,9 @@ func (p *Provider) applyConfig(cfg map[string]interface{}) {
 	if raw, ok := cfg["base_url"].(string); ok && raw != "" {
 		p.baseURL = raw
 	}
+	if allowLocal, ok := cfg["allow_local_endpoints"].(bool); ok {
+		p.allowLocal = allowLocal
+	}
 	if n, ok := cfg["name"].(string); ok && n != "" {
 		p.name = n
 	}
@@ -141,8 +146,11 @@ func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 	if p.baseURL == "" {
 		return &types.ModelsResponse{Data: []types.Model{}, Object: "list"}, nil
 	}
-	resp, err := fetchModels(p.baseURL, p.token)
+	resp, err := fetchModels(p.baseURL, p.token, p.allowLocal)
 	if err != nil {
+		if configured := configuredModelsFromConfig(p.config); len(configured) > 0 {
+			return &types.ModelsResponse{Data: configured, Object: "list"}, nil
+		}
 		log.Warn().Err(err).Str("provider", p.instanceID).Msg("openai-compatible: /models fetch failed; returning empty list")
 		return &types.ModelsResponse{Data: []types.Model{}, Object: "list"}, nil
 	}
@@ -375,6 +383,9 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 	}
 	// Normalise: ensure https or http scheme, strip trailing slash.
 	endpoint = normalizeBaseURL(endpoint)
+	if err := security.ValidateEndpoint(endpoint, options.AllowLocalEndpoints); err != nil {
+		return "", "", "", nil, fmt.Errorf("openai-compatible: invalid endpoint: %w", err)
+	}
 
 	apiKey := strings.TrimSpace(options.APIKey)
 
@@ -390,6 +401,9 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 		"auth_type": "api-key",
 		"base_url":  endpoint,
 		"name":      displayName,
+	}
+	if options.AllowLocalEndpoints {
+		config["allow_local_endpoints"] = true
 	}
 	if apiFormat := normalizeOpenAICompatibleAPIFormat(options.APIFormat); apiFormat != "" {
 		config["api_format"] = apiFormat
@@ -522,7 +536,50 @@ func keySuffix(apiKey string) string {
 }
 
 // fetchModels calls GET <baseURL>/models and returns the model list.
-func fetchModels(baseURL, token string) (*types.ModelsResponse, error) {
+func configuredModelsFromConfig(cfg map[string]interface{}) []types.Model {
+	if len(cfg) == 0 {
+		return nil
+	}
+	rawModels, ok := cfg["models"]
+	if !ok {
+		return nil
+	}
+	items, ok := rawModels.([]interface{})
+	if !ok {
+		if stringsList, ok := rawModels.([]string); ok {
+			models := make([]types.Model, 0, len(stringsList))
+			for _, id := range stringsList {
+				id = strings.TrimSpace(id)
+				if id == "" {
+					continue
+				}
+				models = append(models, types.Model{ID: id, Name: id})
+			}
+			return models
+		}
+		return nil
+	}
+
+	models := make([]types.Model, 0, len(items))
+	for _, item := range items {
+		id, ok := item.(string)
+		if !ok {
+			continue
+		}
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		models = append(models, types.Model{ID: id, Name: id})
+	}
+	return models
+}
+
+func fetchModels(baseURL, token string, allowLocal bool) (*types.ModelsResponse, error) {
+	if err := security.ValidateEndpoint(baseURL, allowLocal); err != nil {
+		return nil, fmt.Errorf("openai-compatible: invalid models endpoint: %w", err)
+	}
+
 	modelsURL := strings.TrimRight(baseURL, "/") + "/models"
 	req, err := http.NewRequest(http.MethodGet, modelsURL, nil)
 	if err != nil {

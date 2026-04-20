@@ -54,7 +54,7 @@ export default defineConfig({
     } : undefined,
   },
   define: {
-    // Pass server port to frontend for auto-detection fallback
     __SERVER_PORT__: JSON.stringify(serverPort),
+    __API_KEY__: JSON.stringify(process.env.OMNIMODEL_API_KEY ?? ""),
   },
 })

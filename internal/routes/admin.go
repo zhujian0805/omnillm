@@ -114,7 +114,6 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.POST("/providers/auth-and-create/:type", handleAuthAndCreateProvider)
 
 	// System info and status
-	router.GET("/info", makeGetInfoHandler(port))
 	router.GET("/status", handleGetStatus)
 	router.GET("/auth-status", handleGetAuthStatus)
 	router.POST("/auth/cancel", handleCancelAuth)
@@ -1519,24 +1518,14 @@ func GetVersion() string {
 	return "0.0.1" // fallback (without v prefix; frontend adds it)
 }
 
-func makeGetInfoHandler(port int) gin.HandlerFunc {
+func MakePublicInfoHandler(port int) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"version": GetVersion(),
-			"port":    port,
-			"backend": "golang",
-			"uptime":  time.Since(serverStartTime).String(),
-			"build":   "dev",
-			"features": gin.H{
-				"cif_format":        true,
-				"model_routing":     true,
-				"rate_limiting":     true,
-				"manual_approval":   true,
-				"database":          true,
-				"chat_history":      true,
-				"provider_adapters": true,
-				"streaming":         true,
-			},
+			"version":      GetVersion(),
+			"port":         port,
+			"backend":      "golang",
+			"uptime":       time.Since(serverStartTime).String(),
+			"authRequired": true,
 		})
 	}
 }

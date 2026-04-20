@@ -29,7 +29,10 @@ var StartCmd = &cobra.Command{
 		console, _ := cmd.Flags().GetBool("console")
 		showToken, _ := cmd.Flags().GetBool("show-token")
 		proxyEnv, _ := cmd.Flags().GetBool("proxy-env")
-		provider, _ := cmd.Flags().GetString("provider")
+		apiKey, _ := cmd.Flags().GetString("api-key")
+provider, _ := cmd.Flags().GetString("provider")
+	allowLocalEndpoints, _ := cmd.Flags().GetBool("allow-local-endpoints")
+	enableConfigEdit, _ := cmd.Flags().GetBool("enable-config-edit")
 
 		var rateLimit *int
 		if rateLimitStr != "" {
@@ -41,18 +44,21 @@ var StartCmd = &cobra.Command{
 		}
 
 		options := server.StartOptions{
-			Port:          port,
-			Verbose:       verbose,
-			AccountType:   accountType,
-			Manual:        manual,
-			RateLimit:     rateLimit,
-			RateLimitWait: wait,
-			GithubToken:   githubToken,
-			ClaudeCode:    claudeCode,
-			Console:       console,
-			ShowToken:     showToken,
-			ProxyEnv:      proxyEnv,
-			Provider:      provider,
+			Port:                port,
+			Verbose:             verbose,
+			AccountType:         accountType,
+			Manual:              manual,
+			RateLimit:           rateLimit,
+			RateLimitWait:       wait,
+			GithubToken:         githubToken,
+			ClaudeCode:          claudeCode,
+			Console:             console,
+			ShowToken:           showToken,
+			ProxyEnv:            proxyEnv,
+			Provider:            provider,
+			APIKey:              apiKey,
+			AllowLocalEndpoints: allowLocalEndpoints,
+			EnableConfigEdit:    enableConfigEdit,
 		}
 
 		return server.RunServer(options)
@@ -72,4 +78,7 @@ func init() {
 	StartCmd.Flags().Bool("show-token", false, "Show tokens on fetch and refresh")
 	StartCmd.Flags().Bool("proxy-env", false, "Initialize proxy from environment variables")
 	StartCmd.Flags().String("provider", "github-copilot", "Provider to use (github-copilot, antigravity, alibaba, etc.)")
+	StartCmd.Flags().String("api-key", "", "Inbound API key for protecting server routes")
+	StartCmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
+	StartCmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
 }

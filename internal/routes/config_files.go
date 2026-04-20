@@ -16,6 +16,9 @@ import (
 var configFilePaths = map[string]string{
 	"claude-code": expandHomePath("~/.claude/settings.json"),
 	"codex":       expandHomePath("~/.codex/config.toml"),
+	"droid":       expandHomePath("~/.droid/config.toml"),
+	"opencode":    expandHomePath("~/.opencode/settings.json"),
+	"amp":         expandHomePath("~/.amp/config.toml"),
 }
 
 // configMetadata holds display info for each config file.
@@ -32,6 +35,21 @@ var configMetadata = map[string]struct {
 	"codex": {
 		Label:       "Codex Configuration",
 		Description: "OpenAI Codex configuration file (~/.codex/config.toml)",
+		Language:    "toml",
+	},
+	"droid": {
+		Label:       "Droid Configuration",
+		Description: "Droid AI CLI configuration file (~/.droid/config.toml)",
+		Language:    "toml",
+	},
+	"opencode": {
+		Label:       "OpenCode Settings",
+		Description: "OpenCode CLI configuration file (~/.opencode/settings.json)",
+		Language:    "json",
+	},
+	"amp": {
+		Label:       "Amp Configuration",
+		Description: "Amp AI CLI configuration file (~/.amp/config.toml)",
 		Language:    "toml",
 	},
 }
@@ -115,6 +133,11 @@ func handleGetConfig(c *gin.Context) {
 
 // handleSaveConfig saves the provided content to a config file.
 func handleSaveConfig(c *gin.Context) {
+	if !getSecurityOptions().EnableConfigEdit {
+		c.JSON(http.StatusForbidden, gin.H{"error": "config editing is disabled"})
+		return
+	}
+
 	name := c.Param("name")
 
 	filePath, ok := configFilePaths[name]
@@ -132,7 +155,7 @@ func handleSaveConfig(c *gin.Context) {
 	}
 
 	// For JSON files, validate before saving
-	if name == "claude-code" {
+	if name == "claude-code" || name == "opencode" {
 		var js json.RawMessage
 		if err := json.Unmarshal([]byte(req.Content), &js); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid JSON: %v", err)})
@@ -160,6 +183,11 @@ func handleSaveConfig(c *gin.Context) {
 
 // handleImportConfig accepts a file upload and saves its content to the config path.
 func handleImportConfig(c *gin.Context) {
+	if !getSecurityOptions().EnableConfigEdit {
+		c.JSON(http.StatusForbidden, gin.H{"error": "config editing is disabled"})
+		return
+	}
+
 	name := c.Param("name")
 
 	filePath, ok := configFilePaths[name]
@@ -182,7 +210,7 @@ func handleImportConfig(c *gin.Context) {
 	}
 
 	// For JSON files, validate before saving
-	if name == "claude-code" {
+	if name == "claude-code" || name == "opencode" {
 		var js json.RawMessage
 		if err := json.Unmarshal(content, &js); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid JSON in uploaded file: %v", err)})

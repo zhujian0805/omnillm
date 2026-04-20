@@ -18,18 +18,19 @@ const (
 )
 
 type AuthOptions struct {
-	Method       string `json:"method,omitempty"`
-	Force        bool   `json:"force,omitempty"`
-	ClientID     string `json:"client_id,omitempty"`
-	ClientSecret string `json:"client_secret,omitempty"`
-	GithubToken  string `json:"github_token,omitempty"`
-	Token        string `json:"token,omitempty"` // alias for GithubToken from frontend
-	APIKey       string `json:"apiKey,omitempty"`
-	Region       string `json:"region,omitempty"`
-	Plan         string `json:"plan,omitempty"`
-	Endpoint     string `json:"endpoint,omitempty"`
-	APIFormat    string `json:"apiFormat,omitempty"` // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
-	Models       string `json:"models,omitempty"`    // JSON-encoded []string, used by openai-compatible
+	Method              string `json:"method,omitempty"`
+	Force               bool   `json:"force,omitempty"`
+	ClientID            string `json:"client_id,omitempty"`
+	ClientSecret        string `json:"client_secret,omitempty"`
+	GithubToken         string `json:"github_token,omitempty"`
+	Token               string `json:"token,omitempty"` // alias for GithubToken from frontend
+	APIKey              string `json:"apiKey,omitempty"`
+	Region              string `json:"region,omitempty"`
+	Plan                string `json:"plan,omitempty"`
+	Endpoint            string `json:"endpoint,omitempty"`
+	APIFormat           string `json:"apiFormat,omitempty"` // e.g. "anthropic" for Alibaba Anthropic-compatible endpoint
+	Models              string `json:"models,omitempty"`    // JSON-encoded []string, used by openai-compatible
+	AllowLocalEndpoints bool   `json:"allowLocalEndpoints,omitempty"`
 }
 
 type Model struct {

@@ -369,6 +369,17 @@ export function expectToastShown(showToast: any, message: string, type: string =
 export function setupTestEnvironment() {
   setupStorageMocks(globalThis)
 
+  ;(globalThis as any).document = {
+    querySelector: (selector: string) => {
+      if (selector === 'meta[name="omnimodel-api-key"]') {
+        return {
+          getAttribute: (name: string) => name === "content" ? "" : null,
+        }
+      }
+      return null
+    },
+  }
+
   // Mock EventSource
   ;(globalThis as any).EventSource = EventSourceMock
   ;(globalThis as any).WebSocket = WebSocketMock

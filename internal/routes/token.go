@@ -36,8 +36,21 @@ func handleToken(c *gin.Context) {
 		return
 	}
 
+	responseToken := maskToken(token)
+	if getSecurityOptions().ShowToken {
+		responseToken = token
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"access_token": token,
+		"access_token": responseToken,
 		"token_type":   "Bearer",
+		"masked":       !getSecurityOptions().ShowToken,
 	})
+}
+
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return "********"
+	}
+	return token[:4] + "********" + token[len(token)-4:]
 }
