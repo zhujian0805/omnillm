@@ -256,20 +256,8 @@ export default function AppComponent() {
 
             <nav
               aria-label="Main navigation"
-              style={{ flex: 1, padding: "12px 10px" }}
+              style={{ flex: 1, padding: "10px 0 10px 0" }}
             >
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: "var(--color-text-tertiary)",
-                  padding: "8px 12px 6px",
-                }}
-              >
-                Navigation
-              </div>
               {NAV_ITEMS.map((item) => {
                 const isActive = item.id === tab
                 const ItemIcon = item.icon
@@ -278,30 +266,9 @@ export default function AppComponent() {
                     key={item.id}
                     onClick={() => handleTabChange(item.id)}
                     aria-current={isActive ? "page" : undefined}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      width: "100%",
-                      background:
-                        isActive ? "var(--color-blue-fill)" : "transparent",
-                      border: "none",
-                      color:
-                        isActive ? "var(--color-blue)" : (
-                          "var(--color-text-secondary)"
-                        ),
-                      fontFamily: "var(--font-text)",
-                      fontSize: 13,
-                      fontWeight: isActive ? 600 : 400,
-                      letterSpacing: "-0.01em",
-                      padding: "8px 12px",
-                      borderRadius: "var(--radius-md)",
-                      cursor: "pointer",
-                      transition: "all 0.15s var(--ease)",
-                      textAlign: "left",
-                    }}
+                    className={`nav-item${isActive ? " active" : ""}`}
                   >
-                    <ItemIcon size={16} style={{ flexShrink: 0 }} />
+                    <ItemIcon size={15} style={{ flexShrink: 0 }} />
                     {item.label}
                   </button>
                 )
@@ -310,7 +277,7 @@ export default function AppComponent() {
 
             <div
               style={{
-                padding: "16px 16px",
+                padding: "14px 16px",
                 borderTop: "1px solid var(--color-separator)",
               }}
             >
@@ -319,68 +286,44 @@ export default function AppComponent() {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  marginBottom: 12,
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div className="status-dot status-dot-active" />
-                  <span
-                    style={{
-                      color: "var(--color-green)",
-                      fontSize: 12,
-                      fontWeight: 500,
-                    }}
-                  >
-                    Online
-                  </span>
+                  {info ?
+                    <span className="version-pill">
+                      v{info.version} · :{info.port}
+                    </span>
+                  : <span
+                      style={{
+                        color: "var(--color-green)",
+                        fontSize: 12,
+                        fontWeight: 500,
+                      }}
+                    >
+                      Online
+                    </span>
+                  }
                 </div>
-                {info && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                    }}
-                  >
-                    v{info.version} · :{info.port}
-                  </span>
-                )}
+                <button
+                  onClick={toggleTheme}
+                  title={
+                    theme === "dark" ?
+                      "Switch to light theme"
+                    : "Switch to dark theme"
+                  }
+                  aria-label={
+                    theme === "dark" ?
+                      "Switch to light theme"
+                    : "Switch to dark theme"
+                  }
+                  className="btn btn-icon btn-icon-ghost"
+                >
+                  {theme === "dark" ?
+                    <Sun size={14} />
+                  : <Moon size={14} />}
+                </button>
               </div>
-
-              <button
-                onClick={toggleTheme}
-                title={
-                  theme === "dark" ?
-                    "Switch to light theme"
-                  : "Switch to dark theme"
-                }
-                aria-label={
-                  theme === "dark" ?
-                    "Switch to light theme"
-                  : "Switch to dark theme"
-                }
-                style={{
-                  width: "100%",
-                  height: 36,
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-separator)",
-                  background: "var(--color-surface-2)",
-                  color: "var(--color-text-secondary)",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  transition: "all 0.15s var(--ease)",
-                }}
-              >
-                {theme === "dark" ?
-                  <Sun size={14} />
-                : <Moon size={14} />}
-                Switch to {theme === "dark" ? "light" : "dark"}
-              </button>
             </div>
           </>
         )}
@@ -433,29 +376,29 @@ export default function AppComponent() {
       >
         <header
           style={{
-            background: "var(--color-bg)",
+            background: "var(--color-header-bg)",
             backdropFilter: "blur(20px) saturate(180%)",
             WebkitBackdropFilter: "blur(20px) saturate(180%)",
             borderBottom: "1px solid var(--color-separator)",
-            padding: "0 32px",
+            padding: "0 28px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            height: 56,
+            height: 52,
             flexShrink: 0,
             position: "sticky",
             top: 0,
             zIndex: 30,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Icon
-              size={18}
+              size={16}
               style={{ color: "var(--color-blue)", flexShrink: 0 }}
             />
             <h1
               style={{
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: 600,
                 color: "var(--color-text)",
                 margin: 0,
@@ -472,7 +415,7 @@ export default function AppComponent() {
           <main
             style={{
               flex: 1,
-              padding: tab === "chat" ? "0" : "32px 32px 40px",
+              padding: tab === "chat" ? "0" : "28px 28px 40px",
               maxWidth: 1440,
               width: "100%",
               margin: "0 auto",
@@ -482,7 +425,7 @@ export default function AppComponent() {
               className="animate-slide-in"
               style={{
                 padding: tab === "chat" ? "0" : "0",
-                minHeight: tab === "chat" ? "calc(100dvh - 56px)" : "auto",
+                minHeight: tab === "chat" ? "calc(100dvh - 52px)" : "auto",
               }}
             >
               <div

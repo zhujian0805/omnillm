@@ -2933,12 +2933,60 @@ function AddFlowCopilotForm({
   submitting,
 }: AddFlowFormProps) {
   const [token, setToken] = useState("")
-  const submit = async () => {
+  const submitToken = async () => {
     if (!token.trim()) return
     await onSubmit({ method: "token", token: token.trim() })
   }
+  const submitOAuth = async () => {
+    await onSubmit({ method: "oauth" })
+  }
   return (
     <div style={addFlowPanelStyle}>
+      {/* Primary: OAuth */}
+      <button
+        className="btn btn-primary btn-sm"
+        onClick={submitOAuth}
+        disabled={submitting}
+        style={{ width: "100%" }}
+      >
+        {submitting ?
+          <>
+            <Spin size={13} /> Connecting…
+          </>
+        : "Sign in with GitHub (OAuth)"}
+      </button>
+      <AddFlowHint>
+        Recommended. Opens a browser window to complete the GitHub device code
+        flow — no token needed.
+      </AddFlowHint>
+
+      {/* Divider */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{ flex: 1, height: 1, background: "var(--color-separator)" }}
+        />
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+          }}
+        >
+          or use a token
+        </span>
+        <div
+          style={{ flex: 1, height: 1, background: "var(--color-separator)" }}
+        />
+      </div>
+
+      {/* Secondary: Token */}
       <FormRow label="GitHub Token">
         <input
           type="password"
@@ -2946,23 +2994,24 @@ function AddFlowCopilotForm({
           value={token}
           onChange={(e) => setToken(e.target.value)}
           style={addFlowTextInputStyle}
+          autoComplete="off"
         />
       </FormRow>
       <AddFlowHint>
-        Enter your GitHub Copilot token. You can generate one from GitHub
-        Settings → Developer settings → Personal access tokens.
+        Generate a token from GitHub Settings → Developer settings → Personal
+        access tokens.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button
-          className="btn btn-primary btn-sm"
-          onClick={submit}
+          className="btn btn-outline btn-sm"
+          onClick={submitToken}
           disabled={submitting}
         >
           {submitting ?
             <>
               <Spin size={13} /> Connecting…
             </>
-          : "Add Provider"}
+          : "Add with Token"}
         </button>
         <button
           className="btn btn-ghost btn-sm"
@@ -3000,6 +3049,7 @@ function AddFlowAntigravityForm({
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           style={addFlowTextInputStyle}
+          autoComplete="off"
         />
       </FormRow>
       <FormRow label="OAuth Client Secret">
@@ -3009,6 +3059,7 @@ function AddFlowAntigravityForm({
           value={clientSecret}
           onChange={(e) => setClientSecret(e.target.value)}
           style={addFlowTextInputStyle}
+          autoComplete="off"
         />
       </FormRow>
       <AddFlowHint>
@@ -3058,6 +3109,7 @@ function AddFlowAzureForm({
           value={endpoint}
           onChange={(e) => setEndpoint(e.target.value)}
           style={addFlowTextInputStyle}
+          autoComplete="off"
         />
       </FormRow>
       <FormRow label="API Key">
@@ -3067,6 +3119,7 @@ function AddFlowAzureForm({
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           style={addFlowTextInputStyle}
+          autoComplete="off"
         />
       </FormRow>
       <AddFlowHint>
