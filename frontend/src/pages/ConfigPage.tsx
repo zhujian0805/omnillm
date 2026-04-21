@@ -521,6 +521,15 @@ const inputStyle: CSSProperties = {
   fontFamily: "var(--font-mono)",
 }
 
+const DROID_PROVIDER_OPTIONS = [
+  { value: "anthropic", label: "Anthropic (v1/messages)" },
+  { value: "openai", label: "OpenAI (Responses API)" },
+  {
+    value: "generic-chat-completion-api",
+    label: "Generic (Chat Completions API)",
+  },
+]
+
 const smallInputStyle: CSSProperties = {
   ...inputStyle,
   padding: "4px 8px",
@@ -2283,7 +2292,6 @@ function DroidEditor({
               { key: "displayName", label: "Display Name" },
               { key: "baseUrl", label: "Base URL" },
               { key: "apiKey", label: "API Key" },
-              { key: "provider", label: "Provider" },
             ].map(({ key, label }) => (
               <div
                 key={key}
@@ -2317,6 +2325,47 @@ function DroidEditor({
                 />
               </div>
             ))}
+            {/* Provider dropdown */}
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  minWidth: 90,
+                }}
+              >
+                Provider
+              </span>
+              <select
+                value={model.provider}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    customModels: models.map((m, i) =>
+                      i === idx ? { ...m, provider: e.target.value } : m,
+                    ),
+                  })
+                }
+                style={{
+                  ...smallInputStyle,
+                  flex: 1,
+                  cursor: "pointer",
+                }}
+              >
+                {DROID_PROVIDER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             {/* Model Parameters */}
             <div
               style={{
@@ -2403,7 +2452,7 @@ function DroidEditor({
               id: `model-${models.length + 1}`,
               baseUrl: "http://localhost:5000/v1",
               apiKey: "${OMNILLM_API_KEY}",
-              provider: "openai",
+              provider: "anthropic",
               displayName: "New Model",
             }
             onChange({ ...config, customModels: [...models, newModel] })
