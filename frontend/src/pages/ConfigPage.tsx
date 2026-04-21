@@ -2485,12 +2485,10 @@ function ToolCard({
   entry,
   isActive,
   onClick,
-  onBackup,
 }: {
   entry: ConfigFileEntry
   isActive: boolean
   onClick: () => void
-  onBackup: () => void
 }) {
   const Icon = entry.language === "json" ? FileJson : FileText
 
@@ -2638,31 +2636,6 @@ function ToolCard({
         >
           {entry.language}
         </span>
-        {entry.exists && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onBackup()
-            }}
-            title="Download backup"
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              padding: "2px 6px",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--color-separator)",
-              background: "var(--color-surface-2)",
-              color: "var(--color-text-secondary)",
-              fontSize: 9,
-              gap: 3,
-              cursor: "pointer",
-            }}
-          >
-            <Copy size={10} />
-            backup
-          </button>
-        )}
       </div>
     </button>
   )
@@ -2818,59 +2791,61 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
     setSaving(true)
     saveConfigFile(activeConfig, content)
       .then(() => {
+        setRawContent(content)
         setOriginalContent(content)
         setDirty(false)
         showToast("Configuration saved", "success")
+
+        // For JSON configs, re-parse the content we just saved to ensure
+        // in-memory state matches what was written to disk.
+        // For TOML (codex), reload from disk since serialization depends
+        // on the original file content.
+        if (activeConfig === "codex") {
+          return getConfigFile(activeConfig).then((resp) => {
+            if (resp.content) {
+              setRawContent(resp.content)
+              setOriginalContent(resp.content)
+              try {
+                setCodexConfig(parseTOML(resp.content))
+              } catch {
+                /* ignore */
+              }
+            }
+          })
+        }
+
+        // Re-parse JSON configs from the content we just saved
+        if (activeConfig === "claude-code") {
+          try {
+            setClaudeSettings(JSON.parse(content))
+          } catch {
+            setClaudeSettings(null)
+          }
+        } else if (activeConfig === "opencode") {
+          try {
+            setOpenCodeConfig(JSON.parse(content))
+          } catch {
+            setOpenCodeConfig(null)
+          }
+        } else if (activeConfig === "amp") {
+          try {
+            setAMPConfig(JSON.parse(content))
+          } catch {
+            setAMPConfig(null)
+          }
+        } else if (activeConfig === "droid") {
+          try {
+            setDroidConfig(JSON.parse(content))
+          } catch {
+            setDroidConfig(null)
+          }
+        }
 
         // Reload the config list to update the "exists" status
         return listConfigFiles()
       })
       .then((r) => {
-        setConfigs(r.configs)
-
-        // Reload the current config to ensure we have the latest data
-        if (activeConfig) {
-          return getConfigFile(activeConfig)
-        }
-      })
-      .then((resp) => {
-        if (resp) {
-          setRawContent(resp.content)
-          setOriginalContent(resp.content)
-
-          // Re-parse structured data
-          if (activeConfig === "claude-code" && resp.content) {
-            try {
-              setClaudeSettings(JSON.parse(resp.content))
-            } catch {
-              setClaudeSettings(null)
-            }
-          } else if (activeConfig === "codex" && resp.content) {
-            try {
-              setCodexConfig(parseTOML(resp.content))
-            } catch {
-              setCodexConfig(null)
-            }
-          } else if (activeConfig === "opencode" && resp.content) {
-            try {
-              setOpenCodeConfig(JSON.parse(resp.content))
-            } catch {
-              setOpenCodeConfig(null)
-            }
-          } else if (activeConfig === "amp" && resp.content) {
-            try {
-              setAMPConfig(JSON.parse(resp.content))
-            } catch {
-              setAMPConfig(null)
-            }
-          } else if (activeConfig === "droid" && resp.content) {
-            try {
-              setDroidConfig(JSON.parse(resp.content))
-            } catch {
-              setDroidConfig(null)
-            }
-          }
-        }
+        if (r) setConfigs(r.configs)
       })
       .catch((err: Error) => showToast(`Save failed: ${err.message}`, "error"))
       .finally(() => setSaving(false))
@@ -2879,31 +2854,31 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
   const handleReset = () => {
     setRawContent(originalContent)
     setDirty(false)
-    if (activeConfig === "claude-code" && originalContent) {
+    if (activeConfig === "claude-code") {
       try {
         setClaudeSettings(JSON.parse(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "codex" && originalContent) {
+    } else if (activeConfig === "codex") {
       try {
         setCodexConfig(parseTOML(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "opencode" && originalContent) {
+    } else if (activeConfig === "opencode") {
       try {
         setOpenCodeConfig(JSON.parse(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "amp" && originalContent) {
+    } else if (activeConfig === "amp") {
       try {
         setAMPConfig(JSON.parse(originalContent))
       } catch {
         /* ignore */
       }
-    } else if (activeConfig === "droid" && originalContent) {
+    } else if (activeConfig === "droid") {
       try {
         setDroidConfig(JSON.parse(originalContent))
       } catch {
@@ -2979,7 +2954,6 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
             entry={cfg}
             isActive={cfg.name === activeConfig}
             onClick={() => handleCardClick(cfg.name)}
-            onBackup={() => handleBackup(cfg.name)}
           />
         ))}
       </div>
@@ -3049,6 +3023,25 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
               </span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              {activeEntry.exists && (
+                <button
+                  onClick={() => handleBackup(activeConfig)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "5px 12px",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-separator)",
+                    background: "var(--color-surface-2)",
+                    color: "var(--color-text-secondary)",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Copy size={11} /> Backup
+                </button>
+              )}
               {dirty && (
                 <span style={{ fontSize: 11, color: "var(--color-amber)" }}>
                   unsaved changes
