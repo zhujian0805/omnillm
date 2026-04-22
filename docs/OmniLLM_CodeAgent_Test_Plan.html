@@ -487,7 +487,7 @@
 
     async function connectHtmlFile() {
       if (!window.showSaveFilePicker) {
-        setSaveStatus("Direct file write is not supported here. Use Save HTML to download snapshot.");
+        setSaveStatus("Direct in-place save is not supported in this browser context.");
         return;
       }
 
@@ -521,13 +521,13 @@
       } catch {
         connectedFileHandle = null;
         await idbClearHandle();
-        setSaveStatus("Could not write to file. Reconnect file or use Save HTML download.");
+        setSaveStatus("Could not write to file. Click Connect HTML File and try again.");
       }
     }
 
     async function initAutoFileConnection() {
       if (!window.showSaveFilePicker || !window.indexedDB) {
-        setSaveStatus("Click Save HTML to download, or use a browser that supports file write permissions.");
+        setSaveStatus("In-place save is unavailable in this browser context.");
         return;
       }
 
@@ -560,13 +560,7 @@
         return;
       }
 
-      if (window.showSaveFilePicker) {
-        await connectHtmlFile();
-        return;
-      }
-
-      downloadSnapshot(state);
-      setSaveStatus("Downloaded HTML snapshot with current test results.");
+      setSaveStatus("Save HTML writes in-place only. Click Connect HTML File once first.");
     }
 
     function updateStats(state) {
