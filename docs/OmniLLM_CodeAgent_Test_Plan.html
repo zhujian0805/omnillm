@@ -6,21 +6,20 @@
   <title>OmniLLM CodeAgent Test Plan</title>
   <style>
     :root {
-      --bg-0: #f4efe6;
-      --bg-1: #efe7db;
-      --panel: #fffdf9;
-      --ink: #1f1d1a;
-      --muted: #6c665d;
-      --line: #d8cfbf;
+      --bg-0: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
       --yes: #1f8f4e;
       --yes-bg: #e8f7ee;
       --no: #b73a3a;
       --no-bg: #fdeeee;
-      --none-bg: #f4f4f4;
-      --none-ink: #6c6c6c;
-      --radius: 14px;
-      --radius-sm: 10px;
-      --shadow: 0 8px 28px rgba(36, 31, 22, 0.09);
+      --none-bg: #f3f4f6;
+      --none-ink: #6b7280;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
     }
 
     * {
@@ -30,11 +29,8 @@
     body {
       margin: 0;
       color: var(--ink);
-      background:
-        radial-gradient(circle at 16% 12%, rgba(255, 255, 255, 0.6), transparent 35%),
-        radial-gradient(circle at 84% 86%, rgba(255, 255, 255, 0.5), transparent 30%),
-        linear-gradient(160deg, var(--bg-0), var(--bg-1));
-      font-family: "Segoe UI", "Trebuchet MS", "Avenir Next", sans-serif;
+      background: var(--bg-0);
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
       line-height: 1.4;
       min-height: 100vh;
     }
@@ -48,9 +44,8 @@
       padding: 20px 22px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: linear-gradient(135deg, #fffdf8, #fbf4e9);
+      background: var(--panel);
       box-shadow: var(--shadow);
-      animation: rise 360ms ease-out;
     }
 
     h1 {
@@ -120,16 +115,16 @@
       margin-top: 16px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      overflow: hidden;
+      overflow: auto;
       background: var(--panel);
       box-shadow: var(--shadow);
-      animation: rise 460ms ease-out;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 920px;
+      min-width: 820px;
+      table-layout: fixed;
     }
 
     thead th {
@@ -137,8 +132,8 @@
       font-size: 0.8rem;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      color: #4f493f;
-      background: #f8f2e8;
+      color: #374151;
+      background: #f9fafb;
       border-bottom: 1px solid var(--line);
       padding: 12px 12px;
       position: sticky;
@@ -148,22 +143,27 @@
 
     tbody td {
       padding: 12px;
-      border-bottom: 1px solid #ece2d1;
+      border-bottom: 1px solid #f1f5f9;
       vertical-align: middle;
       font-size: 0.93rem;
+      word-break: break-word;
     }
 
     tbody tr:nth-child(odd) {
-      background: #fffefc;
+      background: #fcfdff;
     }
 
     tbody tr:hover {
-      background: #faf4ea;
+      background: #f8fafc;
     }
 
-    .status-cell {
-      width: 190px;
-    }
+    th:nth-child(1), td:nth-child(1) { width: 16%; }
+    th:nth-child(2), td:nth-child(2) { width: 20%; }
+    th:nth-child(3), td:nth-child(3) { width: 16%; }
+    th:nth-child(4), td:nth-child(4) { width: 32%; }
+    th:nth-child(5), td:nth-child(5) { width: 16%; }
+
+    .status-cell { min-width: 140px; }
 
     .toggle-group {
       display: inline-flex;
@@ -171,7 +171,7 @@
     }
 
     .chip {
-      border: 1px solid #d6ccbc;
+      border: 1px solid #d1d5db;
       border-radius: 999px;
       padding: 6px 12px;
       font-size: 0.82rem;
@@ -180,7 +180,7 @@
       user-select: none;
       transition: all 120ms ease;
       background: #fff;
-      color: #4f473d;
+      color: #374151;
     }
 
     .chip[aria-pressed="true"][data-value="yes"] {
@@ -204,11 +204,11 @@
 
     .notes {
       margin-top: 14px;
-      border: 1px dashed #ccbda6;
+      border: 1px dashed #cbd5e1;
       border-radius: var(--radius-sm);
-      background: #fff9f0;
+      background: #f8fafc;
       padding: 12px 14px;
-      color: #5b5247;
+      color: #475569;
       font-size: 0.9rem;
     }
 
@@ -222,15 +222,11 @@
       padding-left: 20px;
     }
 
-    @keyframes rise {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    .save-status {
+      margin-top: 10px;
+      color: #5f584e;
+      font-size: 0.84rem;
+      min-height: 1.2em;
     }
 
     @media (max-width: 900px) {
@@ -247,8 +243,8 @@
         grid-template-columns: 1fr;
       }
 
-      .table-wrap {
-        overflow-x: auto;
+      table {
+        min-width: 760px;
       }
     }
   </style>
@@ -257,13 +253,16 @@
   <main class="wrap">
     <section class="hero">
       <h1>OmniLLM CodeAgent Test Plan</h1>
-      <p class="sub">Click Yes or No to mark each run. Your progress is auto-saved in this browser.</p>
+      <p class="sub">Click Yes or No to mark each run. Use Connect HTML File once if you want clicks to write into the HTML file.</p>
       <div class="toolbar">
         <button class="btn" id="set-all-yes" type="button">Set All Yes</button>
         <button class="btn" id="set-all-no" type="button">Set All No</button>
         <button class="btn" id="clear-all" type="button">Clear All</button>
+        <button class="btn" id="connect-file" type="button">Connect HTML File</button>
+        <button class="btn" id="save-html" type="button">Save HTML</button>
         <button class="btn" id="export-csv" type="button">Export CSV</button>
       </div>
+      <div class="save-status" id="save-status"></div>
       <div class="stats">
         <div class="stat">
           <span class="label">Total</span>
@@ -305,8 +304,11 @@
     </section>
   </main>
 
+  <script id="embedded-state" type="application/json">{}</script>
+
   <script>
     const STORAGE_KEY = "omnillm_codeagent_test_plan_v1";
+    const EMBEDDED_STATE_ID = "embedded-state";
 
     const rows = [
       ["Claude Code", "anthropic(v1/messages)", "GitHub Models", "claude-haiku-4.5"],
@@ -330,22 +332,125 @@
     const statTotal = document.getElementById("stat-total");
     const statYes = document.getElementById("stat-yes");
     const statNo = document.getElementById("stat-no");
+    const saveStatus = document.getElementById("save-status");
+
+    let connectedFileHandle = null;
 
     function rowKey(row) {
       return row.join("|");
     }
 
-    function loadState() {
+    function setSaveStatus(message) {
+      saveStatus.textContent = message;
+    }
+
+    function loadEmbeddedState() {
+      const el = document.getElementById(EMBEDDED_STATE_ID);
+      if (!el || !el.textContent.trim()) {
+        return {};
+      }
       try {
-        const data = localStorage.getItem(STORAGE_KEY);
-        return data ? JSON.parse(data) : {};
+        return JSON.parse(el.textContent);
       } catch {
         return {};
       }
     }
 
+    function loadState() {
+      try {
+        const data = localStorage.getItem(STORAGE_KEY);
+        if (data) {
+          return JSON.parse(data);
+        }
+        return loadEmbeddedState();
+      } catch {
+        return loadEmbeddedState();
+      }
+    }
+
     function saveState(state) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (connectedFileHandle) {
+        saveHtmlToConnectedFile(state, true);
+      }
+    }
+
+    function buildSnapshotHtml(state) {
+      const json = JSON.stringify(state, null, 2).replaceAll("<", "\\u003c");
+      const docClone = document.documentElement.cloneNode(true);
+      const stateNode = docClone.querySelector("#embedded-state");
+      if (stateNode) {
+        stateNode.textContent = `\n${json}\n`;
+      }
+      return `<!doctype html>\n${docClone.outerHTML}`;
+    }
+
+    function downloadSnapshot(state) {
+      const html = buildSnapshotHtml(state);
+      const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "OmniLLM_CodeAgent_Test_Plan.html";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    async function connectHtmlFile() {
+      if (!window.showSaveFilePicker) {
+        setSaveStatus("Direct file write is not supported here. Use Save HTML to download snapshot.");
+        return;
+      }
+
+      try {
+        connectedFileHandle = await window.showSaveFilePicker({
+          suggestedName: "OmniLLM_CodeAgent_Test_Plan.html",
+          types: [{
+            description: "HTML",
+            accept: { "text/html": [".html"] }
+          }]
+        });
+        await saveHtmlToConnectedFile(loadState(), false);
+        setSaveStatus("Connected. Yes/No changes now auto-save to the selected HTML file.");
+      } catch {
+        setSaveStatus("File connection was cancelled.");
+      }
+    }
+
+    async function saveHtmlToConnectedFile(state, quiet) {
+      if (!connectedFileHandle) {
+        return;
+      }
+      try {
+        const writable = await connectedFileHandle.createWritable();
+        await writable.write(buildSnapshotHtml(state));
+        await writable.close();
+        if (!quiet) {
+          setSaveStatus("Saved to connected HTML file.");
+        }
+      } catch {
+        connectedFileHandle = null;
+        setSaveStatus("Could not write to file. Reconnect file or use Save HTML download.");
+      }
+    }
+
+    async function saveHtml() {
+      const state = loadState();
+
+      if (connectedFileHandle) {
+        await saveHtmlToConnectedFile(state, false);
+        return;
+      }
+
+      if (window.showSaveFilePicker) {
+        await connectHtmlFile();
+        return;
+      }
+
+      downloadSnapshot(state);
+      setSaveStatus("Downloaded HTML snapshot with current test results.");
     }
 
     function updateStats(state) {
@@ -466,9 +571,12 @@
     document.getElementById("set-all-yes").addEventListener("click", () => setAll("yes"));
     document.getElementById("set-all-no").addEventListener("click", () => setAll("no"));
     document.getElementById("clear-all").addEventListener("click", clearAll);
+    document.getElementById("connect-file").addEventListener("click", connectHtmlFile);
+    document.getElementById("save-html").addEventListener("click", saveHtml);
     document.getElementById("export-csv").addEventListener("click", exportCsv);
 
     buildTable();
+    setSaveStatus("Tip: click Connect HTML File once to auto-save Yes/No changes into a real HTML file.");
   </script>
 </body>
 </html>
