@@ -30,6 +30,10 @@ func (a authConfig) middleware() gin.HandlerFunc {
 			token = strings.TrimSpace(c.GetHeader("x-api-key"))
 			ok = token != ""
 		}
+		if !ok {
+			token = strings.TrimSpace(c.Query("api_key"))
+			ok = token != ""
+		}
 		if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(a.apiKey)) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return

@@ -3521,28 +3521,55 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                 />
               )}
             </div>
-          : <textarea
-              value={rawContent}
-              onChange={(e) => {
-                setRawContent(e.target.value)
-                setDirty(e.target.value !== originalContent)
-              }}
-              spellCheck={false}
-              style={{
-                width: "100%",
-                minHeight: 520,
-                padding: 16,
-                border: "none",
-                outline: "none",
-                resize: "vertical",
-                background: "var(--color-bg-elevated)",
-                color: "var(--color-text)",
-                fontFamily: "var(--font-mono)",
-                fontSize: 13,
-                lineHeight: 1.65,
-                boxSizing: "border-box",
-              }}
-            />
+          : <div style={{ position: "relative" }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(rawContent)
+                    showToast("Copied to clipboard", "success")
+                  } catch {
+                    showToast("Copy failed", "error")
+                  }
+                }}
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  zIndex: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "4px 10px",
+                  fontSize: 11,
+                }}
+              >
+                <Copy size={12} />
+                Copy
+              </button>
+              <textarea
+                value={rawContent}
+                onChange={(e) => {
+                  setRawContent(e.target.value)
+                  setDirty(e.target.value !== originalContent)
+                }}
+                spellCheck={false}
+                style={{
+                  width: "100%",
+                  minHeight: 520,
+                  padding: 16,
+                  border: "none",
+                  outline: "none",
+                  resize: "vertical",
+                  background: "var(--color-bg-elevated)",
+                  color: "var(--color-text)",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 13,
+                  lineHeight: 1.65,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
           }
         </div>
       )}
