@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"encoding/json"
 	"fmt"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
@@ -27,9 +28,26 @@ func SetupAuth(instanceID string, options *types.AuthOptions) (token, endpoint s
 	if options.Endpoint != "" {
 		cfg["endpoint"] = options.Endpoint
 		resolvedEndpoint = strings.TrimRight(options.Endpoint, "/")
+	}
+
+	// Persist deployments if provided (JSON-encoded string)
+	if options.Deployments != "" {
+		var deployments []string
+		if err := json.Unmarshal([]byte(options.Deployments), &deployments); err == nil {
+			cfg["deployments"] = deployments
+		}
+	}
+
+	// Persist API version if provided
+	if options.APIVersion != "" {
+		cfg["apiVersion"] = options.APIVersion
+	}
+
+	// Save config if it contains any keys
+	if len(cfg) > 0 {
 		configStore := database.NewProviderConfigStore()
 		if saveErr := configStore.Save(instanceID, cfg); saveErr != nil {
-			log.Warn().Err(saveErr).Str("provider", instanceID).Msg("Azure: failed to save endpoint config")
+			log.Warn().Err(saveErr).Str("provider", instanceID).Msg("Azure: failed to save config")
 		}
 	}
 
