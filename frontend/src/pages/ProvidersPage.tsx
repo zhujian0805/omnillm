@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,unicorn/consistent-function-scoping */
+import { Eye, EyeOff } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
@@ -93,6 +94,69 @@ function FormRow({
         {label}
       </label>
       {children}
+    </div>
+  )
+}
+
+function SecretInput({
+  value,
+  onChange,
+  placeholder,
+  className,
+  style,
+  autoComplete = "off",
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  className?: string
+  style?: React.CSSProperties
+  autoComplete?: string
+}) {
+  const [visible, setVisible] = useState(false)
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+      }}
+    >
+      <input
+        className={className}
+        type={visible ? "text" : "password"}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...style, flex: 1, minWidth: 0 }}
+        autoComplete={autoComplete}
+        spellCheck={false}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        aria-label={visible ? "Hide secret value" : "Show secret value"}
+        title={visible ? "Hide" : "Show"}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 40,
+          minWidth: 40,
+          height: 40,
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--color-separator)",
+          background: "rgba(255,255,255,0.045)",
+          color: "var(--color-text-secondary)",
+          cursor: "pointer",
+        }}
+      >
+        {visible ?
+          <EyeOff size={16} />
+        : <Eye size={16} />}
+      </button>
     </div>
   )
 }
@@ -331,12 +395,11 @@ function AlibabaAuthForm({
         </select>
       </FormRow>
       <FormRow label="DashScope API Key">
-        <input
+        <SecretInput
           className="sys-input"
-          type="password"
           placeholder="sk-…"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
         />
       </FormRow>
       <div style={{ display: "flex", gap: 8 }}>
@@ -366,12 +429,11 @@ function CopilotAuthForm({
   return (
     <AuthFormWrapper title="Authenticate GitHub Copilot">
       <FormRow label="GitHub Token">
-        <input
+        <SecretInput
           className="sys-input"
-          type="password"
           placeholder="ghu_…"
           value={token}
-          onChange={(e) => setToken(e.target.value)}
+          onChange={setToken}
         />
       </FormRow>
       <div style={{ display: "flex", gap: 8 }}>
@@ -415,12 +477,11 @@ function AntigravityAuthForm({
         />
       </FormRow>
       <FormRow label="OAuth Client Secret">
-        <input
+        <SecretInput
           className="sys-input"
-          type="password"
           placeholder="GOCSPX-…"
           value={clientSecret}
-          onChange={(e) => setClientSecret(e.target.value)}
+          onChange={setClientSecret}
         />
       </FormRow>
       <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
@@ -455,12 +516,11 @@ function AzureOpenAIAuthForm({
   return (
     <AuthFormWrapper title="Authenticate Azure OpenAI">
       <FormRow label="API Key">
-        <input
+        <SecretInput
           className="sys-input"
-          type="password"
           placeholder="Enter your Azure OpenAI API key"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
         />
       </FormRow>
       <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
@@ -2891,11 +2951,10 @@ function AddFlowAlibabaForm({
         />
       </FormRow>
       <FormRow label="DashScope API Key">
-        <input
-          type="password"
+        <SecretInput
           placeholder={plan === "coding-plan" ? "sk-sp-…" : "sk-…"}
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
           style={addFlowTextInputStyle}
         />
       </FormRow>
@@ -2964,11 +3023,10 @@ function AddFlowCopilotForm({
 
       {/* Secondary: Token */}
       <FormRow label="GitHub Token">
-        <input
-          type="password"
+        <SecretInput
           placeholder="ghu_…"
           value={token}
-          onChange={(e) => setToken(e.target.value)}
+          onChange={setToken}
           style={addFlowTextInputStyle}
           autoComplete="off"
         />
@@ -3029,11 +3087,10 @@ function AddFlowAntigravityForm({
         />
       </FormRow>
       <FormRow label="OAuth Client Secret">
-        <input
-          type="password"
+        <SecretInput
           placeholder="GOCSPX-…"
           value={clientSecret}
-          onChange={(e) => setClientSecret(e.target.value)}
+          onChange={setClientSecret}
           style={addFlowTextInputStyle}
           autoComplete="off"
         />
@@ -3089,11 +3146,10 @@ function AddFlowAzureForm({
         />
       </FormRow>
       <FormRow label="API Key">
-        <input
-          type="password"
+        <SecretInput
           placeholder="Enter your Azure OpenAI API key"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
           style={addFlowTextInputStyle}
           autoComplete="off"
         />
@@ -3138,11 +3194,10 @@ function AddFlowGoogleForm({
   return (
     <div>
       <FormRow label="API Key">
-        <input
-          type="password"
+        <SecretInput
           placeholder="Enter your Google Gemini API key"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
           style={addFlowTextInputStyle}
         />
       </FormRow>
@@ -3190,11 +3245,10 @@ function AddFlowKimiForm({ onSubmit, onCancel, submitting }: AddFlowFormProps) {
   return (
     <div>
       <FormRow label="API Key">
-        <input
-          type="password"
+        <SecretInput
           placeholder="Enter your Kimi API key"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
           style={addFlowTextInputStyle}
         />
       </FormRow>
@@ -3278,11 +3332,10 @@ function AddFlowOpenAICompatibleForm({
         />
       </FormRow>
       <FormRow label="API Key (optional)">
-        <input
-          type="password"
+        <SecretInput
           placeholder="Leave empty for open endpoints (e.g. Ollama)"
           value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
+          onChange={setApiKey}
           style={addFlowTextInputStyle}
         />
       </FormRow>
