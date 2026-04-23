@@ -11,15 +11,32 @@ import (
 // Responses API types
 
 type ResponsesPayload struct {
-	Model           string          `json:"model"`
-	Input           any             `json:"input"` // string or []InputItem
-	Instructions    *string         `json:"instructions,omitempty"`
-	Stream          *bool           `json:"stream,omitempty"`
-	Temperature     *float64        `json:"temperature,omitempty"`
-	TopP            *float64        `json:"top_p,omitempty"`
-	MaxOutputTokens *int            `json:"max_output_tokens,omitempty"`
-	Tools           []ResponsesTool `json:"tools,omitempty"`
-	ToolChoice      any             `json:"tool_choice,omitempty"`
+	Model              string          `json:"model"`
+	Input              any             `json:"input"` // string or []InputItem
+	Instructions       *string         `json:"instructions,omitempty"`
+	Stream             *bool           `json:"stream,omitempty"`
+	Temperature        *float64        `json:"temperature,omitempty"`
+	TopP               *float64        `json:"top_p,omitempty"`
+	MaxOutputTokens    *int            `json:"max_output_tokens,omitempty"`
+	Tools              []ResponsesTool `json:"tools,omitempty"`
+	ToolChoice         any             `json:"tool_choice,omitempty"`
+	PreviousResponseID *string         `json:"previous_response_id,omitempty"`
+	Store              *bool           `json:"store,omitempty"`
+	Text               *ResponsesText  `json:"text,omitempty"`
+}
+
+// ResponsesText holds the text.format structured output configuration.
+type ResponsesText struct {
+	Format *ResponsesTextFormat `json:"format,omitempty"`
+}
+
+// ResponsesTextFormat mirrors the response_format shape but nested under text.format.
+type ResponsesTextFormat struct {
+	Type       string                 `json:"type"`
+	Name       string                 `json:"name,omitempty"`
+	Strict     *bool                  `json:"strict,omitempty"`
+	Schema     map[string]interface{} `json:"schema,omitempty"`
+	JSONSchema map[string]interface{} `json:"json_schema,omitempty"`
 }
 
 type ResponsesTool struct {
@@ -41,8 +58,11 @@ type InputItem struct {
 }
 
 type InputContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	FileID   string `json:"file_id,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 // ParseResponsesPayload converts Responses API payload to CIF
@@ -58,6 +78,17 @@ func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 		TopP:        req.TopP,
 		MaxTokens:   req.MaxOutputTokens,
 		Stream:      req.Stream != nil && *req.Stream,
+	}
+
+	// previous_response_id: forwarded as-is for providers that support chaining.
+	// We store it in the canonical request so routing / adapters can use it.
+	if req.PreviousResponseID != nil && *req.PreviousResponseID != "" {
+		canonical.PreviousResponseID = req.PreviousResponseID
+	}
+
+	// text.format → structured output (mirrors response_format in Chat Completions)
+	if req.Text != nil && req.Text.Format != nil {
+		canonical.ResponseFormat = translateResponsesTextFormat(req.Text.Format)
 	}
 
 	// Set system prompt from instructions
@@ -231,6 +262,17 @@ func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {
 			switch cb.Type {
 			case "input_text", "output_text", "text":
 				parts = append(parts, cif.CIFTextPart{Type: "text", Text: cb.Text})
+			case "input_image":
+				part := cif.CIFImagePart{Type: "image"}
+				if cb.ImageURL != "" {
+					part.URL = &cb.ImageURL
+					// Detect base64 data URIs vs plain URLs
+					if len(cb.ImageURL) > 5 && cb.ImageURL[:5] == "data:" {
+						// data:<mediaType>;base64,<data>
+						part.URL = &cb.ImageURL
+					}
+				}
+				parts = append(parts, part)
 			default:
 				return nil, fmt.Errorf("unknown input content block type: %s", cb.Type)
 			}
@@ -317,5 +359,42 @@ func translateResponsesToolChoice(toolChoice interface{}) interface{} {
 		return nil
 	default:
 		return nil
+	}
+}
+
+// translateResponsesTextFormat converts the Responses API text.format object
+// into the canonical response_format map used by outbound adapters.
+// The Responses API shape is flat (name/schema at top level) whereas
+// Chat Completions wraps them inside a json_schema sub-object; this function
+// normalises to the Chat Completions shape so existing adapters can reuse it.
+func translateResponsesTextFormat(f *ResponsesTextFormat) map[string]interface{} {
+	if f == nil {
+		return nil
+	}
+	switch f.Type {
+	case "json_schema":
+		strict := true
+		if f.Strict != nil {
+			strict = *f.Strict
+		}
+		schema := f.Schema
+		if schema == nil {
+			schema = f.JSONSchema
+		}
+		jsonSchemaObj := map[string]interface{}{
+			"name":   f.Name,
+			"strict": strict,
+			"schema": schema,
+		}
+		return map[string]interface{}{
+			"type":        "json_schema",
+			"json_schema": jsonSchemaObj,
+		}
+	case "json_object":
+		return map[string]interface{}{"type": "json_object"}
+	case "text", "":
+		return map[string]interface{}{"type": "text"}
+	default:
+		return map[string]interface{}{"type": f.Type}
 	}
 }
