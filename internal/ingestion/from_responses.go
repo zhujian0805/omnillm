@@ -11,15 +11,32 @@ import (
 // Responses API types
 
 type ResponsesPayload struct {
-	Model           string          `json:"model"`
-	Input           any             `json:"input"` // string or []InputItem
-	Instructions    *string         `json:"instructions,omitempty"`
-	Stream          *bool           `json:"stream,omitempty"`
-	Temperature     *float64        `json:"temperature,omitempty"`
-	TopP            *float64        `json:"top_p,omitempty"`
-	MaxOutputTokens *int            `json:"max_output_tokens,omitempty"`
-	Tools           []ResponsesTool `json:"tools,omitempty"`
-	ToolChoice      any             `json:"tool_choice,omitempty"`
+	Model              string          `json:"model"`
+	Input              any             `json:"input"` // string or []InputItem
+	Instructions       *string         `json:"instructions,omitempty"`
+	Stream             *bool           `json:"stream,omitempty"`
+	Temperature        *float64        `json:"temperature,omitempty"`
+	TopP               *float64        `json:"top_p,omitempty"`
+	MaxOutputTokens    *int            `json:"max_output_tokens,omitempty"`
+	Tools              []ResponsesTool `json:"tools,omitempty"`
+	ToolChoice         any             `json:"tool_choice,omitempty"`
+	PreviousResponseID *string         `json:"previous_response_id,omitempty"`
+	Store              *bool           `json:"store,omitempty"`
+	Text               *ResponsesText  `json:"text,omitempty"`
+}
+
+// ResponsesText holds the text.format structured output configuration.
+type ResponsesText struct {
+	Format *ResponsesTextFormat `json:"format,omitempty"`
+}
+
+// ResponsesTextFormat mirrors the response_format shape but nested under text.format.
+type ResponsesTextFormat struct {
+	Type       string                 `json:"type"`
+	Name       string                 `json:"name,omitempty"`
+	Strict     *bool                  `json:"strict,omitempty"`
+	Schema     map[string]interface{} `json:"schema,omitempty"`
+	JSONSchema map[string]interface{} `json:"json_schema,omitempty"`
 }
 
 type ResponsesTool struct {
@@ -41,8 +58,11 @@ type InputItem struct {
 }
 
 type InputContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	FileID   string `json:"file_id,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 // ParseResponsesPayload converts Responses API payload to CIF
@@ -60,22 +80,25 @@ func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 		Stream:      req.Stream != nil && *req.Stream,
 	}
 
-	// Set system prompt from instructions
+	if req.PreviousResponseID != nil && *req.PreviousResponseID != "" {
+		canonical.PreviousResponseID = req.PreviousResponseID
+	}
+
+	if req.Text != nil && req.Text.Format != nil {
+		canonical.ResponseFormat = translateResponsesTextFormat(req.Text.Format)
+	}
+
 	if req.Instructions != nil && *req.Instructions != "" {
 		canonical.SystemPrompt = req.Instructions
 	}
 
-	// Convert input to messages
 	messages, err := translateResponsesInput(req.Input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to translate input: %w", err)
 	}
 	canonical.Messages = messages
 
-	// Convert tools
 	canonical.Tools = translateResponsesTools(req.Tools)
-
-	// Convert tool choice
 	canonical.ToolChoice = translateResponsesToolChoice(req.ToolChoice)
 
 	log.Debug().
@@ -99,6 +122,20 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 		}, nil
 	case []interface{}:
 		var messages []cif.CIFMessage
+		var pendingAssistantParts []cif.CIFContentPart
+
+		flushAssistant := func() {
+			if len(pendingAssistantParts) == 0 {
+				return
+			}
+			content := append([]cif.CIFContentPart(nil), pendingAssistantParts...)
+			messages = append(messages, cif.CIFAssistantMessage{
+				Role:    "assistant",
+				Content: content,
+			})
+			pendingAssistantParts = nil
+		}
+
 		for _, item := range v {
 			itemMap, ok := item.(map[string]interface{})
 			if !ok {
@@ -112,19 +149,78 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 			if err := json.Unmarshal(itemBytes, &inputItem); err != nil {
 				return nil, fmt.Errorf("failed to decode input item: %w", err)
 			}
-			msgs, err := translateInputItem(inputItem)
-			if err != nil {
-				return nil, err
+
+			switch inputItemType(inputItem) {
+			case "message":
+				content, err := translateInputContent(inputItem.Content)
+				if err != nil {
+					return nil, err
+				}
+
+				switch inputItem.Role {
+				case "system", "developer":
+					flushAssistant()
+					messages = append(messages, cif.CIFSystemMessage{
+						Role:    "system",
+						Content: extractInputText(inputItem.Content),
+					})
+				case "user":
+					flushAssistant()
+					messages = append(messages, cif.CIFUserMessage{
+						Role:    "user",
+						Content: content,
+					})
+				case "assistant":
+					pendingAssistantParts = append(pendingAssistantParts, content...)
+				default:
+					return nil, fmt.Errorf("unknown input item role: %s", inputItem.Role)
+				}
+
+			case "function_call":
+				toolCallID := inputItem.CallID
+				if toolCallID == "" {
+					toolCallID = inputItem.ID
+				}
+				if toolCallID == "" {
+					return nil, fmt.Errorf("function_call item missing call_id and id")
+				}
+
+				pendingAssistantParts = append(pendingAssistantParts, cif.CIFToolCallPart{
+					Type:          "tool_call",
+					ToolCallID:    toolCallID,
+					ToolName:      inputItem.Name,
+					ToolArguments: parseToolArguments(inputItem.Arguments),
+				})
+
+			case "function_call_output":
+				flushAssistant()
+				messages = append(messages, cif.CIFUserMessage{
+					Role: "user",
+					Content: []cif.CIFContentPart{
+						cif.CIFToolResultPart{
+							Type:       "tool_result",
+							ToolCallID: inputItem.CallID,
+							ToolName:   inputItem.Name,
+							Content:    inputItem.Output,
+						},
+					},
+				})
+
+			case "reasoning":
+				continue
+
+			default:
+				return nil, fmt.Errorf("unknown input item type: %s", inputItem.Type)
 			}
-			messages = append(messages, msgs...)
 		}
+		flushAssistant()
 		return messages, nil
 	default:
 		return nil, fmt.Errorf("invalid input type")
 	}
 }
 
-func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
+func inputItemType(item InputItem) string {
 	itemType := item.Type
 	if itemType == "" {
 		switch {
@@ -136,74 +232,7 @@ func translateInputItem(item InputItem) ([]cif.CIFMessage, error) {
 			itemType = "function_call"
 		}
 	}
-
-	switch itemType {
-	case "message":
-		content, err := translateInputContent(item.Content)
-		if err != nil {
-			return nil, err
-		}
-
-		switch item.Role {
-		case "system", "developer":
-			text := extractInputText(item.Content)
-			return []cif.CIFMessage{
-				cif.CIFSystemMessage{Role: "system", Content: text},
-			}, nil
-		case "user":
-			return []cif.CIFMessage{
-				cif.CIFUserMessage{Role: "user", Content: content},
-			}, nil
-		case "assistant":
-			return []cif.CIFMessage{
-				cif.CIFAssistantMessage{Role: "assistant", Content: content},
-			}, nil
-		default:
-			return nil, fmt.Errorf("unknown input item role: %s", item.Role)
-		}
-
-	case "function_call":
-		toolCallID := item.CallID
-		if toolCallID == "" {
-			toolCallID = item.ID
-		}
-		if toolCallID == "" {
-			return nil, fmt.Errorf("function_call item missing call_id and id")
-		}
-
-		args := parseToolArguments(item.Arguments)
-		return []cif.CIFMessage{
-			cif.CIFAssistantMessage{
-				Role: "assistant",
-				Content: []cif.CIFContentPart{
-					cif.CIFToolCallPart{
-						Type:          "tool_call",
-						ToolCallID:    toolCallID,
-						ToolName:      item.Name,
-						ToolArguments: args,
-					},
-				},
-			},
-		}, nil
-
-	case "function_call_output":
-		return []cif.CIFMessage{
-			cif.CIFUserMessage{
-				Role: "user",
-				Content: []cif.CIFContentPart{
-					cif.CIFToolResultPart{
-						Type:       "tool_result",
-						ToolCallID: item.CallID,
-						ToolName:   item.Name,
-						Content:    item.Output,
-					},
-				},
-			},
-		}, nil
-
-	default:
-		return nil, fmt.Errorf("unknown input item type: %s", item.Type)
-	}
+	return itemType
 }
 
 func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {
@@ -228,6 +257,12 @@ func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {
 			switch cb.Type {
 			case "input_text", "output_text", "text":
 				parts = append(parts, cif.CIFTextPart{Type: "text", Text: cb.Text})
+			case "input_image":
+				part := cif.CIFImagePart{Type: "image"}
+				if cb.ImageURL != "" {
+					part.URL = &cb.ImageURL
+				}
+				parts = append(parts, part)
 			default:
 				return nil, fmt.Errorf("unknown input content block type: %s", cb.Type)
 			}
@@ -314,5 +349,39 @@ func translateResponsesToolChoice(toolChoice interface{}) interface{} {
 		return nil
 	default:
 		return nil
+	}
+}
+
+// translateResponsesTextFormat converts the Responses API text.format object
+// into the canonical response_format map used by outbound adapters.
+func translateResponsesTextFormat(f *ResponsesTextFormat) map[string]interface{} {
+	if f == nil {
+		return nil
+	}
+	switch f.Type {
+	case "json_schema":
+		strict := true
+		if f.Strict != nil {
+			strict = *f.Strict
+		}
+		schema := f.Schema
+		if schema == nil {
+			schema = f.JSONSchema
+		}
+		jsonSchemaObj := map[string]interface{}{
+			"name":   f.Name,
+			"strict": strict,
+			"schema": schema,
+		}
+		return map[string]interface{}{
+			"type":        "json_schema",
+			"json_schema": jsonSchemaObj,
+		}
+	case "json_object":
+		return map[string]interface{}{"type": "json_object"}
+	case "text", "":
+		return map[string]interface{}{"type": "text"}
+	default:
+		return map[string]interface{}{"type": f.Type}
 	}
 }
