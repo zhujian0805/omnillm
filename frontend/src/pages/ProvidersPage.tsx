@@ -507,15 +507,31 @@ function AzureOpenAIAuthForm({
   onCancel: () => void
 }) {
   const [apiKey, setApiKey] = useState("")
+  const [endpoint, setEndpoint] = useState("")
+  const [apiVersion, setApiVersion] = useState("")
+  const [deploymentsText, setDeploymentsText] = useState("")
+  const [isMultiline, setIsMultiline] = useState(false)
+
   const submit = async () => {
     if (!apiKey.trim()) return
+
+    // Parse deployments from either single-line or multi-line format
+    const deploymentsArray = deploymentsText
+      .split(/[,\n]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+
     await onSubmit({
       apiKey: apiKey.trim(),
+      endpoint: endpoint.trim(),
+      apiVersion: apiVersion.trim() || "2024-02-01",
+      deployments: JSON.stringify(deploymentsArray),
     })
   }
+
   return (
     <AuthFormWrapper title="Authenticate Azure OpenAI">
-      <FormRow label="API Key">
+      <FormRow label="API Key *">
         <SecretInput
           className="sys-input"
           placeholder="Enter your Azure OpenAI API key"
@@ -523,10 +539,64 @@ function AzureOpenAIAuthForm({
           onChange={setApiKey}
         />
       </FormRow>
+
+      <FormRow label="Endpoint (optional)">
+        <input
+          className="sys-input"
+          type="text"
+          placeholder="https://your-resource.openai.azure.com"
+          value={endpoint}
+          onChange={(e) => setEndpoint(e.target.value)}
+        />
+      </FormRow>
+
+      <FormRow label="API Version (optional)">
+        <input
+          className="sys-input"
+          type="text"
+          placeholder="2024-02-01"
+          value={apiVersion}
+          onChange={(e) => setApiVersion(e.target.value)}
+        />
+      </FormRow>
+
+      <FormRow label="Deployments (optional)">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {isMultiline ?
+            <textarea
+              className="sys-input"
+              placeholder="Enter deployment names, one per line"
+              value={deploymentsText}
+              onChange={(e) => setDeploymentsText(e.target.value)}
+              style={{
+                minHeight: 100,
+                fontFamily: "monospace",
+                fontSize: 13,
+              }}
+            />
+          : <input
+              className="sys-input"
+              type="text"
+              placeholder="deployment1, deployment2, deployment3"
+              value={deploymentsText}
+              onChange={(e) => setDeploymentsText(e.target.value)}
+            />
+          }
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setIsMultiline(!isMultiline)}
+            style={{ alignSelf: "flex-start" }}
+          >
+            {isMultiline ? "Use single line" : "Use multi-line"}
+          </button>
+        </div>
+      </FormRow>
+
       <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-        Enter your Azure OpenAI API key. Use the "Configure" button to set
-        endpoint and deployments.
+        Optionally set endpoint, API version, and deployments here, or configure
+        them later via the Configure button.
       </div>
+
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit}>
           Submit

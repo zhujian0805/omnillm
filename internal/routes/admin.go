@@ -895,6 +895,19 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
+		// For Azure OpenAI: if the user specified deployments upfront, enable them immediately.
+		if providerType == "azure-openai" && req.Deployments != "" {
+			var deployments []string
+			if jsonErr := json.Unmarshal([]byte(req.Deployments), &deployments); jsonErr == nil {
+				modelStateStore := database.NewModelStateStore()
+				for _, deployment := range deployments {
+					if deployment != "" {
+						_ = modelStateStore.SetEnabled(gen.GetInstanceID(), deployment, true)
+					}
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"provider": gin.H{
