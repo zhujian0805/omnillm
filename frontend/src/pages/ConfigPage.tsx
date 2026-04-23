@@ -161,20 +161,11 @@ interface AMPConfig {
 
 interface DroidModel {
   model: string
-  id: string
-  index?: number
+  displayName?: string
   baseUrl: string
   apiKey: string
-  displayName?: string
-  maxOutputTokens?: number
-  noImageSupport?: boolean
   provider: string
-  enabled?: boolean
-  capabilities?: Array<string>
-  temperature?: number
-  topP?: number
-  frequencyPenalty?: number
-  presencePenalty?: number
+  maxOutputTokens?: number
 }
 
 interface DroidConfig {
@@ -2483,7 +2474,7 @@ function DroidEditor({
       <Section title="Custom Models" icon={Settings2} count={models.length}>
         {models.map((model, idx) => (
           <div
-            key={model.id}
+            key={idx}
             style={{
               marginBottom: 12,
               padding: 12,
@@ -2526,8 +2517,7 @@ function DroidEditor({
               </button>
             </div>
             {[
-              { key: "id", label: "ID" },
-              { key: "model", label: "Model ID" },
+              { key: "model", label: "Model" },
               { key: "displayName", label: "Display Name" },
               { key: "baseUrl", label: "Base URL" },
               { key: "apiKey", label: "API Key" },
@@ -2551,7 +2541,9 @@ function DroidEditor({
                   {label}
                 </span>
                 <input
-                  value={(model as unknown as Record<string, string>)[key]}
+                  value={
+                    (model as unknown as Record<string, string>)[key] ?? ""
+                  }
                   onChange={(e) =>
                     onChange({
                       ...config,
@@ -2605,9 +2597,12 @@ function DroidEditor({
                 ))}
               </select>
             </div>
-            {/* Model Parameters */}
+            {/* Max Output Tokens */}
             <div
               style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
                 marginTop: 8,
                 paddingTop: 8,
                 borderTop: "1px solid var(--color-separator)",
@@ -2617,131 +2612,43 @@ function DroidEditor({
                 style={{
                   fontSize: 11,
                   color: "var(--color-text-tertiary)",
-                  display: "block",
-                  marginBottom: 6,
+                  minWidth: 90,
                 }}
               >
-                Parameters
+                Max Output Tokens
               </span>
-              {[
-                {
-                  key: "temperature",
-                  label: "Temperature",
-                  type: "number",
-                  step: 0.1,
-                  min: 0,
-                  max: 2,
-                },
-                {
-                  key: "topP",
-                  label: "Top P",
-                  type: "number",
-                  step: 0.01,
-                  min: 0,
-                  max: 1,
-                },
-                {
-                  key: "maxOutputTokens",
-                  label: "Max Output Tokens",
-                  type: "number",
-                  step: 1,
-                  min: 0,
-                  max: undefined,
-                },
-                {
-                  key: "presencePenalty",
-                  label: "Presence Penalty",
-                  type: "number",
-                  step: 0.1,
-                  min: 0,
-                  max: 2,
-                },
-              ].map(({ key, label, type, step, min, max }) => (
-                <div
-                  key={key}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    marginBottom: 4,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--color-text-tertiary)",
-                      minWidth: 90,
-                    }}
-                  >
-                    {label}
-                  </span>
-                  <input
-                    type={type}
-                    step={step}
-                    min={min}
-                    max={max}
-                    value={
-                      (model as unknown as Record<string, number>)[key] ?? 0
-                    }
-                    onChange={(e) =>
-                      onChange({
-                        ...config,
-                        customModels: models.map((m, i) =>
-                          i === idx ?
-                            { ...m, [key]: Number.parseFloat(e.target.value) }
-                          : m,
-                        ),
-                      })
-                    }
-                    style={smallInputStyle}
-                  />
-                </div>
-              ))}
-              {/* No Image Support toggle */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "center",
-                  marginTop: 6,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
-                    minWidth: 90,
-                  }}
-                >
-                  No Image Support
-                </span>
-                <input
-                  type="checkbox"
-                  checked={Boolean(model.noImageSupport)}
-                  onChange={(e) =>
-                    onChange({
-                      ...config,
-                      customModels: models.map((m, i) =>
-                        i === idx ?
-                          { ...m, noImageSupport: e.target.checked }
-                        : m,
-                      ),
-                    })
-                  }
-                />
-              </div>
+              <input
+                type="number"
+                step={1}
+                min={0}
+                value={model.maxOutputTokens ?? 0}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    customModels: models.map((m, i) =>
+                      i === idx ?
+                        {
+                          ...m,
+                          maxOutputTokens: Number.parseInt(e.target.value) || 0,
+                        }
+                      : m,
+                    ),
+                  })
+                }
+                style={smallInputStyle}
+              />
             </div>
           </div>
         ))}
         <button
           onClick={() => {
             const newModel: DroidModel = {
-              model: `model-${models.length + 1}`,
-              id: `model-${models.length + 1}`,
-              baseUrl: "http://localhost:5000/v1",
-              apiKey: "${OMNILLM_API_KEY}",
-              provider: "anthropic",
-              displayName: "New Model",
+              model: "your-model-id",
+              displayName: "My Custom Model",
+              baseUrl: "https://api.provider.com/v1",
+              apiKey: "${PROVIDER_API_KEY}",
+              provider: "generic-chat-completion-api",
+              maxOutputTokens: 16384,
             }
             onChange({ ...config, customModels: [...models, newModel] })
           }}
