@@ -68,7 +68,7 @@ func TestSerializeToResponses_SerializesMessageAndFunctionCallOutput(t *testing.
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if out.Object != "realtime.response" {
+	if out.Object != "response" {
 		t.Fatalf("unexpected object: %q", out.Object)
 	}
 	if len(out.Output) != 2 {
@@ -160,14 +160,17 @@ func TestConvertCIFEventToResponsesSSE_EmitsMessageLifecycle(t *testing.T) {
 	if deltaEvents[2]["type"] != "response.output_text.delta" {
 		t.Fatalf("unexpected third delta event: %#v", deltaEvents[2])
 	}
-	if len(stopEvents) != 2 {
-		t.Fatalf("expected 2 stop events, got %d", len(stopEvents))
+	if len(stopEvents) != 3 {
+		t.Fatalf("expected 3 stop events, got %d", len(stopEvents))
 	}
-	if stopEvents[0]["type"] != "response.output_text.done" {
-		t.Fatalf("unexpected stop event: %#v", stopEvents[0])
+	if stopEvents[0]["type"] != "response.content_block.done" {
+		t.Fatalf("unexpected first stop event: %#v", stopEvents[0])
 	}
-	if stopEvents[1]["type"] != "response.output_item.done" {
-		t.Fatalf("unexpected final stop event: %#v", stopEvents[1])
+	if stopEvents[1]["type"] != "response.output_text.done" {
+		t.Fatalf("unexpected stop event: %#v", stopEvents[1])
+	}
+	if stopEvents[2]["type"] != "response.output_item.done" {
+		t.Fatalf("unexpected final stop event: %#v", stopEvents[2])
 	}
 }
 
@@ -409,8 +412,8 @@ func TestConvertCIFEventToResponsesSSE_TextLifecycle(t *testing.T) {
 	}
 
 	events := append(append(startEvents, deltaEvents...), endEvents...)
-	if len(events) != 7 {
-		t.Fatalf("expected 7 responses SSE events, got %d", len(events))
+	if len(events) != 8 {
+		t.Fatalf("expected 8 responses SSE events, got %d", len(events))
 	}
 	if events[0]["type"] != "response.created" {
 		t.Fatalf("unexpected first event: %#v", events[0])
@@ -424,15 +427,18 @@ func TestConvertCIFEventToResponsesSSE_TextLifecycle(t *testing.T) {
 	if events[3]["type"] != "response.output_text.delta" || events[3]["delta"] != "Hello there" {
 		t.Fatalf("unexpected output_text.delta event: %#v", events[3])
 	}
-	if events[4]["type"] != "response.output_text.done" || events[4]["text"] != "Hello there" {
-		t.Fatalf("unexpected output_text.done event: %#v", events[4])
+	if events[4]["type"] != "response.content_block.done" {
+		t.Fatalf("unexpected content_block.done event: %#v", events[4])
 	}
-	if events[5]["type"] != "response.output_item.done" {
-		t.Fatalf("unexpected output_item.done event: %#v", events[5])
+	if events[5]["type"] != "response.output_text.done" || events[5]["text"] != "Hello there" {
+		t.Fatalf("unexpected output_text.done event: %#v", events[5])
 	}
-	completed := events[6]["response"].(map[string]interface{})
-	if events[6]["type"] != "response.completed" {
-		t.Fatalf("unexpected response.completed event: %#v", events[6])
+	if events[6]["type"] != "response.output_item.done" {
+		t.Fatalf("unexpected output_item.done event: %#v", events[6])
+	}
+	completed := events[7]["response"].(map[string]interface{})
+	if events[7]["type"] != "response.completed" {
+		t.Fatalf("unexpected response.completed event: %#v", events[7])
 	}
 	usage := completed["usage"].(map[string]interface{})
 	if usage["input_tokens"] != 4 || usage["output_tokens"] != 2 {

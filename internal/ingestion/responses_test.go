@@ -181,13 +181,34 @@ func TestParseResponsesPayload_RejectsUnknownContentBlockType(t *testing.T) {
 				"type": "message",
 				"role": "user",
 				"content": []interface{}{
-					map[string]interface{}{"type": "input_image", "text": "ignored"},
+					map[string]interface{}{"type": "totally_unknown_block_xyz", "text": "ignored"},
 				},
 			},
 		},
 	}))
 	if err == nil {
 		t.Fatal("expected unknown content block type to fail")
+	}
+}
+
+func TestParseResponsesPayload_AcceptsInputImage(t *testing.T) {
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type": "message",
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "input_image", "image_url": "https://example.com/img.png"},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("expected input_image to be accepted, got error: %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(req.Messages))
 	}
 }
 
