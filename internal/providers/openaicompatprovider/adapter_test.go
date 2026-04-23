@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"omnillm/internal/cif"
+	"omnillm/internal/providers/openaicompat"
 	"omnillm/internal/providers/shared"
 	"testing"
 )
@@ -201,6 +202,40 @@ func TestAdapterExecute_ResponsesTranslatesAnthropicStyleCIF(t *testing.T) {
 	}
 	if itemType := itemField(input[2], "type"); itemType != "message" {
 		t.Fatalf("expected final input item to be message, got %#v", input[2])
+	}
+}
+
+func TestAdapterExecute_ResponsesIncludesConfiguredToolExtras(t *testing.T) {
+	var capturedPayload map[string]interface{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &capturedPayload) //nolint:errcheck
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"resp_qwen","model":"qwen3.6-plus","status":"completed","output":[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"done"}]}],"usage":{"input_tokens":11,"output_tokens":2}}`)
+	}))
+	defer srv.Close()
+
+	request := sampleToolLoopRequest("openai")
+	request.Model = "qwen3.6-plus"
+
+	payload := openaicompat.BuildResponsesPayload(
+		request.Model,
+		request,
+		false,
+		openaicompat.ResponsesConfig{Extras: map[string]interface{}{"enable_thinking": false}},
+	)
+
+	if value, ok := payload["enable_thinking"].(bool); !ok || value {
+		t.Fatalf("expected enable_thinking=false in responses payload, got %#v", payload["enable_thinking"])
+	}
+
+	if _, err := openaicompat.ExecuteResponses(context.Background(), srv.URL+"/compatible-mode/v1/responses", buildHeaders("", false), payload); err != nil {
+		t.Fatalf("ExecuteResponses() error = %v", err)
+	}
+
+	if value, ok := capturedPayload["enable_thinking"].(bool); !ok || value {
+		t.Fatalf("expected enable_thinking=false in outbound responses payload, got %#v", capturedPayload["enable_thinking"])
 	}
 }
 

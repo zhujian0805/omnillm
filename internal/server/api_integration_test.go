@@ -579,7 +579,7 @@ func TestAPIShapeEndpointsUseGoSerializers(t *testing.T) {
 		if err := json.Unmarshal([]byte(body), &payload); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
 		}
-		if payload.Object != "realtime.response" {
+		if payload.Object != "response" {
 			t.Fatalf("unexpected responses object: %q", payload.Object)
 		}
 		if len(payload.Output) != 1 || payload.Output[0].Type != "message" || payload.Output[0].Content[0].Text != "pong" {

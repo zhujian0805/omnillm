@@ -126,6 +126,16 @@ type CanonicalRequest struct {
 	// Incoming request headers for trace logging (not serialized to JSON)
 	IncomingHeaders map[string]string `json:"-"`
 
+	// Structured output format (from response_format in Chat Completions, or
+	// text.format in the Responses API).  Adapters that support structured
+	// output should forward this to the upstream provider.
+	// Shape: {"type":"json_schema","name":"…","strict":true,"schema":{…}}
+	ResponseFormat map[string]interface{} `json:"responseFormat,omitempty"`
+
+	// ID of a previous Responses API response; enables server-side multi-turn
+	// chaining without the caller re-sending context.
+	PreviousResponseID *string `json:"previousResponseId,omitempty"`
+
 	// Extended / provider-specific hints (type-safe escape hatch)
 	Extensions *Extensions `json:"extensions,omitempty"`
 }

@@ -229,7 +229,7 @@ func (a *Adapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*
 	a.provider.ensureConfig()
 	switch a.selectedUpstreamAPI(request) {
 	case openAICompatResponsesAPI:
-		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, false, openaicompat.ResponsesConfig{})
+		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, false, a.responsesConfig(request))
 		return openaicompat.ExecuteResponses(ctx, responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, false), payload)
 	default:
 		cr, err := openaicompat.BuildChatRequest(
@@ -256,7 +256,7 @@ func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalReque
 	}
 	switch a.selectedUpstreamAPI(request) {
 	case openAICompatResponsesAPI:
-		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, true, openaicompat.ResponsesConfig{})
+		payload := openaicompat.BuildResponsesPayload(a.RemapModel(request.Model), request, true, a.responsesConfig(request))
 		return openaicompat.StreamResponses(ctx, responsesURL(a.provider.baseURL), buildHeaders(a.provider.token, true), payload)
 	default:
 		cr, err := openaicompat.BuildChatRequest(
@@ -274,6 +274,14 @@ func (a *Adapter) ExecuteStream(ctx context.Context, request *cif.CanonicalReque
 
 func (a *Adapter) shouldBufferAnthropicStreaming(request *cif.CanonicalRequest) bool {
 	return a.inboundAPIShape(request) == "anthropic"
+}
+
+func (a *Adapter) responsesConfig(request *cif.CanonicalRequest) openaicompat.ResponsesConfig {
+	cfg := openaicompat.ResponsesConfig{}
+	if extras := dashScopeChatExtras(a.provider.baseURL, a.RemapModel(request.Model), request); len(extras) > 0 {
+		cfg.Extras = extras
+	}
+	return cfg
 }
 
 func (a *Adapter) chatCompletionsConfig(request *cif.CanonicalRequest, stream bool) openaicompat.Config {

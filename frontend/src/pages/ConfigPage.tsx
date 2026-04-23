@@ -46,6 +46,7 @@ interface CodexModelProvider {
   name: string
   base_url: string
   env_key: string
+  __originalKey?: string
 }
 
 interface CodexProfile {
@@ -54,6 +55,7 @@ interface CodexProfile {
   model_provider: string
   model_reasoning_effort: string
   sandbox: string
+  __originalKey?: string
 }
 
 interface CodexConfig {
@@ -63,6 +65,7 @@ interface CodexConfig {
   model_providers?: Record<string, CodexModelProvider>
   profiles?: Record<string, CodexProfile>
   projects?: Record<string, { trust_level: string }>
+  __disabledKeys?: Set<string>
   [key: string]: unknown
 }
 
@@ -158,20 +161,11 @@ interface AMPConfig {
 
 interface DroidModel {
   model: string
-  id: string
-  index?: number
+  displayName?: string
   baseUrl: string
   apiKey: string
-  displayName?: string
-  maxOutputTokens?: number
-  noImageSupport?: boolean
   provider: string
-  enabled?: boolean
-  capabilities?: Array<string>
-  temperature?: number
-  topP?: number
-  frequencyPenalty?: number
-  presencePenalty?: number
+  maxOutputTokens?: number
 }
 
 interface DroidConfig {
@@ -233,7 +227,12 @@ function parseTOML(text: string): CodexConfig {
           .replace("model_providers.", "")
           .replaceAll(/^["']|["']$/g, "")
         if (!result.model_providers) result.model_providers = {}
-        result.model_providers[key] = { name: key, base_url: "", env_key: "" }
+        result.model_providers[key] = {
+          name: key,
+          base_url: "",
+          env_key: "",
+          __originalKey: key,
+        }
       } else if (raw.startsWith("profiles.")) {
         const key = raw.replace("profiles.", "").replaceAll(/^["']|["']$/g, "")
         if (!result.profiles) result.profiles = {}
@@ -243,6 +242,7 @@ function parseTOML(text: string): CodexConfig {
           model_provider: "",
           model_reasoning_effort: "",
           sandbox: "",
+          __originalKey: key,
         }
       } else if (raw.startsWith("projects.")) {
         const key = raw.replace("projects.", "").replaceAll(/^["']|["']$/g, "")
@@ -265,7 +265,7 @@ function parseTOML(text: string): CodexConfig {
       (value.startsWith('"') && value.endsWith('"'))
       || (value.startsWith("'") && value.endsWith("'"))
     ) {
-      parsed = value.slice(1, -1)
+      parsed = unescapeTOMLString(value.slice(1, -1))
     } else if (value === "true") {
       parsed = true
     } else if (value === "false") {
@@ -303,45 +303,79 @@ function parseTOML(text: string): CodexConfig {
 }
 
 function serializeTOML(config: CodexConfig, originalContent: string): string {
-  // For TOML we do a targeted replacement strategy to preserve the original structure
-  // but update the values we track in structured fields
   const lines = originalContent.split("\n")
   const result: Array<string> = []
   let currentSection = ""
-  let keepCurrentSection = true // skip entire section if deleted from config
+  let keepCurrentSection = true
+
+  // Build lookup: originalKey -> current item for rename detection
+  const providerByOriginal = new Map<string, CodexModelProvider>()
+  const profileByOriginal = new Map<string, CodexProfile>()
+  for (const [, provider] of Object.entries(config.model_providers ?? {})) {
+    if (provider.__originalKey) {
+      providerByOriginal.set(provider.__originalKey, provider)
+    }
+  }
+  for (const [, profile] of Object.entries(config.profiles ?? {})) {
+    if (profile.__originalKey) {
+      profileByOriginal.set(profile.__originalKey, profile)
+    }
+  }
+
+  // Track which items have been written (for appending new items later)
+  const writtenProviders = new Set<string>()
+  const writtenProfiles = new Set<string>()
+
+  const disabledKeys = config.__disabledKeys ?? new Set<string>()
 
   for (const line of lines) {
     const sectionMatch = line.trim().match(/^\[([^\]]+)\]$/)
     if (sectionMatch) {
       currentSection = sectionMatch[1].replaceAll(/^["']|["']$/g, "")
 
-      // Determine whether this section still exists in the config
       if (currentSection.startsWith("model_providers.")) {
-        const name = currentSection
+        const origName = currentSection
           .replace("model_providers.", "")
           .replaceAll(/^["']|["']$/g, "")
-        keepCurrentSection = Boolean(config.model_providers?.[name])
+        const provider = providerByOriginal.get(origName)
+        if (provider) {
+          // Provider exists (possibly renamed) — write section header with current name
+          const currentName = provider.name
+          result.push(`[model_providers.${currentName}]`)
+          writtenProviders.add(origName)
+          keepCurrentSection = true
+        } else {
+          // Provider was deleted
+          keepCurrentSection = false
+        }
       } else if (currentSection.startsWith("profiles.")) {
-        const name = currentSection
+        const origName = currentSection
           .replace("profiles.", "")
           .replaceAll(/^["']|["']$/g, "")
-        keepCurrentSection = Boolean(config.profiles?.[name])
+        const profile = profileByOriginal.get(origName)
+        if (profile) {
+          const currentName = profile.name
+          result.push(`[profiles.${currentName}]`)
+          writtenProfiles.add(origName)
+          keepCurrentSection = true
+        } else {
+          keepCurrentSection = false
+        }
       } else if (currentSection.startsWith("projects.")) {
         const name = currentSection
           .replace("projects.", "")
           .replaceAll(/^["']|["']$/g, "")
         keepCurrentSection = Boolean(config.projects?.[name])
+        if (keepCurrentSection) {
+          result.push(line)
+        }
       } else {
         keepCurrentSection = true
-      }
-
-      if (keepCurrentSection) {
         result.push(line)
       }
       continue
     }
 
-    // Skip key-value lines belonging to a deleted section
     if (!keepCurrentSection) continue
 
     const kvMatch = line.trim().match(/^([\w.]+)\s*=\s*\S.*$/)
@@ -349,62 +383,72 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
       const key = kvMatch[1]
 
       if (!currentSection) {
-        if (key === "model" && config.model !== undefined) {
-          result.push(`${key} = "${config.model}"`)
-          continue
+        if (key === "model") {
+          if (disabledKeys.has("model")) continue
+          if (config.model !== undefined) {
+            result.push(`${key} = "${escapeTOMLString(config.model)}"`)
+            continue
+          }
         }
-        if (
-          key === "model_reasoning_effort"
-          && config.model_reasoning_effort !== undefined
-        ) {
-          result.push(`${key} = "${config.model_reasoning_effort}"`)
-          continue
+        if (key === "model_reasoning_effort") {
+          if (disabledKeys.has("model_reasoning_effort")) continue
+          if (config.model_reasoning_effort !== undefined) {
+            result.push(
+              `${key} = "${escapeTOMLString(config.model_reasoning_effort)}"`,
+            )
+            continue
+          }
         }
-        if (key === "profile" && config.profile !== undefined) {
-          result.push(`${key} = '${config.profile}'`)
-          continue
+        if (key === "profile") {
+          if (disabledKeys.has("profile")) continue
+          if (config.profile !== undefined) {
+            result.push(`${key} = '${escapeTOMLString(config.profile)}'`)
+            continue
+          }
         }
       } else if (currentSection.startsWith("model_providers.")) {
-        const name = currentSection
+        const origName = currentSection
           .replace("model_providers.", "")
           .replaceAll(/^["']|["']$/g, "")
-        const provider = config.model_providers?.[name]
+        const provider = providerByOriginal.get(origName)
         if (provider) {
           if (key === "base_url") {
-            result.push(`base_url = "${provider.base_url}"`)
+            result.push(`base_url = "${escapeTOMLString(provider.base_url)}"`)
             continue
           }
           if (key === "env_key") {
-            result.push(`env_key = "${provider.env_key}"`)
+            result.push(`env_key = "${escapeTOMLString(provider.env_key)}"`)
             continue
           }
           if (key === "name") {
-            result.push(`name = "${provider.name}"`)
+            result.push(`name = "${escapeTOMLString(provider.name)}"`)
             continue
           }
         }
       } else if (currentSection.startsWith("profiles.")) {
-        const name = currentSection
+        const origName = currentSection
           .replace("profiles.", "")
           .replaceAll(/^["']|["']$/g, "")
-        const profile = config.profiles?.[name]
+        const profile = profileByOriginal.get(origName)
         if (profile) {
           if (key === "model") {
-            result.push(`model = "${profile.model}"`)
+            result.push(`model = "${escapeTOMLString(profile.model)}"`)
             continue
           }
           if (key === "model_provider") {
-            result.push(`model_provider = "${profile.model_provider}"`)
+            result.push(
+              `model_provider = "${escapeTOMLString(profile.model_provider)}"`,
+            )
             continue
           }
           if (key === "model_reasoning_effort") {
             result.push(
-              `model_reasoning_effort = "${profile.model_reasoning_effort}"`,
+              `model_reasoning_effort = "${escapeTOMLString(profile.model_reasoning_effort)}"`,
             )
             continue
           }
           if (key === "sandbox") {
-            result.push(`sandbox = "${profile.sandbox}"`)
+            result.push(`sandbox = "${escapeTOMLString(profile.sandbox)}"`)
             continue
           }
         }
@@ -414,7 +458,9 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
           .replaceAll(/^["']|["']$/g, "")
         const project = config.projects?.[name]
         if (project && key === "trust_level") {
-          result.push(`trust_level = "${project.trust_level}"`)
+          result.push(
+            `trust_level = "${escapeTOMLString(project.trust_level)}"`,
+          )
           continue
         }
       }
@@ -423,7 +469,71 @@ function serializeTOML(config: CodexConfig, originalContent: string): string {
     result.push(line)
   }
 
+  // Append new providers that weren't in the original file
+  for (const [, provider] of Object.entries(config.model_providers ?? {})) {
+    if (provider.__originalKey && writtenProviders.has(provider.__originalKey))
+      continue
+    if (
+      !provider.__originalKey
+      || !writtenProviders.has(provider.__originalKey)
+    ) {
+      const origKey = provider.__originalKey ?? provider.name
+      if (writtenProviders.has(origKey)) continue
+      result.push(
+        "",
+        `[model_providers.${provider.name}]`,
+        `name = "${escapeTOMLString(provider.name)}"`,
+        `base_url = "${escapeTOMLString(provider.base_url)}"`,
+        `env_key = "${escapeTOMLString(provider.env_key)}"`,
+      )
+      writtenProviders.add(origKey)
+    }
+  }
+
+  // Append new profiles that weren't in the original file
+  for (const [, profile] of Object.entries(config.profiles ?? {})) {
+    if (profile.__originalKey && writtenProfiles.has(profile.__originalKey))
+      continue
+    if (!profile.__originalKey || !writtenProfiles.has(profile.__originalKey)) {
+      const origKey = profile.__originalKey ?? profile.name
+      if (writtenProfiles.has(origKey)) continue
+      result.push(
+        "",
+        `[profiles.${profile.name}]`,
+        `model = "${escapeTOMLString(profile.model)}"`,
+        `model_provider = "${escapeTOMLString(profile.model_provider)}"`,
+      )
+      if (profile.model_reasoning_effort) {
+        result.push(
+          `model_reasoning_effort = "${escapeTOMLString(profile.model_reasoning_effort)}"`,
+        )
+      }
+      if (profile.sandbox) {
+        result.push(`sandbox = "${escapeTOMLString(profile.sandbox)}"`)
+      }
+      writtenProfiles.add(origKey)
+    }
+  }
+
   return result.join("\n")
+}
+
+function escapeTOMLString(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', String.raw`\"`)
+    .replaceAll("\n", String.raw`\n`)
+    .replaceAll("\r", String.raw`\r`)
+    .replaceAll("\t", String.raw`\t`)
+}
+
+function unescapeTOMLString(value: string): string {
+  return value
+    .replaceAll(String.raw`\n`, "\n")
+    .replaceAll(String.raw`\r`, "\r")
+    .replaceAll(String.raw`\t`, "\t")
+    .replaceAll(String.raw`\"`, '"')
+    .replaceAll("\\\\", "\\")
 }
 
 // ─── Collapsible Section ─────────────────────────────────────────────────────
@@ -890,25 +1000,66 @@ function CodexEditor({
 
   const reasoningOptions = ["low", "medium", "high", "xhigh"]
 
+  const disabledKeys = config.__disabledKeys ?? new Set<string>()
+
+  const toggleDisabled = (key: string, enabled: boolean) => {
+    const newDisabled = new Set(disabledKeys)
+    if (enabled) {
+      newDisabled.delete(key)
+    } else {
+      newDisabled.add(key)
+    }
+    onChange({ ...config, __disabledKeys: newDisabled })
+  }
+
+  const checkboxStyle: CSSProperties = {
+    accentColor: "var(--color-blue)",
+    cursor: "pointer",
+    flexShrink: 0,
+  }
+
   return (
     <div>
       {/* Global */}
       <Section title="Global Settings" icon={Settings2}>
         <Field label="Default Model">
           <input
+            type="checkbox"
+            checked={!disabledKeys.has("model")}
+            onChange={(e) => toggleDisabled("model", e.target.checked)}
+            style={checkboxStyle}
+          />
+          <input
             value={config.model ?? ""}
             onChange={(e) => onChange({ ...config, model: e.target.value })}
-            style={inputStyle}
+            style={{
+              ...inputStyle,
+              opacity: disabledKeys.has("model") ? 0.4 : 1,
+            }}
             placeholder="e.g. gpt-5.4"
+            disabled={disabledKeys.has("model")}
           />
         </Field>
         <Field label="Reasoning Effort">
+          <input
+            type="checkbox"
+            checked={!disabledKeys.has("model_reasoning_effort")}
+            onChange={(e) =>
+              toggleDisabled("model_reasoning_effort", e.target.checked)
+            }
+            style={checkboxStyle}
+          />
           <select
             value={config.model_reasoning_effort ?? ""}
             onChange={(e) =>
               onChange({ ...config, model_reasoning_effort: e.target.value })
             }
-            style={{ ...inputStyle, fontFamily: "var(--font-text)" }}
+            style={{
+              ...inputStyle,
+              fontFamily: "var(--font-text)",
+              opacity: disabledKeys.has("model_reasoning_effort") ? 0.4 : 1,
+            }}
+            disabled={disabledKeys.has("model_reasoning_effort")}
           >
             <option value="">(none)</option>
             {reasoningOptions.map((o) => (
@@ -920,10 +1071,20 @@ function CodexEditor({
         </Field>
         <Field label="Active Profile">
           <input
+            type="checkbox"
+            checked={!disabledKeys.has("profile")}
+            onChange={(e) => toggleDisabled("profile", e.target.checked)}
+            style={checkboxStyle}
+          />
+          <input
             value={config.profile ?? ""}
             onChange={(e) => onChange({ ...config, profile: e.target.value })}
-            style={inputStyle}
+            style={{
+              ...inputStyle,
+              opacity: disabledKeys.has("profile") ? 0.4 : 1,
+            }}
             placeholder="profile name"
+            disabled={disabledKeys.has("profile")}
           />
         </Field>
 
@@ -932,6 +1093,7 @@ function CodexEditor({
           .filter(
             ([key]) =>
               ![
+                "__disabledKeys",
                 "model",
                 "model_providers",
                 "model_reasoning_effort",
@@ -1038,16 +1200,35 @@ function CodexEditor({
                 marginBottom: 8,
               }}
             >
-              <span
+              <input
+                value={name}
+                onChange={(e) => {
+                  const newName = e.target.value
+                  if (newName === name) return
+                  const mp = { ...config.model_providers }
+                  delete mp[name]
+                  mp[newName] = { ...provider, name: newName }
+                  onChange({ ...config, model_providers: mp })
+                }}
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
                   fontFamily: "var(--font-mono)",
                   color: "var(--color-blue)",
+                  background: "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "2px 6px",
+                  outline: "none",
+                  width: 200,
                 }}
-              >
-                {name}
-              </span>
+                onFocus={(e) => {
+                  e.target.style.borderColor = "var(--color-separator)"
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "transparent"
+                }}
+              />
               <button
                 onClick={() => {
                   const mp = { ...config.model_providers }
@@ -1156,16 +1337,35 @@ function CodexEditor({
                 marginBottom: 8,
               }}
             >
-              <span
+              <input
+                value={name}
+                onChange={(e) => {
+                  const newName = e.target.value
+                  if (newName === name) return
+                  const p = { ...config.profiles }
+                  delete p[name]
+                  p[newName] = { ...profile, name: newName }
+                  onChange({ ...config, profiles: p })
+                }}
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
                   fontFamily: "var(--font-mono)",
                   color: "var(--color-blue)",
+                  background: "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "2px 6px",
+                  outline: "none",
+                  width: 200,
                 }}
-              >
-                {name}
-              </span>
+                onFocus={(e) => {
+                  e.target.style.borderColor = "var(--color-separator)"
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = "transparent"
+                }}
+              />
               <button
                 onClick={() => {
                   const p = { ...config.profiles }
@@ -2274,7 +2474,7 @@ function DroidEditor({
       <Section title="Custom Models" icon={Settings2} count={models.length}>
         {models.map((model, idx) => (
           <div
-            key={model.id}
+            key={idx}
             style={{
               marginBottom: 12,
               padding: 12,
@@ -2317,7 +2517,7 @@ function DroidEditor({
               </button>
             </div>
             {[
-              { key: "model", label: "Model ID" },
+              { key: "model", label: "Model" },
               { key: "displayName", label: "Display Name" },
               { key: "baseUrl", label: "Base URL" },
               { key: "apiKey", label: "API Key" },
@@ -2341,7 +2541,9 @@ function DroidEditor({
                   {label}
                 </span>
                 <input
-                  value={(model as unknown as Record<string, string>)[key]}
+                  value={
+                    (model as unknown as Record<string, string>)[key] ?? ""
+                  }
                   onChange={(e) =>
                     onChange({
                       ...config,
@@ -2395,9 +2597,12 @@ function DroidEditor({
                 ))}
               </select>
             </div>
-            {/* Model Parameters */}
+            {/* Max Output Tokens */}
             <div
               style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
                 marginTop: 8,
                 paddingTop: 8,
                 borderTop: "1px solid var(--color-separator)",
@@ -2407,82 +2612,43 @@ function DroidEditor({
                 style={{
                   fontSize: 11,
                   color: "var(--color-text-tertiary)",
-                  display: "block",
-                  marginBottom: 6,
+                  minWidth: 90,
                 }}
               >
-                Parameters
+                Max Output Tokens
               </span>
-              {[
-                {
-                  key: "temperature",
-                  label: "Temperature",
-                  type: "number",
-                  step: 0.1,
-                  min: 0,
-                  max: 2,
-                },
-                {
-                  key: "topP",
-                  label: "Top P",
-                  type: "number",
-                  step: 0.01,
-                  min: 0,
-                  max: 1,
-                },
-              ].map(({ key, label, type, step, min, max }) => (
-                <div
-                  key={key}
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                    marginBottom: 4,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--color-text-tertiary)",
-                      minWidth: 90,
-                    }}
-                  >
-                    {label}
-                  </span>
-                  <input
-                    type={type}
-                    step={step}
-                    min={min}
-                    max={max}
-                    value={
-                      (model as unknown as Record<string, number>)[key] ?? 0
-                    }
-                    onChange={(e) =>
-                      onChange({
-                        ...config,
-                        customModels: models.map((m, i) =>
-                          i === idx ?
-                            { ...m, [key]: Number.parseFloat(e.target.value) }
-                          : m,
-                        ),
-                      })
-                    }
-                    style={smallInputStyle}
-                  />
-                </div>
-              ))}
+              <input
+                type="number"
+                step={1}
+                min={0}
+                value={model.maxOutputTokens ?? 0}
+                onChange={(e) =>
+                  onChange({
+                    ...config,
+                    customModels: models.map((m, i) =>
+                      i === idx ?
+                        {
+                          ...m,
+                          maxOutputTokens: Number.parseInt(e.target.value) || 0,
+                        }
+                      : m,
+                    ),
+                  })
+                }
+                style={smallInputStyle}
+              />
             </div>
           </div>
         ))}
         <button
           onClick={() => {
             const newModel: DroidModel = {
-              model: `model-${models.length + 1}`,
-              id: `model-${models.length + 1}`,
-              baseUrl: "http://localhost:5000/v1",
-              apiKey: "${OMNILLM_API_KEY}",
-              provider: "anthropic",
-              displayName: "New Model",
+              model: "your-model-id",
+              displayName: "My Custom Model",
+              baseUrl: "https://api.provider.com/v1",
+              apiKey: "${PROVIDER_API_KEY}",
+              provider: "generic-chat-completion-api",
+              maxOutputTokens: 16384,
             }
             onChange({ ...config, customModels: [...models, newModel] })
           }}
@@ -2801,8 +2967,28 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
     if (viewMode === "raw") return rawContent
     if (activeConfig === "claude-code" && claudeSettings)
       return JSON.stringify(claudeSettings, null, 2) + "\n"
-    if (activeConfig === "codex" && codexConfig)
-      return serializeTOML(codexConfig, originalContent)
+    if (activeConfig === "codex" && codexConfig) {
+      // Strip internal tracking fields before serializing
+      const cleanConfig = { ...codexConfig }
+      delete cleanConfig.__disabledKeys
+      if (cleanConfig.model_providers) {
+        cleanConfig.model_providers = Object.fromEntries(
+          Object.entries(cleanConfig.model_providers).map(([k, v]) => {
+            const { __originalKey: _, ...rest } = v
+            return [k, rest]
+          }),
+        )
+      }
+      if (cleanConfig.profiles) {
+        cleanConfig.profiles = Object.fromEntries(
+          Object.entries(cleanConfig.profiles).map(([k, v]) => {
+            const { __originalKey: _, ...rest } = v
+            return [k, rest]
+          }),
+        )
+      }
+      return serializeTOML(cleanConfig, originalContent)
+    }
     if (activeConfig === "opencode" && opencodeConfig)
       return JSON.stringify(opencodeConfig, null, 2) + "\n"
     if (activeConfig === "amp" && ampConfig)
@@ -2838,6 +3024,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
                 /* ignore */
               }
             }
+            return listConfigFiles()
           })
         }
 
@@ -3081,7 +3268,7 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
               </span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              {activeEntry.exists && (
+              {activeEntry.exists && activeConfig && (
                 <button
                   onClick={() => handleBackup(activeConfig)}
                   style={{

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unsafe-return,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access,@typescript-eslint/no-unnecessary-condition,@typescript-eslint/no-floating-promises,no-nested-ternary,@typescript-eslint/restrict-template-expressions */
 import {
   Send as SendIcon,
   Bot,
@@ -53,17 +53,27 @@ function extractMessageContent(
     return response.choices[0].message.content || ""
   }
   if ("content" in response && Array.isArray(response.content)) {
-    const textBlocks = response.content.filter((block) => block.type === "text")
+    const textBlocks = response.content.filter(
+      (block): block is { type: string; text?: string } =>
+        Boolean(block)
+        && typeof block === "object"
+        && "type" in block
+        && block.type === "text",
+    )
     return textBlocks.map((block) => block.text || "").join("")
   }
   if ("output" in response && Array.isArray(response.output)) {
     const messageItems = response.output.filter(
-      (item) => item.type === "message",
+      (item) => Boolean(item) && item.type === "message",
     )
-    if (messageItems.length > 0 && messageItems[0].content) {
+    if (messageItems.length > 0 && Array.isArray(messageItems[0].content)) {
       const textBlocks = messageItems[0].content.filter(
-        (block) => block.type === "output_text",
-      )
+        (block) =>
+          Boolean(block)
+          && typeof block === "object"
+          && "type" in block
+          && block.type === "output_text",
+      ) as Array<{ type: "output_text"; text?: string }>
       return textBlocks.map((block) => block.text || "").join("")
     }
   }
