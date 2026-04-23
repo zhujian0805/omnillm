@@ -13,6 +13,8 @@ import {
   Plug,
   Code,
   Copy,
+  Eye,
+  EyeOff,
 } from "lucide-react"
 import { CSSProperties, useEffect, useState } from "react"
 
@@ -676,6 +678,102 @@ const smallInputStyle: CSSProperties = {
   background: "var(--color-bg-elevated)",
 }
 
+const iconButtonStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 30,
+  height: 30,
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--color-separator)",
+  background: "var(--color-surface-2)",
+  color: "var(--color-text-secondary)",
+  cursor: "pointer",
+  flexShrink: 0,
+}
+
+function isSensitiveEnvKey(key: string) {
+  return /token|secret|password|api[_-]?key|auth/i.test(key)
+}
+
+function renderConfigValueInput({
+  fieldKey,
+  value,
+  onChange,
+  placeholder = "value",
+  style,
+}: {
+  fieldKey: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  style?: CSSProperties
+}) {
+  if (isSensitiveEnvKey(fieldKey)) {
+    return (
+      <SecretValueInput
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+      />
+    )
+  }
+
+  return (
+    <input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      style={style}
+    />
+  )
+}
+
+function SecretValueInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+}) {
+  const [visible, setVisible] = useState(false)
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        flex: 1,
+        minWidth: 0,
+      }}
+    >
+      <input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        style={{ ...smallInputStyle, flex: 1, minWidth: 0 }}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((current) => !current)}
+        aria-label={visible ? "Hide secret value" : "Show secret value"}
+        title={visible ? "Hide" : "Show"}
+        style={iconButtonStyle}
+      >
+        {visible ?
+          <EyeOff size={14} />
+        : <Eye size={14} />}
+      </button>
+    </div>
+  )
+}
+
 // ─── Claude Code Editor ───────────────────────────────────────────────────────
 
 function ClaudeCodeEditor({
@@ -707,7 +805,13 @@ function ClaudeCodeEditor({
   }
 
   return (
-    <div>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 1280,
+        margin: "0 auto",
+      }}
+    >
       {/* Model */}
       <Section title="Default Model" icon={Settings2}>
         <Field label="Model">
@@ -775,13 +879,21 @@ function ClaudeCodeEditor({
               placeholder="VAR_NAME"
               style={{ ...smallInputStyle, width: 260, flex: "none" }}
             />
-            <input
-              value={value}
-              onChange={(e) => setEnvVal(key, e.target.value)}
-              placeholder="value"
-              style={{ ...smallInputStyle, flex: 1 }}
-            />
+            {isSensitiveEnvKey(key) ?
+              <SecretValueInput
+                value={value}
+                onChange={(nextValue) => setEnvVal(key, nextValue)}
+                placeholder="value"
+              />
+            : <input
+                value={value}
+                onChange={(e) => setEnvVal(key, e.target.value)}
+                placeholder="value"
+                style={{ ...smallInputStyle, flex: 1 }}
+              />
+            }
             <button
+              type="button"
               onClick={() => deleteEnv(key)}
               style={{
                 padding: 4,
@@ -1124,14 +1236,15 @@ function CodexEditor({
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
-              <input
-                value={
-                  typeof value === "string" ? value : JSON.stringify(value)
-                }
-                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
-                placeholder="value"
-                style={{ ...smallInputStyle, flex: 1 }}
-              />
+              {renderConfigValueInput({
+                fieldKey: key,
+                value:
+                  typeof value === "string" ? value : JSON.stringify(value),
+                onChange: (nextValue) =>
+                  onChange({ ...config, [key]: nextValue }),
+                placeholder: "value",
+                style: { ...smallInputStyle, flex: 1 },
+              })}
               <button
                 onClick={() => {
                   const newConfig = { ...config }
@@ -1183,7 +1296,7 @@ function CodexEditor({
       <Section title="Model Providers" icon={Plug} count={providers.length}>
         {providers.map(([name, provider]) => (
           <div
-            key={name}
+            key={provider.__originalKey ?? name}
             style={{
               marginBottom: 10,
               padding: 10,
@@ -1246,7 +1359,7 @@ function CodexEditor({
                 <Trash2 size={12} />
               </button>
             </div>
-            {(["base_url", "env_key"] as const).map((field) => (
+            {(["name", "base_url", "env_key"] as const).map((field) => (
               <div
                 key={field}
                 style={{
@@ -1320,7 +1433,7 @@ function CodexEditor({
       >
         {profiles.map(([name, profile]) => (
           <div
-            key={name}
+            key={profile.__originalKey ?? name}
             style={{
               marginBottom: 10,
               padding: 10,
@@ -1668,14 +1781,15 @@ function OpenCodeEditor({
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
-              <input
-                value={
-                  typeof value === "string" ? value : JSON.stringify(value)
-                }
-                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
-                placeholder="value"
-                style={{ ...smallInputStyle, flex: 1 }}
-              />
+              {renderConfigValueInput({
+                fieldKey: key,
+                value:
+                  typeof value === "string" ? value : JSON.stringify(value),
+                onChange: (nextValue) =>
+                  onChange({ ...config, [key]: nextValue }),
+                placeholder: "value",
+                style: { ...smallInputStyle, flex: 1 },
+              })}
               <button
                 onClick={() => {
                   const newConfig = { ...config }
@@ -1909,14 +2023,15 @@ function AMPEditor({
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
-              <input
-                value={
-                  typeof value === "string" ? value : JSON.stringify(value)
-                }
-                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
-                placeholder="value"
-                style={{ ...smallInputStyle, flex: 1 }}
-              />
+              {renderConfigValueInput({
+                fieldKey: key,
+                value:
+                  typeof value === "string" ? value : JSON.stringify(value),
+                onChange: (nextValue) =>
+                  onChange({ ...config, [key]: nextValue }),
+                placeholder: "value",
+                style: { ...smallInputStyle, flex: 1 },
+              })}
               <button
                 onClick={() => {
                   const newConfig = { ...config }
@@ -2121,21 +2236,21 @@ function AMPEditor({
                 >
                   {label}
                 </span>
-                <input
-                  value={(provider as unknown as Record<string, string>)[key]}
-                  onChange={(e) =>
+                {renderConfigValueInput({
+                  fieldKey: key,
+                  value: (provider as unknown as Record<string, string>)[key],
+                  onChange: (nextValue) =>
                     onChange({
                       ...config,
                       models: {
                         ...config.models,
                         providers: providers.map((p, i) =>
-                          i === idx ? { ...p, [key]: e.target.value } : p,
+                          i === idx ? { ...p, [key]: nextValue } : p,
                         ),
                       },
-                    })
-                  }
-                  style={smallInputStyle}
-                />
+                    }),
+                  style: smallInputStyle,
+                })}
               </div>
             ))}
           </div>
@@ -2277,21 +2392,20 @@ function DroidEditor({
           />
         </Field>
         <Field label="Default API Key Env">
-          <input
+          <SecretValueInput
             value={config.providers?.default?.apiKey ?? ""}
-            onChange={(e) =>
+            onChange={(nextValue) =>
               onChange({
                 ...config,
                 providers: {
                   ...config.providers,
                   default: {
                     ...config.providers?.default,
-                    apiKey: e.target.value,
+                    apiKey: nextValue,
                   },
                 },
               })
             }
-            style={inputStyle}
             placeholder="${OMNILLM_API_KEY}"
           />
         </Field>
@@ -2331,14 +2445,15 @@ function DroidEditor({
                 placeholder="key"
                 style={{ ...smallInputStyle, width: 260, flex: "none" }}
               />
-              <input
-                value={
-                  typeof value === "string" ? value : JSON.stringify(value)
-                }
-                onChange={(e) => onChange({ ...config, [key]: e.target.value })}
-                placeholder="value"
-                style={{ ...smallInputStyle, flex: 1 }}
-              />
+              {renderConfigValueInput({
+                fieldKey: key,
+                value:
+                  typeof value === "string" ? value : JSON.stringify(value),
+                onChange: (nextValue) =>
+                  onChange({ ...config, [key]: nextValue }),
+                placeholder: "value",
+                style: { ...smallInputStyle, flex: 1 },
+              })}
               <button
                 onClick={() => {
                   const newConfig = { ...config }
@@ -2540,20 +2655,19 @@ function DroidEditor({
                 >
                   {label}
                 </span>
-                <input
-                  value={
-                    (model as unknown as Record<string, string>)[key] ?? ""
-                  }
-                  onChange={(e) =>
+                {renderConfigValueInput({
+                  fieldKey: key,
+                  value:
+                    (model as unknown as Record<string, string>)[key] ?? "",
+                  onChange: (nextValue) =>
                     onChange({
                       ...config,
                       customModels: models.map((m, i) =>
-                        i === idx ? { ...m, [key]: e.target.value } : m,
+                        i === idx ? { ...m, [key]: nextValue } : m,
                       ),
-                    })
-                  }
-                  style={smallInputStyle}
-                />
+                    }),
+                  style: smallInputStyle,
+                })}
               </div>
             ))}
             {/* Provider dropdown */}
@@ -3188,9 +3302,10 @@ export function ConfigPage({ showToast }: ConfigPageProps) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
           gap: 14,
           marginBottom: 24,
+          width: "100%",
         }}
       >
         {configs.map((cfg) => (
