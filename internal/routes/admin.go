@@ -151,6 +151,10 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.POST("/providers/add/:type", handleAddProviderInstance)
 	router.POST("/providers/auth-and-create/:type", handleAuthAndCreateProvider)
 
+	// Antigravity Google OAuth2 authorization-code flow
+	router.POST("/providers/antigravity/start-oauth", handleAntigravityStartOAuth)
+	router.GET("/providers/antigravity/oauth-callback", handleAntigravityOAuthCallback)
+
 	// System info and status
 	router.GET("/status", handleGetStatus)
 	router.GET("/auth-status", handleGetAuthStatus)
@@ -940,82 +944,14 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			},
 		})
 
-	// ── Antigravity (Google OAuth device-code flow) ──────────────────────────
+	// ── Antigravity — delegates to the authorization-code OAuth flow ─────────
 	case "antigravity":
-		canonicalID := providerRegistry.NextInstanceID("antigravity")
-		gen := generic.NewGenericProvider("antigravity", canonicalID, "")
-
-		// Save client credentials and prepare for device-code flow.
-		if err := gen.SetupAuth(&req); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to save Antigravity credentials: %v", err),
-			})
-			return
-		}
-
-		// Initiate Google device-code flow.
-		verificationURL, userCode, deviceCode, interval, err := gen.InitiateGoogleDeviceCode()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": fmt.Sprintf("Failed to initiate Google OAuth: %v", err),
-			})
-			return
-		}
-
-		const pendingID = "antigravity-pending"
-		agCtx, agCancel := context.WithCancel(context.Background())
-		activeAuthFlowMu.Lock()
-		activeAuthFlow = &authFlowState{
-			ProviderID:     pendingID,
-			Status:         "awaiting_user",
-			InstructionURL: verificationURL,
-			UserCode:       userCode,
-			deviceCode:     deviceCode,
-			cancelFn:       agCancel,
-		}
-		activeAuthFlowMu.Unlock()
-
-		_ = interval
-		go func() {
-			defer agCancel()
-			if err := gen.PollGoogleDeviceCode(deviceCode); err != nil {
-				if agCtx.Err() != nil {
-					return
-				}
-				activeAuthFlowMu.Lock()
-				if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-					activeAuthFlow.Status = "error"
-					activeAuthFlow.Error = err.Error()
-				}
-				activeAuthFlowMu.Unlock()
-				log.Error().Err(err).Str("type", "antigravity").Msg("Auth-and-create: Google OAuth failed")
-				return
-			}
-
-			gen.SetInstanceID(canonicalID)
-			if err := providerRegistry.Register(gen, true); err != nil {
-				log.Warn().Err(err).Str("provider", canonicalID).Msg("Auth-and-create: failed to register Antigravity provider")
-			}
-
-			activeAuthFlowMu.Lock()
-			if activeAuthFlow != nil && activeAuthFlow.ProviderID == pendingID {
-				activeAuthFlow.ProviderID = canonicalID
-				activeAuthFlow.Status = "complete"
-			}
-			activeAuthFlowMu.Unlock()
-
-			log.Info().Str("provider", canonicalID).Msg("Auth-and-create: Antigravity Google OAuth completed")
-		}()
-
-		c.JSON(http.StatusOK, gin.H{
-			"success":          false,
-			"requiresAuth":     true,
-			"pending_id":       pendingID,
-			"user_code":        userCode,
-			"verification_uri": verificationURL,
-			"message":          fmt.Sprintf("Visit %s and enter code: %s", verificationURL, userCode),
+		// The auth-and-create path is no longer used for Antigravity;
+		// the frontend calls POST /providers/antigravity/start-oauth directly.
+		// Return a clear error so any stale callers know which endpoint to use.
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Use POST /api/admin/providers/antigravity/start-oauth to begin Google OAuth",
 		})
 
 	// ── API-key based providers ────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import {
   toggleProviderModel,
   getProviderPriorities,
   setProviderPriorities,
+  startAntigravityOAuth,
   updateProviderConfig,
   refreshProviderModels,
   type AuthFlow,
@@ -536,25 +537,94 @@ function CodexAuthForm({
   )
 }
 
+function useAntigravityOAuth(
+  providerId: string | undefined,
+  onSuccess: () => void,
+  onError: (msg: string) => void,
+) {
+  const startOAuth = async (clientId: string, clientSecret: string) => {
+    const resp = await startAntigravityOAuth(clientId, clientSecret, providerId)
+    const popup = window.open(
+      resp.auth_url,
+      "antigravity_oauth",
+      "width=600,height=700,scrollbars=yes",
+    )
+    if (!popup) {
+      onError("Popup blocked — please allow popups for this page and try again")
+      return
+    }
+    const handleMessage = (event: MessageEvent) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = event.data as Record<string, any>
+      if (data?.type === "antigravity_oauth_complete") {
+        window.removeEventListener("message", handleMessage)
+        popup.close()
+        onSuccess()
+      } else if (data?.type === "antigravity_oauth_error") {
+        window.removeEventListener("message", handleMessage)
+        popup.close()
+        onError(data.error as string)
+      }
+    }
+    window.addEventListener("message", handleMessage)
+    // Safety cleanup if popup is closed without completing
+    const timer = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(timer)
+        window.removeEventListener("message", handleMessage)
+      }
+    }, 500)
+  }
+  return { startOAuth }
+}
+
 function AntigravityAuthForm({
-  onSubmit,
+  provider,
+  onSuccess,
   onCancel,
 }: {
-  onSubmit: (body: Record<string, string>) => Promise<void>
+  provider: Provider
+  onSuccess: () => void
   onCancel: () => void
 }) {
   const [clientId, setClientId] = useState("")
   const [clientSecret, setClientSecret] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const { startOAuth } = useAntigravityOAuth(
+    provider.id,
+    () => {
+      setLoading(false)
+      onSuccess()
+    },
+    (msg) => {
+      setLoading(false)
+      setError(msg)
+    },
+  )
+
   const submit = async () => {
     if (!clientId.trim() || !clientSecret.trim()) return
-    await onSubmit({
-      method: "oauth",
-      clientId: clientId.trim(),
-      clientSecret: clientSecret.trim(),
-    })
+    setLoading(true)
+    setError(null)
+    try {
+      await startOAuth(clientId.trim(), clientSecret.trim())
+    } catch (e) {
+      setLoading(false)
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
+
   return (
     <AuthFormWrapper title="Authenticate Antigravity (Google)">
+      {error && (
+        <div
+          style={{ fontSize: 12, color: "var(--color-error)", marginBottom: 8 }}
+        >
+          {error}
+        </div>
+      )}
       <FormRow label="OAuth Client ID">
         <input
           className="sys-input"
@@ -573,13 +643,25 @@ function AntigravityAuthForm({
         />
       </FormRow>
       <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-        Opens a Google OAuth browser flow once submitted.
+        Opens a Google OAuth browser popup to complete authentication.
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn btn-primary btn-sm" onClick={submit}>
-          Start OAuth
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={loading}
+        >
+          {loading ?
+            <>
+              <Spin size={13} /> Waiting…
+            </>
+          : "Start OAuth →"}
         </button>
-        <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={loading}
+        >
           Cancel
         </button>
       </div>
@@ -2698,7 +2780,11 @@ function ProviderCard({
           )}
           {provider.type === "antigravity" && (
             <AntigravityAuthForm
-              onSubmit={handleAuthSubmit}
+              provider={provider}
+              onSuccess={() => {
+                setShowAuthForm(false)
+                onModelsChanged?.()
+              }}
               onCancel={() => setShowAuthForm(false)}
             />
           )}
@@ -3031,7 +3117,13 @@ function AddProviderFlow({
           )}
           {selectedType === "codex" && <AddFlowCodexForm {...authFormProps} />}
           {selectedType === "antigravity" && (
-            <AddFlowAntigravityForm {...authFormProps} />
+            <AddFlowAntigravityForm
+              onSuccess={() => {
+                setStep("select")
+                onDone?.()
+              }}
+              onCancel={() => setStep("select")}
+            />
           )}
           {selectedType === "azure-openai" && (
             <AddFlowAzureForm {...authFormProps} />
@@ -3407,22 +3499,51 @@ function AddFlowCodexForm({
 }
 
 function AddFlowAntigravityForm({
-  onSubmit,
+  onSuccess,
   onCancel,
-  submitting,
-}: AddFlowFormProps) {
+}: {
+  onSuccess: (providerId: string) => void
+  onCancel: () => void
+}) {
   const [clientId, setClientId] = useState("")
   const [clientSecret, setClientSecret] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const { startOAuth } = useAntigravityOAuth(
+    undefined,
+    () => {
+      setLoading(false)
+      // provider_id unknown here; caller will refresh the list
+      onSuccess("")
+    },
+    (msg) => {
+      setLoading(false)
+      setError(msg)
+    },
+  )
+
   const submit = async () => {
     if (!clientId.trim() || !clientSecret.trim()) return
-    await onSubmit({
-      method: "oauth",
-      clientId: clientId.trim(),
-      clientSecret: clientSecret.trim(),
-    })
+    setLoading(true)
+    setError(null)
+    try {
+      await startOAuth(clientId.trim(), clientSecret.trim())
+    } catch (e) {
+      setLoading(false)
+      setError(e instanceof Error ? e.message : String(e))
+    }
   }
+
   return (
     <div style={addFlowPanelStyle}>
+      {error && (
+        <div
+          style={{ fontSize: 12, color: "var(--color-error)", marginBottom: 8 }}
+        >
+          {error}
+        </div>
+      )}
       <FormRow label="OAuth Client ID">
         <input
           type="text"
@@ -3442,25 +3563,23 @@ function AddFlowAntigravityForm({
           autoComplete="off"
         />
       </FormRow>
-      <AddFlowHint>
-        Opens a Google OAuth browser flow once submitted.
-      </AddFlowHint>
+      <AddFlowHint>Opens a Google OAuth popup to complete sign-in.</AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button
           className="btn btn-primary btn-sm"
           onClick={submit}
-          disabled={submitting}
+          disabled={loading}
         >
-          {submitting ?
+          {loading ?
             <>
-              <Spin size={13} /> Connecting…
+              <Spin size={13} /> Waiting…
             </>
           : "Start OAuth →"}
         </button>
         <button
           className="btn btn-ghost btn-sm"
           onClick={onCancel}
-          disabled={submitting}
+          disabled={loading}
         >
           Cancel
         </button>

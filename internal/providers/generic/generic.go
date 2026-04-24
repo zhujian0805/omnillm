@@ -206,6 +206,11 @@ func (p *GenericProvider) InitiateGoogleDeviceCode() (verificationURL, userCode,
 	}
 
 	// Google device authorization endpoint.
+	log.Info().
+		Str("provider", p.instanceID).
+		Bool("has_client_id", clientID != "").
+		Bool("has_client_secret", clientSecret != "").
+		Msg("Antigravity: requesting Google device code")
 	data := url.Values{}
 	data.Set("client_id", clientID)
 	data.Set("scope", "https://www.googleapis.com/auth/cloud-platform openid email")
@@ -233,11 +238,19 @@ func (p *GenericProvider) InitiateGoogleDeviceCode() (verificationURL, userCode,
 		DeviceCode      string `json:"device_code"`
 		UserCode        string `json:"user_code"`
 		VerificationURL string `json:"verification_url"`
+		VerificationURI string `json:"verification_uri"`
 		ExpiresIn       int    `json:"expires_in"`
 		Interval        int    `json:"interval"`
 	}
 	if jsonErr := json.Unmarshal(body, &dc); jsonErr != nil {
 		return "", "", "", 0, fmt.Errorf("antigravity: failed to parse device-code response: %w", jsonErr)
+	}
+	verificationURL = dc.VerificationURL
+	if verificationURL == "" {
+		verificationURL = dc.VerificationURI
+	}
+	if dc.DeviceCode == "" || dc.UserCode == "" || verificationURL == "" {
+		return "", "", "", 0, fmt.Errorf("antigravity: incomplete device-code response: %s", string(body))
 	}
 
 	log.Info().Str("provider", p.instanceID).Str("user_code", dc.UserCode).Msg("Antigravity: Google device-code flow initiated")
@@ -245,7 +258,7 @@ func (p *GenericProvider) InitiateGoogleDeviceCode() (verificationURL, userCode,
 	if interval == 0 {
 		interval = 5
 	}
-	return dc.VerificationURL, dc.UserCode, dc.DeviceCode, interval, nil
+	return verificationURL, dc.UserCode, dc.DeviceCode, interval, nil
 }
 
 // PollGoogleDeviceCode polls Google's token endpoint until the user completes
@@ -662,6 +675,14 @@ func (p *GenericProvider) LoadFromDB() error {
 
 	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Loaded generic provider token")
 	return nil
+}
+
+// ApplyTokenFromDB reloads the saved token from the database into the
+// in-memory provider. It is the public equivalent of LoadFromDB and is
+// called by route handlers after saving a new token (e.g. after an OAuth
+// callback) to ensure the provider is immediately usable without a restart.
+func (p *GenericProvider) ApplyTokenFromDB() {
+	_ = p.LoadFromDB()
 }
 
 // ─── GenericAdapter ───────────────────────────────────────────────────────────
