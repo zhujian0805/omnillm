@@ -3,7 +3,6 @@ package routes
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,7 +27,7 @@ type antigravityOAuthState struct {
 	RedirectURI   string
 	State         string
 	Expiry        time.Time
-	IsNewProvider bool   // true = auth-and-create, false = re-auth existing
+	IsNewProvider bool // true = auth-and-create, false = re-auth existing
 	Done          bool
 	Error         string
 }
@@ -36,7 +35,21 @@ type antigravityOAuthState struct {
 var (
 	agOAuthMu     sync.Mutex
 	agOAuthStates = map[string]*antigravityOAuthState{} // keyed by state nonce
+
+	// agOAuthResults holds completed OAuth results keyed by provider_id so the
+	// frontend can poll for completion instead of relying on window.opener
+	// (which is severed by Google's Cross-Origin-Opener-Policy header).
+	agOAuthResultsMu sync.Mutex
+	agOAuthResults   = map[string]*antigravityOAuthResult{} // keyed by provider_id
 )
+
+type antigravityOAuthResult struct {
+	Done       bool
+	Error      string
+	ProviderID string
+	IsNew      bool
+	Expiry     time.Time
+}
 
 func newAntigravityOAuthState(providerID, clientID, clientSecret, redirectURI string, isNew bool) *antigravityOAuthState {
 	b := make([]byte, 16)
@@ -120,7 +133,11 @@ func handleAntigravityStartOAuth(c *gin.Context) {
 
 // ─── Route: GET /providers/antigravity/oauth-callback ────────────────────────
 // Google redirects here with ?code=…&state=…
-// On success renders a small HTML page that closes the popup and notifies the opener.
+// This route must be public (no auth) — Google's redirect carries no Authorization header.
+
+// HandleAntigravityOAuthCallbackPublic is the exported handler for server.go to register
+// on the public router group.
+var HandleAntigravityOAuthCallbackPublic = handleAntigravityOAuthCallback
 
 func handleAntigravityOAuthCallback(c *gin.Context) {
 	code := c.Query("code")
@@ -128,17 +145,17 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	errParam := c.Query("error")
 
 	if errParam != "" {
-		renderOAuthResult(c, false, "Google denied access: "+errParam, "")
+		renderOAuthResult(c, false, "Google denied access: "+errParam)
 		return
 	}
 	if code == "" || nonce == "" {
-		renderOAuthResult(c, false, "Missing code or state parameter", "")
+		renderOAuthResult(c, false, "Missing code or state parameter")
 		return
 	}
 
 	state := getAntigravityOAuthState(nonce)
 	if state == nil || time.Now().After(state.Expiry) {
-		renderOAuthResult(c, false, "OAuth state expired or not found — please try again", "")
+		renderOAuthResult(c, false, "OAuth state expired or not found — please try again")
 		return
 	}
 	deleteAntigravityOAuthState(nonce)
@@ -147,7 +164,7 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	tokenResp, err := antigravitypkg.ExchangeCode(state.ClientID, state.ClientSecret, code, state.RedirectURI)
 	if err != nil {
 		log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: OAuth code exchange failed")
-		renderOAuthResult(c, false, fmt.Sprintf("Token exchange failed: %v", err), "")
+		renderOAuthResult(c, false, fmt.Sprintf("Token exchange failed: %v", err))
 		return
 	}
 
@@ -163,7 +180,7 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	}
 	if err := tokenStore.Save(state.ProviderID, "antigravity", tokenData); err != nil {
 		log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to save tokens")
-		renderOAuthResult(c, false, "Failed to save credentials — please try again", "")
+		renderOAuthResult(c, false, "Failed to save credentials — please try again")
 		return
 	}
 
@@ -184,41 +201,72 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		}
 	}
 
-	// Encode minimal provider info so the opener can update the UI.
-	info, _ := json.Marshal(map[string]interface{}{
-		"id":         state.ProviderID,
-		"type":       "antigravity",
-		"name":       "Antigravity",
-		"authStatus": "authenticated",
-		"isNew":      state.IsNewProvider,
-	})
+	// Store the completed result so the frontend can poll for it.
+	agOAuthResultsMu.Lock()
+	agOAuthResults[state.ProviderID] = &antigravityOAuthResult{
+		Done:       true,
+		ProviderID: state.ProviderID,
+		IsNew:      state.IsNewProvider,
+		Expiry:     time.Now().Add(5 * time.Minute),
+	}
+	agOAuthResultsMu.Unlock()
 
 	log.Info().Str("provider", state.ProviderID).Msg("Antigravity: Google OAuth completed successfully")
-	renderOAuthResult(c, true, "", string(info))
+	renderOAuthResult(c, true, "")
 }
 
 // renderOAuthResult writes a small self-closing HTML page.
-// On success it posts a message to window.opener and closes itself.
-// On failure it shows the error and lets the user close manually.
-func renderOAuthResult(c *gin.Context, success bool, errMsg, providerJSON string) {
+// It no longer uses window.opener (severed by Google's COOP header).
+// The frontend polls /oauth-status instead.
+func renderOAuthResult(c *gin.Context, success bool, errMsg string) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if success {
 		c.String(http.StatusOK, `<!DOCTYPE html><html><head><title>Antigravity — Authenticated</title></head><body>
 <p>Authenticated successfully. This window will close…</p>
-<script>
-try {
-  window.opener && window.opener.postMessage({type:"antigravity_oauth_complete",provider:`+providerJSON+`},"*");
-} catch(e){}
-setTimeout(function(){ window.close(); }, 1000);
-</script></body></html>`)
+<script>setTimeout(function(){ window.close(); }, 1000);</script>
+</body></html>`)
 	} else {
 		c.String(http.StatusOK, `<!DOCTYPE html><html><head><title>Antigravity — Error</title></head><body>
 <p style="color:red">OAuth failed: `+errMsg+`</p>
 <p><button onclick="window.close()">Close</button></p>
-<script>
-try {
-  window.opener && window.opener.postMessage({type:"antigravity_oauth_error",error:`+"`"+errMsg+"`"+`},"*");
-} catch(e){}
-</script></body></html>`)
+</body></html>`)
 	}
+}
+
+// ─── Route: GET /providers/antigravity/oauth-status ──────────────────────────
+// Frontend polls this to learn when the OAuth flow completes.
+// This route must be public (no auth) — the frontend polls it before auth is established.
+// Query param: provider_id
+
+// HandleAntigravityOAuthStatusPublic is the exported handler for server.go to register
+// on the public router group.
+var HandleAntigravityOAuthStatusPublic = handleAntigravityOAuthStatus
+
+func handleAntigravityOAuthStatus(c *gin.Context) {
+	providerID := strings.TrimSpace(c.Query("provider_id"))
+	if providerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "provider_id is required"})
+		return
+	}
+
+	agOAuthResultsMu.Lock()
+	result, ok := agOAuthResults[providerID]
+	if ok && result.Done {
+		delete(agOAuthResults, providerID) // consume once
+	}
+	agOAuthResultsMu.Unlock()
+
+	if !ok {
+		c.JSON(http.StatusOK, gin.H{"done": false})
+		return
+	}
+	if result.Error != "" {
+		c.JSON(http.StatusOK, gin.H{"done": true, "error": result.Error})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"done":        true,
+		"provider_id": result.ProviderID,
+		"is_new":      result.IsNew,
+	})
 }

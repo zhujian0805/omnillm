@@ -214,6 +214,10 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 	// Admin routes
 	adminPublic := r.Group("/api/admin")
 	adminPublic.GET("/info", routes.MakePublicInfoHandler(port))
+	// OAuth callback and status must be public — Google's redirect carries no auth header,
+	// and the status polling happens before the user has completed the flow.
+	adminPublic.GET("/providers/antigravity/oauth-callback", routes.HandleAntigravityOAuthCallbackPublic)
+	adminPublic.GET("/providers/antigravity/oauth-status", routes.HandleAntigravityOAuthStatusPublic)
 
 	adminAPI := r.Group("/api/admin", auth.middleware())
 	routes.SetupAdminRoutes(adminAPI, port)

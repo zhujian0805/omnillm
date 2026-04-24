@@ -464,6 +464,16 @@ export const startAntigravityOAuth = (
     },
   )
 
+export const pollAntigravityOAuthStatus = (providerId: string) =>
+  apiFetch<{
+    done: boolean
+    error?: string
+    provider_id?: string
+    is_new?: boolean
+  }>(
+    `/api/admin/providers/antigravity/oauth-status?provider_id=${encodeURIComponent(providerId)}`,
+  )
+
 // ─── Status / Auth flow ───────────────────────────────────────────────────────
 
 export const getStatus = () => apiFetch<Status>("/api/admin/status")

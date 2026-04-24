@@ -19,6 +19,7 @@ import {
   getProviderPriorities,
   setProviderPriorities,
   startAntigravityOAuth,
+  pollAntigravityOAuthStatus,
   updateProviderConfig,
   refreshProviderModels,
   type AuthFlow,
@@ -544,36 +545,37 @@ function useAntigravityOAuth(
 ) {
   const startOAuth = async (clientId: string, clientSecret: string) => {
     const resp = await startAntigravityOAuth(clientId, clientSecret, providerId)
-    const popup = window.open(
-      resp.auth_url,
-      "antigravity_oauth",
-      "width=600,height=700,scrollbars=yes",
-    )
-    if (!popup) {
-      onError("Popup blocked — please allow popups for this page and try again")
+    const tab = window.open(resp.auth_url, "_blank")
+    if (!tab) {
+      onError(
+        "Could not open a new tab — please allow popups for this page and try again",
+      )
       return
     }
-    const handleMessage = (event: MessageEvent) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = event.data as Record<string, any>
-      if (data?.type === "antigravity_oauth_complete") {
-        window.removeEventListener("message", handleMessage)
-        popup.close()
-        onSuccess()
-      } else if (data?.type === "antigravity_oauth_error") {
-        window.removeEventListener("message", handleMessage)
-        popup.close()
-        onError(data.error as string)
-      }
-    }
-    window.addEventListener("message", handleMessage)
-    // Safety cleanup if popup is closed without completing
-    const timer = setInterval(() => {
-      if (popup.closed) {
+
+    // Poll the backend for completion instead of relying on window.opener/postMessage,
+    // which is severed by Google's Cross-Origin-Opener-Policy header.
+    const timer = setInterval(async () => {
+      try {
+        const status = await pollAntigravityOAuthStatus(resp.provider_id)
+        if (!status.done) return
         clearInterval(timer)
-        window.removeEventListener("message", handleMessage)
+        if (status.error) {
+          onError(status.error)
+        } else {
+          onSuccess()
+        }
+      } catch {
+        // ignore transient fetch errors while polling
       }
-    }, 500)
+      // Also stop polling if the user closed the tab without completing
+      if (tab.closed) {
+        clearInterval(timer)
+      }
+    }, 1500)
+
+    // Safety: stop polling after 10 minutes regardless
+    setTimeout(() => clearInterval(timer), 10 * 60 * 1000)
   }
   return { startOAuth }
 }
