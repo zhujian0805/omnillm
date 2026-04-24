@@ -26,21 +26,46 @@ func SetupAuth(instanceID string, options *types.AuthOptions) (token, endpoint s
 	cfg := map[string]interface{}{}
 	resolvedEndpoint := ""
 	if options.Endpoint != "" {
-		cfg["endpoint"] = options.Endpoint
-		resolvedEndpoint = strings.TrimRight(options.Endpoint, "/")
+		trimmed := strings.TrimRight(strings.TrimSpace(options.Endpoint), "/")
+		cfg["endpoint"] = trimmed
+		resolvedEndpoint = trimmed
 	}
 
-	// Persist deployments if provided (JSON-encoded string)
+	// Persist deployments if provided (JSON-encoded string) - accept strings or structured mappings
 	if options.Deployments != "" {
-		var deployments []string
-		if err := json.Unmarshal([]byte(options.Deployments), &deployments); err == nil {
-			cfg["deployments"] = deployments
+		var raw []interface{}
+		if err := json.Unmarshal([]byte(options.Deployments), &raw); err == nil {
+			out := make([]interface{}, 0, len(raw))
+			for _, item := range raw {
+				switch v := item.(type) {
+				case string:
+					trim := strings.TrimSpace(v)
+					if trim == "" {
+						continue
+					}
+					out = append(out, trim)
+				case map[string]interface{}:
+					m := map[string]interface{}{}
+					if mv, ok := v["model"].(string); ok {
+						m["model"] = strings.TrimSpace(mv)
+					}
+					if dv, ok := v["deployment"].(string); ok {
+						m["deployment"] = strings.TrimSpace(dv)
+					}
+					if len(m) > 0 {
+						out = append(out, m)
+					}
+				}
+			}
+			if len(out) > 0 {
+				cfg["deployments"] = out
+			}
 		}
 	}
 
-	// Persist API version if provided
+	// Persist API version if provided (store under api_version)
 	if options.APIVersion != "" {
-		cfg["apiVersion"] = options.APIVersion
+		cfg["api_version"] = options.APIVersion
 	}
 
 	// Save config if it contains any keys
@@ -72,7 +97,11 @@ func ResponsesURL(endpoint string) (string, error) {
 	if endpoint == "" {
 		return "", fmt.Errorf("azure-openai endpoint not configured; set it via the admin UI")
 	}
-	return endpoint + "/openai/v1/responses", nil
+	trimmed := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if strings.HasSuffix(trimmed, "/openai/v1") {
+		return trimmed + "/responses", nil
+	}
+	return trimmed + "/openai/v1/responses", nil
 }
 
 // Headers returns the HTTP headers for Azure OpenAI API requests.
@@ -131,8 +160,14 @@ func DeploymentMappings(config map[string]interface{}) []DeploymentMapping {
 				deployment, _ := typed["deployment"].(string)
 				model = strings.TrimSpace(model)
 				deployment = strings.TrimSpace(deployment)
-				if model == "" || deployment == "" {
+				if model == "" && deployment == "" {
 					continue
+				}
+				if model == "" {
+					model = deployment
+				}
+				if deployment == "" {
+					deployment = model
 				}
 				result = append(result, DeploymentMapping{Model: model, Deployment: deployment})
 			}
@@ -141,6 +176,112 @@ func DeploymentMappings(config map[string]interface{}) []DeploymentMapping {
 	default:
 		return nil
 	}
+}
+
+// normalizeAzureConfig applies canonical storage keys for Azure provider configs.
+func normalizeAzureConfig(config map[string]interface{}) map[string]interface{} {
+	if config == nil {
+		return map[string]interface{}{}
+	}
+	norm := make(map[string]interface{})
+	if ep, ok := config["endpoint"].(string); ok && ep != "" {
+		norm["endpoint"] = strings.TrimRight(strings.TrimSpace(ep), "/")
+	}
+	if av, ok := config["api_version"].(string); ok && av != "" {
+		norm["api_version"] = av
+	} else if av, ok := config["apiVersion"].(string); ok && av != "" {
+		norm["api_version"] = av
+	}
+	if raw, ok := config["deployments"]; ok {
+		// preserve as-is but normalize inner maps
+		switch v := raw.(type) {
+		case []string:
+			if len(v) > 0 {
+				out := make([]interface{}, 0, len(v))
+				for _, s := range v {
+					s = strings.TrimSpace(s)
+					if s != "" {
+						out = append(out, s)
+					}
+				}
+				if len(out) > 0 {
+					norm["deployments"] = out
+				}
+			}
+		case []interface{}:
+			if len(v) > 0 {
+				out := make([]interface{}, 0, len(v))
+				for _, item := range v {
+					switch it := item.(type) {
+					case string:
+						s := strings.TrimSpace(it)
+						if s != "" {
+							out = append(out, s)
+						}
+					case map[string]interface{}:
+						m := map[string]interface{}{}
+						if mv, ok := it["model"].(string); ok && mv != "" {
+							m["model"] = strings.TrimSpace(mv)
+						}
+						if dv, ok := it["deployment"].(string); ok && dv != "" {
+							m["deployment"] = strings.TrimSpace(dv)
+						}
+						if len(m) > 0 {
+							out = append(out, m)
+						}
+					}
+				}
+				if len(out) > 0 {
+					norm["deployments"] = out
+				}
+			}
+		}
+	}
+	return norm
+}
+
+// backfillDeploymentsFromModelState will populate deployments in config when absent
+// by reading model state records for this instance and creating model=deployment mappings
+// (only when helpful). When it writes a repaired config it persists it and returns true.
+func backfillDeploymentsFromModelState(instanceID string, config map[string]interface{}) (map[string]interface{}, bool, error) {
+	if config == nil {
+		config = map[string]interface{}{}
+	}
+	if len(DeploymentMappings(config)) > 0 {
+		return config, false, nil
+	}
+	stateStore := database.NewModelStateStore()
+	states, err := stateStore.GetAllByInstance(instanceID)
+	if err != nil {
+		return config, false, err
+	}
+	if len(states) == 0 {
+		return config, false, nil
+	}
+	// Build structured mappings model=deployment when model IDs look usable
+	out := make([]interface{}, 0, len(states))
+	seen := make(map[string]struct{})
+	for _, s := range states {
+		id := strings.TrimSpace(s.ModelID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		m := map[string]interface{}{"model": id, "deployment": id}
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return config, false, nil
+	}
+	config["deployments"] = out
+	configStore := database.NewProviderConfigStore()
+	if err := configStore.Save(instanceID, config); err != nil {
+		return config, false, err
+	}
+	return config, true, nil
 }
 
 // RemapModel maps an app-facing Azure model name to the configured Azure deployment name.
@@ -172,7 +313,8 @@ func ModelIDs(config map[string]interface{}) []string {
 
 // GetModels returns the available models for this Azure OpenAI instance.
 // If the config contains deployment mappings those are used; otherwise the
-// built-in catalog is returned.
+// built-in catalog is returned. This will attempt to backfill deployments
+// from model state when no deployments are configured.
 func GetModels(instanceID string, config map[string]interface{}) *types.ModelsResponse {
 	if mappings := DeploymentMappings(config); len(mappings) > 0 {
 		models := make([]types.Model, 0, len(mappings))
@@ -185,6 +327,27 @@ func GetModels(instanceID string, config map[string]interface{}) *types.ModelsRe
 			})
 		}
 		return &types.ModelsResponse{Data: models, Object: "list"}
+	}
+
+	// Try backfilling missing deployments from model state
+	if cfg, ok := database.NewProviderConfigStore().Get(instanceID); ok == nil && cfg != nil {
+		var loaded map[string]interface{}
+		_ = json.Unmarshal([]byte(cfg.ConfigData), &loaded)
+		if updated, wrote, err := backfillDeploymentsFromModelState(instanceID, loaded); err == nil && wrote {
+			// use updated deployments
+			if mappings := DeploymentMappings(updated); len(mappings) > 0 {
+				models := make([]types.Model, 0, len(mappings))
+				for _, mapping := range mappings {
+					models = append(models, types.Model{
+						ID:        mapping.Model,
+						Name:      mapping.Model,
+						MaxTokens: 128000,
+						Provider:  instanceID,
+					})
+				}
+				return &types.ModelsResponse{Data: models, Object: "list"}
+			}
+		}
 	}
 
 	result := make([]types.Model, len(DefaultModels))
@@ -220,8 +383,9 @@ func stringSliceFromConfig(config map[string]interface{}, key string) []string {
 }
 
 // IsResponsesAPIModel returns true for all Azure OpenAI models.
-// Azure OpenAI uses the Responses API exclusively — this is the canonical
-// API shape for this provider as defined in internal/providers/providermodels.
+// Azure OpenAI uses the Responses API exclusively
+
+
 func IsResponsesAPIModel(_ string) bool {
 	return true
 }
