@@ -445,6 +445,35 @@ export const updateProviderConfig = (id: string, config: Record<string, any>) =>
     { method: "PUT", body: JSON.stringify(config) },
   )
 
+// ─── Antigravity Google OAuth ─────────────────────────────────────────────────
+
+export const startAntigravityOAuth = (
+  clientId: string,
+  clientSecret: string,
+  providerId?: string,
+) =>
+  apiFetch<{ auth_url: string; state: string; provider_id: string }>(
+    "/api/admin/providers/antigravity/start-oauth",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        provider_id: providerId ?? "",
+      }),
+    },
+  )
+
+export const pollAntigravityOAuthStatus = (providerId: string) =>
+  apiFetch<{
+    done: boolean
+    error?: string
+    provider_id?: string
+    is_new?: boolean
+  }>(
+    `/api/admin/providers/antigravity/oauth-status?provider_id=${encodeURIComponent(providerId)}`,
+  )
+
 // ─── Status / Auth flow ───────────────────────────────────────────────────────
 
 export const getStatus = () => apiFetch<Status>("/api/admin/status")
