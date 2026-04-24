@@ -26,6 +26,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	alibabapkg "omnillm/internal/providers/alibaba"
+	azurepkg "omnillm/internal/providers/azure"
 
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
 
@@ -218,8 +219,17 @@ func normalizeProviderConfigForFrontend(providerType string, config map[string]i
 		if apiVersion, ok := firstStringValue(config, "apiVersion", "api_version"); ok {
 			normalized["apiVersion"] = apiVersion
 		}
-		if deployments := stringSliceValue(config["deployments"]); len(deployments) > 0 {
-			normalized["deployments"] = deployments
+		if deployments, ok := config["deployments"]; ok {
+			switch typed := deployments.(type) {
+			case []string:
+				if len(typed) > 0 {
+					normalized["deployments"] = typed
+				}
+			case []interface{}:
+				if len(typed) > 0 {
+					normalized["deployments"] = typed
+				}
+			}
 		}
 		if len(normalized) == 0 {
 			return nil
@@ -270,7 +280,6 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 	case "azure-openai":
 		endpoint, _ := firstStringValue(config, "endpoint")
 		apiVersion, _ := firstStringValue(config, "apiVersion", "api_version")
-		deployments := stringSliceValue(config["deployments"])
 
 		normalized := map[string]interface{}{}
 		if endpoint != "" {
@@ -279,8 +288,17 @@ func normalizeProviderConfigForStorage(providerType string, config map[string]in
 		if apiVersion != "" {
 			normalized["api_version"] = apiVersion
 		}
-		if len(deployments) > 0 {
-			normalized["deployments"] = deployments
+		if deployments, ok := config["deployments"]; ok {
+			switch typed := deployments.(type) {
+			case []string:
+				if len(typed) > 0 {
+					normalized["deployments"] = typed
+				}
+			case []interface{}:
+				if len(typed) > 0 {
+					normalized["deployments"] = typed
+				}
+			}
 		}
 		return normalized
 	case "alibaba":
@@ -897,12 +915,22 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 		// For Azure OpenAI: if the user specified deployments upfront, enable them immediately.
 		if providerType == "azure-openai" && req.Deployments != "" {
-			var deployments []string
-			if jsonErr := json.Unmarshal([]byte(req.Deployments), &deployments); jsonErr == nil {
+			var rawDeployments []interface{}
+			if jsonErr := json.Unmarshal([]byte(req.Deployments), &rawDeployments); jsonErr == nil {
 				modelStateStore := database.NewModelStateStore()
-				for _, deployment := range deployments {
-					if deployment != "" {
-						_ = modelStateStore.SetEnabled(gen.GetInstanceID(), deployment, true)
+				for _, item := range rawDeployments {
+					switch typed := item.(type) {
+					case string:
+						deployment := strings.TrimSpace(typed)
+						if deployment != "" {
+							_ = modelStateStore.SetEnabled(gen.GetInstanceID(), deployment, true)
+						}
+					case map[string]interface{}:
+						model, _ := typed["model"].(string)
+						model = strings.TrimSpace(model)
+						if model != "" {
+							_ = modelStateStore.SetEnabled(gen.GetInstanceID(), model, true)
+						}
 					}
 				}
 			}
@@ -1454,22 +1482,22 @@ func handleUpdateProviderConfig(c *gin.Context) {
 	}
 
 	if provider.GetID() == "azure-openai" {
-		oldDeployments := stringSliceValue(previousConfig["deployments"])
-		newDeployments := stringSliceValue(normalizedConfig["deployments"])
-		if len(oldDeployments) > 0 {
-			newSet := make(map[string]struct{}, len(newDeployments))
-			for _, deployment := range newDeployments {
-				newSet[deployment] = struct{}{}
+		oldModels := azurepkg.ModelIDs(previousConfig)
+		newModels := azurepkg.ModelIDs(normalizedConfig)
+		if len(oldModels) > 0 {
+			newSet := make(map[string]struct{}, len(newModels))
+			for _, model := range newModels {
+				newSet[model] = struct{}{}
 			}
 
 			modelStateStore := database.NewModelStateStore()
 			modelConfigStore := database.NewModelConfigStore()
-			for _, deployment := range oldDeployments {
-				if _, keep := newSet[deployment]; keep {
+			for _, model := range oldModels {
+				if _, keep := newSet[model]; keep {
 					continue
 				}
-				_ = modelStateStore.Delete(providerID, deployment)
-				_ = modelConfigStore.Delete(providerID, deployment)
+				_ = modelStateStore.Delete(providerID, model)
+				_ = modelConfigStore.Delete(providerID, model)
 			}
 		}
 	}

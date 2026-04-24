@@ -89,16 +89,97 @@ var DefaultModels = []types.Model{
 	{ID: "gpt-4o-mini", Name: "GPT-4o Mini", MaxTokens: 128000, Provider: "azure-openai"},
 }
 
+type DeploymentMapping struct {
+	Model      string `json:"model"`
+	Deployment string `json:"deployment"`
+}
+
+// DeploymentMappings returns Azure deployment mappings from config.
+// It supports both legacy string deployments and structured model/deployment mappings.
+func DeploymentMappings(config map[string]interface{}) []DeploymentMapping {
+	if config == nil {
+		return nil
+	}
+	raw, exists := config["deployments"]
+	if !exists {
+		return nil
+	}
+
+	switch value := raw.(type) {
+	case []string:
+		result := make([]DeploymentMapping, 0, len(value))
+		for _, deployment := range value {
+			deployment = strings.TrimSpace(deployment)
+			if deployment == "" {
+				continue
+			}
+			result = append(result, DeploymentMapping{Model: deployment, Deployment: deployment})
+		}
+		return result
+	case []interface{}:
+		result := make([]DeploymentMapping, 0, len(value))
+		for _, item := range value {
+			switch typed := item.(type) {
+			case string:
+				deployment := strings.TrimSpace(typed)
+				if deployment == "" {
+					continue
+				}
+				result = append(result, DeploymentMapping{Model: deployment, Deployment: deployment})
+			case map[string]interface{}:
+				model, _ := typed["model"].(string)
+				deployment, _ := typed["deployment"].(string)
+				model = strings.TrimSpace(model)
+				deployment = strings.TrimSpace(deployment)
+				if model == "" || deployment == "" {
+					continue
+				}
+				result = append(result, DeploymentMapping{Model: model, Deployment: deployment})
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+// RemapModel maps an app-facing Azure model name to the configured Azure deployment name.
+// If no mapping exists, it returns the original model unchanged.
+func RemapModel(config map[string]interface{}, model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return model
+	}
+	for _, mapping := range DeploymentMappings(config) {
+		if strings.EqualFold(strings.TrimSpace(mapping.Model), model) {
+			return mapping.Deployment
+		}
+	}
+	return model
+}
+
+// ModelIDs returns the app-facing Azure model IDs from config.
+func ModelIDs(config map[string]interface{}) []string {
+	mappings := DeploymentMappings(config)
+	result := make([]string, 0, len(mappings))
+	for _, mapping := range mappings {
+		if mapping.Model != "" {
+			result = append(result, mapping.Model)
+		}
+	}
+	return result
+}
+
 // GetModels returns the available models for this Azure OpenAI instance.
-// If the config contains a "deployments" list those are used; otherwise the
+// If the config contains deployment mappings those are used; otherwise the
 // built-in catalog is returned.
 func GetModels(instanceID string, config map[string]interface{}) *types.ModelsResponse {
-	if deployments := stringSliceFromConfig(config, "deployments"); len(deployments) > 0 {
-		models := make([]types.Model, 0, len(deployments))
-		for _, d := range deployments {
+	if mappings := DeploymentMappings(config); len(mappings) > 0 {
+		models := make([]types.Model, 0, len(mappings))
+		for _, mapping := range mappings {
 			models = append(models, types.Model{
-				ID:        d,
-				Name:      d,
+				ID:        mapping.Model,
+				Name:      mapping.Model,
 				MaxTokens: 128000,
 				Provider:  instanceID,
 			})
