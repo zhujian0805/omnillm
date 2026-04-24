@@ -3,6 +3,7 @@ package types
 
 import (
 	"context"
+	"encoding/json"
 	"omnillm/internal/cif"
 )
 
@@ -19,6 +20,9 @@ const (
 	ProviderOpenAICompatible ProviderID = "openai-compatible"
 )
 
+// AuthOptions is decoded from JSON request bodies.  Fields accept both
+// camelCase (frontend convention) and snake_case (legacy) names via a custom
+// UnmarshalJSON that normalises keys before decoding.
 type AuthOptions struct {
 	Method              string `json:"method,omitempty"`
 	Force               bool   `json:"force,omitempty"`
@@ -36,6 +40,38 @@ type AuthOptions struct {
 	APIVersion          string `json:"apiVersion,omitempty"`  // e.g. "2024-02-01", used by azure-openai
 	AllowLocalEndpoints bool   `json:"allowLocalEndpoints,omitempty"`
 	OAuthProvider       string `json:"oauthProvider,omitempty"` // "github" (default) or "google" for Codex
+}
+
+// UnmarshalJSON normalises camelCase aliases sent by the frontend before
+// decoding into AuthOptions.
+func (a *AuthOptions) UnmarshalJSON(data []byte) error {
+	// Decode into a raw map first so we can rename keys.
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	// camelCase → snake_case / canonical aliases.
+	aliases := map[string]string{
+		"clientId":     "client_id",
+		"clientSecret": "client_secret",
+		"githubToken":  "github_token",
+	}
+	for camel, canonical := range aliases {
+		if v, ok := raw[camel]; ok {
+			if _, exists := raw[canonical]; !exists {
+				raw[canonical] = v
+			}
+			delete(raw, camel)
+		}
+	}
+	// Re-encode the normalised map and decode into a plain alias type to
+	// avoid infinite recursion.
+	type plain AuthOptions
+	normalised, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(normalised, (*plain)(a))
 }
 
 type Model struct {
