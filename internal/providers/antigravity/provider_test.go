@@ -3,6 +3,9 @@ package antigravity
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"omnillm/internal/cif"
 	"strings"
 	"testing"
@@ -45,6 +48,71 @@ func TestGetModels(t *testing.T) {
 		if m.Provider != "antigravity-1" {
 			t.Errorf("model %q has provider %q, want antigravity-1", m.ID, m.Provider)
 		}
+	}
+}
+
+func TestStreamBuildsConservativeGeminiPayload(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		gotBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	maxTokens := 128
+	request := &cif.CanonicalRequest{
+		Model:    "claude-sonnet-4-6",
+		Messages: []cif.CIFMessage{cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{cif.CIFTextPart{Type: "text", Text: "ping"}}}},
+		MaxTokens: &maxTokens,
+		Tools: []cif.CIFTool{{
+			Name: "Read",
+		}},
+	}
+
+	ch, err := Stream(t.Context(), "token", server.URL, "", request)
+	if err != nil {
+		t.Fatalf("Stream returned error: %v", err)
+	}
+	for range ch {
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(gotBody, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	requestMap, ok := payload["request"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing request envelope: %#v", payload)
+	}
+	if _, ok := requestMap["generationConfig"].(map[string]interface{}); !ok {
+		t.Fatalf("missing generationConfig: %#v", requestMap)
+	}
+	tools, ok := requestMap["tools"].([]interface{})
+	if !ok || len(tools) != 1 {
+		t.Fatalf("unexpected tools payload: %#v", requestMap["tools"])
+	}
+	toolGroup, ok := tools[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected tool group: %#v", tools[0])
+	}
+	decls, ok := toolGroup["functionDeclarations"].([]interface{})
+	if !ok || len(decls) != 1 {
+		t.Fatalf("unexpected functionDeclarations: %#v", toolGroup["functionDeclarations"])
+	}
+	decl, ok := decls[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected declaration: %#v", decls[0])
+	}
+	if _, ok := decl["parameters"]; ok {
+		t.Fatal("expected nil tool schema to omit parameters field")
+	}
+	if decl["name"] != "Read" {
+		t.Fatalf("unexpected tool name: %#v", decl["name"])
 	}
 }
 
