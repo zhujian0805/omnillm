@@ -1,6 +1,7 @@
 // Package codex provides the Codex provider implementation.
-// Codex authenticates via GitHub OAuth (device-code flow) and exposes
-// Codex-flavoured OpenAI-compatible completions.
+// Codex authenticates via an OpenAI API key and routes requests to the
+// official OpenAI Codex endpoint (or the GitHub Copilot endpoint for legacy
+// GitHub OAuth tokens).
 package codex
 
 import (
@@ -23,8 +24,11 @@ import (
 )
 
 const (
-	codexBaseURL    = "https://api.githubcopilot.com"
-	codexProviderID = "codex"
+	// codexBaseURL is the OpenAI endpoint used when authenticating with an API key.
+	codexBaseURL = "https://api.openai.com/v1"
+	// codexGitHubBaseURL is the GitHub Copilot endpoint for legacy OAuth tokens.
+	codexGitHubBaseURL = "https://api.githubcopilot.com"
+	codexProviderID    = "codex"
 )
 
 var (
@@ -49,14 +53,15 @@ var (
 	}
 )
 
-// CodexProvider authenticates via GitHub OAuth and routes requests to the
-// Codex endpoint.
+// CodexProvider authenticates via an OpenAI API key (primary) or a legacy
+// GitHub OAuth token and routes requests to the Codex endpoint.
 type CodexProvider struct {
 	id          string
 	instanceID  string
 	name        string
-	token       string // short-lived Copilot/Codex API token
-	githubToken string // long-lived GitHub OAuth token
+	apiKey      string // OpenAI API key (primary auth method)
+	token       string // short-lived Copilot/Codex API token (legacy GitHub path)
+	githubToken string // long-lived GitHub OAuth token (legacy path)
 	expiresAt   int64
 	baseURL     string
 }
@@ -83,23 +88,33 @@ func (p *CodexProvider) GetInstanceID() string { return p.instanceID }
 func (p *CodexProvider) GetName() string       { return p.name }
 func (p *CodexProvider) SetInstanceID(id string) { p.instanceID = id }
 
-// SetupAuth accepts a direct GitHub token.  When no token is provided the
-// caller should start the device-code flow via InitiateDeviceCodeFlow.
+// SetupAuth configures the provider.  Pass an OpenAI API key via
+// options.APIKey (primary), or a GitHub OAuth token via options.GithubToken /
+// options.Token for the legacy GitHub Copilot path.
 func (p *CodexProvider) SetupAuth(options *types.AuthOptions) error {
-	token := ""
-	if options != nil {
-		token = options.GithubToken
-		if token == "" {
-			token = options.Token
-		}
-		if token == "" {
-			token = options.APIKey
-		}
+	if options == nil {
+		return fmt.Errorf("auth options required")
+	}
+
+	// Primary: OpenAI API key.
+	if strings.TrimSpace(options.APIKey) != "" {
+		p.apiKey = strings.TrimSpace(options.APIKey)
+		p.baseURL = codexBaseURL
+		p.name = "Codex"
+		log.Info().Str("provider", p.instanceID).Msg("Codex: configured with OpenAI API key")
+		return nil
+	}
+
+	// Legacy: GitHub OAuth / personal token.
+	token := strings.TrimSpace(options.GithubToken)
+	if token == "" {
+		token = strings.TrimSpace(options.Token)
 	}
 	if token == "" {
-		return fmt.Errorf("GitHub token required; use the OAuth device-code flow")
+		return fmt.Errorf("an OpenAI API key (apiKey) is required for Codex")
 	}
 	p.githubToken = token
+	p.baseURL = codexGitHubBaseURL
 	if err := p.RefreshToken(); err != nil {
 		return fmt.Errorf("failed to exchange GitHub token for Codex token: %w", err)
 	}
@@ -161,8 +176,13 @@ func (p *CodexProvider) RefreshToken() error {
 	return nil
 }
 
-// GetToken returns a valid short-lived token, refreshing if necessary.
+// GetToken returns a valid token for API requests.
+// For API-key auth this is the key itself; for GitHub OAuth it returns the
+// short-lived Copilot token, refreshing it when needed.
 func (p *CodexProvider) GetToken() string {
+	if p.apiKey != "" {
+		return p.apiKey
+	}
 	if p.githubToken != "" {
 		if p.token == "" || p.expiresAt == 0 || time.Now().Unix() > p.expiresAt-300 {
 			if err := p.RefreshToken(); err != nil {
@@ -173,17 +193,24 @@ func (p *CodexProvider) GetToken() string {
 	return p.token
 }
 
-// SaveToDB persists GitHub and API tokens to the database.
+// SaveToDB persists auth credentials to the database.
 func (p *CodexProvider) SaveToDB() error {
-	return database.NewTokenStore().Save(p.instanceID, p.id, map[string]interface{}{
-		"github_token": p.githubToken,
-		"codex_token":  p.token,
-		"expires_at":   p.expiresAt,
-		"name":         p.name,
-	})
+	data := map[string]interface{}{
+		"name": p.name,
+	}
+	if p.apiKey != "" {
+		data["api_key"]     = p.apiKey
+		data["auth_method"] = "api-key"
+	} else {
+		data["github_token"] = p.githubToken
+		data["codex_token"]  = p.token
+		data["expires_at"]   = p.expiresAt
+		data["auth_method"]  = "github"
+	}
+	return database.NewTokenStore().Save(p.instanceID, p.id, data)
 }
 
-// LoadFromDB restores tokens from the database.
+// LoadFromDB restores credentials from the database.
 func (p *CodexProvider) LoadFromDB() error {
 	record, err := database.NewTokenStore().Get(p.instanceID)
 	if err != nil {
@@ -196,6 +223,16 @@ func (p *CodexProvider) LoadFromDB() error {
 	if err := json.Unmarshal([]byte(record.TokenData), &data); err != nil {
 		return fmt.Errorf("codex: failed to parse token data: %w", err)
 	}
+	if v, ok := data["name"].(string); ok && v != "" {
+		p.name = v
+	}
+	// API-key path.
+	if v, ok := data["api_key"].(string); ok && v != "" {
+		p.apiKey  = v
+		p.baseURL = codexBaseURL
+		return nil
+	}
+	// Legacy GitHub OAuth path.
 	if v, ok := data["github_token"].(string); ok {
 		p.githubToken = v
 	}
@@ -205,12 +242,12 @@ func (p *CodexProvider) LoadFromDB() error {
 	if v, ok := data["expires_at"].(float64); ok {
 		p.expiresAt = int64(v)
 	}
-	if v, ok := data["name"].(string); ok && v != "" {
-		p.name = v
-	}
-	if p.githubToken != "" && (p.token == "" || time.Now().Unix() > p.expiresAt-300) {
-		if err := p.RefreshToken(); err != nil {
-			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Codex: refresh on load failed")
+	if p.githubToken != "" {
+		p.baseURL = codexGitHubBaseURL
+		if p.token == "" || time.Now().Unix() > p.expiresAt-300 {
+			if err := p.RefreshToken(); err != nil {
+				log.Warn().Err(err).Str("provider", p.instanceID).Msg("Codex: refresh on load failed")
+			}
 		}
 	}
 	return nil
@@ -219,17 +256,23 @@ func (p *CodexProvider) LoadFromDB() error {
 func (p *CodexProvider) GetBaseURL() string { return p.baseURL }
 
 // GetHeaders returns the HTTP headers to use for Codex API requests.
+// For API-key auth only standard OpenAI headers are sent; GitHub-specific
+// headers are added only for the legacy OAuth path.
 func (p *CodexProvider) GetHeaders(_ bool) map[string]string {
-	return map[string]string{
-		"Authorization":          fmt.Sprintf("Bearer %s", p.GetToken()),
-		"Content-Type":           "application/json",
-		"Accept":                 "application/json",
-		"Editor-Version":         ghservice.EditorVersion,
-		"Editor-Plugin-Version":  ghservice.PluginVersion,
-		"User-Agent":             ghservice.UserAgent,
-		"X-Github-Api-Version":   ghservice.APIVersion,
-		"copilot-integration-id": "vscode-chat",
+	headers := map[string]string{
+		"Authorization": fmt.Sprintf("Bearer %s", p.GetToken()),
+		"Content-Type":  "application/json",
+		"Accept":        "application/json",
 	}
+	// Add GitHub Copilot headers only for legacy OAuth path.
+	if p.githubToken != "" {
+		headers["Editor-Version"]         = ghservice.EditorVersion
+		headers["Editor-Plugin-Version"]  = ghservice.PluginVersion
+		headers["User-Agent"]             = ghservice.UserAgent
+		headers["X-Github-Api-Version"]   = ghservice.APIVersion
+		headers["copilot-integration-id"] = "vscode-chat"
+	}
+	return headers
 }
 
 // GetModels returns the available Codex models.
