@@ -487,7 +487,10 @@ func (a *GenericAdapter) RemapModel(model string) string {
 	if a.provider.id == "alibaba" {
 		return alibabapkg.RemapModel(model)
 	}
-	return model
+	if a.provider.id == "azure-openai" {
+		return azurepkg.RemapModel(a.provider.config, strings.TrimSpace(model))
+	}
+	return strings.TrimSpace(model)
 }
 
 func (a *GenericAdapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
