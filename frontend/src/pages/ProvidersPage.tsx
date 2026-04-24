@@ -497,34 +497,36 @@ function CodexAuthForm({
   onSubmit: (body: Record<string, string>) => Promise<void>
   onCancel: () => void
 }) {
-  const [token, setToken] = useState("")
+  const [apiKey, setApiKey] = useState("")
+
   const submit = async () => {
-    await (token.trim() ?
-      onSubmit({ method: "token", token: token.trim() })
-    : onSubmit({ method: "oauth" }))
+    if (!apiKey.trim()) return
+    await onSubmit({ method: "api-key", apiKey: apiKey.trim() })
   }
+
   return (
     <AuthFormWrapper title="Authenticate Codex">
       <div
         style={{
           fontSize: 12,
           color: "var(--color-text-tertiary)",
-          marginBottom: 4,
+          marginBottom: 12,
         }}
       >
-        Sign in via GitHub OAuth (recommended) or paste a GitHub token directly.
+        Official Codex supports ChatGPT sign-in and API key authentication. Use
+        an OpenAI API key here for programmatic access.
       </div>
-      <FormRow label="GitHub Token (optional)">
+      <FormRow label="OpenAI API Key">
         <SecretInput
           className="sys-input"
-          placeholder="ghu_… (leave blank to use OAuth)"
-          value={token}
-          onChange={setToken}
+          placeholder="sk-..."
+          value={apiKey}
+          onChange={setApiKey}
         />
       </FormRow>
       <div style={{ display: "flex", gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={submit}>
-          {token.trim() ? "Submit" : "Start OAuth"}
+          Save API Key
         </button>
         <button className="btn btn-ghost btn-sm" onClick={onCancel}>
           Cancel
@@ -3345,56 +3347,40 @@ function AddFlowCodexForm({
   onCancel,
   submitting,
 }: AddFlowFormProps) {
-  const [token, setToken] = useState("")
-  const submitToken = async () => {
-    if (!token.trim()) return
-    await onSubmit({ method: "token", token: token.trim() })
+  const [apiKey, setApiKey] = useState("")
+
+  const submit = async () => {
+    if (!apiKey.trim()) return
+    await onSubmit({ method: "api-key", apiKey: apiKey.trim() })
   }
-  const submitOAuth = async () => {
-    await onSubmit({ method: "oauth" })
-  }
+
   return (
     <div style={addFlowPanelStyle}>
-      {/* Primary: OAuth */}
-      <button
-        className="btn btn-primary btn-sm"
-        onClick={submitOAuth}
-        disabled={submitting}
-        style={{ width: "100%" }}
-      >
-        {submitting ?
-          <>
-            <Spin size={13} /> Connecting…
-          </>
-        : "Sign in with GitHub (OAuth)"}
-      </button>
       <AddFlowHint>
-        Recommended. Starts a GitHub device-code OAuth flow — no token needed.
+        Official Codex supports ChatGPT sign-in and API key authentication. Use
+        an OpenAI API key here for programmatic access.
       </AddFlowHint>
 
-      <div className="divider-label">or use a token</div>
-
-      {/* Secondary: Token */}
-      <FormRow label="GitHub Token">
+      <FormRow label="OpenAI API Key">
         <SecretInput
-          placeholder="ghu_…"
-          value={token}
-          onChange={setToken}
+          placeholder="sk-..."
+          value={apiKey}
+          onChange={setApiKey}
           style={addFlowTextInputStyle}
           autoComplete="off"
         />
       </FormRow>
       <div style={{ display: "flex", gap: 8 }}>
         <button
-          className="btn btn-outline btn-sm"
-          onClick={submitToken}
+          className="btn btn-primary btn-sm"
+          onClick={submit}
           disabled={submitting}
         >
           {submitting ?
             <>
               <Spin size={13} /> Connecting…
             </>
-          : "Add with Token"}
+          : "Add with API Key"}
         </button>
         <button
           className="btn btn-ghost btn-sm"
@@ -3925,7 +3911,7 @@ const PROVIDER_TYPES = [
   {
     id: "codex",
     name: "Codex",
-    desc: "OpenAI Codex models via GitHub OAuth",
+    desc: "Official OpenAI Codex via ChatGPT or API key",
   },
   {
     id: "openai-compatible",
