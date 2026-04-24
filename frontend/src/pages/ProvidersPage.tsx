@@ -490,6 +490,52 @@ function CopilotAuthForm({
   )
 }
 
+function CodexAuthForm({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (body: Record<string, string>) => Promise<void>
+  onCancel: () => void
+}) {
+  const [apiKey, setApiKey] = useState("")
+
+  const submit = async () => {
+    if (!apiKey.trim()) return
+    await onSubmit({ method: "api-key", apiKey: apiKey.trim() })
+  }
+
+  return (
+    <AuthFormWrapper title="Authenticate Codex">
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--color-text-tertiary)",
+          marginBottom: 12,
+        }}
+      >
+        Official Codex supports ChatGPT sign-in and API key authentication. Use
+        an OpenAI API key here for programmatic access.
+      </div>
+      <FormRow label="OpenAI API Key">
+        <SecretInput
+          className="sys-input"
+          placeholder="sk-..."
+          value={apiKey}
+          onChange={setApiKey}
+        />
+      </FormRow>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn btn-primary btn-sm" onClick={submit}>
+          Save API Key
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </AuthFormWrapper>
+  )
+}
+
 function AntigravityAuthForm({
   onSubmit,
   onCancel,
@@ -1435,6 +1481,12 @@ function ModelsMenuItem({
   const [azureMappings, setAzureMappings] = useState<
     Array<AzureDeploymentMapping>
   >(normalizeAzureDeploymentMappings(provider.config?.deployments))
+  const [azureEndpoint, setAzureEndpoint] = useState<string | undefined>(
+    provider.config?.endpoint,
+  )
+  const [azureAPIVersion, setAzureAPIVersion] = useState<string>(
+    provider.config?.apiVersion || "2024-02-01",
+  )
 
   // OpenAI-compatible user-defined model management
   const [newModel, setNewModel] = useState("")
@@ -1453,6 +1505,8 @@ function ModelsMenuItem({
       setAzureMappings(
         normalizeAzureDeploymentMappings(provider.config?.deployments),
       )
+      setAzureEndpoint(provider.config?.endpoint)
+      setAzureAPIVersion(provider.config?.apiVersion || "2024-02-01")
     }
     if (provider.type === "openai-compatible") {
       setUserModels((provider.config?.models as Array<string>) || [])
@@ -1528,12 +1582,18 @@ function ModelsMenuItem({
         ...azureMappings,
         { model: deploymentName, deployment: deploymentName },
       ]
-      await updateProviderConfig(provider.id, {
-        endpoint: provider.config?.endpoint,
-        apiVersion: provider.config?.apiVersion || "2024-02-01",
+      const result = await updateProviderConfig(provider.id, {
+        endpoint: azureEndpoint,
+        apiVersion: azureAPIVersion,
         deployments: nextMappings,
       })
-      setAzureMappings(nextMappings)
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(
+          result.config?.deployments ?? nextMappings,
+        ),
+      )
+      setAzureEndpoint(result.config?.endpoint ?? azureEndpoint)
+      setAzureAPIVersion(result.config?.apiVersion ?? azureAPIVersion)
       setNewDeployment("")
       onModelsChanged?.()
       await load()
@@ -1554,12 +1614,18 @@ function ModelsMenuItem({
           mapping.deployment !== deploymentName
           && mapping.model !== deploymentName,
       )
-      await updateProviderConfig(provider.id, {
-        endpoint: provider.config?.endpoint,
-        apiVersion: provider.config?.apiVersion || "2024-02-01",
+      const result = await updateProviderConfig(provider.id, {
+        endpoint: azureEndpoint,
+        apiVersion: azureAPIVersion,
         deployments: nextMappings,
       })
-      setAzureMappings(nextMappings)
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(
+          result.config?.deployments ?? nextMappings,
+        ),
+      )
+      setAzureEndpoint(result.config?.endpoint ?? azureEndpoint)
+      setAzureAPIVersion(result.config?.apiVersion ?? azureAPIVersion)
       onModelsChanged?.()
       await load()
     } catch (e) {
@@ -2618,6 +2684,12 @@ function ProviderCard({
               onCancel={() => setShowAuthForm(false)}
             />
           )}
+          {provider.type === "codex" && (
+            <CodexAuthForm
+              onSubmit={handleAuthSubmit}
+              onCancel={() => setShowAuthForm(false)}
+            />
+          )}
           {provider.type === "azure-openai" && (
             <AzureOpenAIAuthForm
               onSubmit={handleAuthSubmit}
@@ -2957,6 +3029,7 @@ function AddProviderFlow({
           {selectedType === "github-copilot" && (
             <AddFlowCopilotForm {...authFormProps} />
           )}
+          {selectedType === "codex" && <AddFlowCodexForm {...authFormProps} />}
           {selectedType === "antigravity" && (
             <AddFlowAntigravityForm {...authFormProps} />
           )}
@@ -3268,6 +3341,58 @@ function AddFlowCopilotForm({
               <Spin size={13} /> Connecting…
             </>
           : "Add with Token"}
+        </button>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AddFlowCodexForm({
+  onSubmit,
+  onCancel,
+  submitting,
+}: AddFlowFormProps) {
+  const [apiKey, setApiKey] = useState("")
+
+  const submit = async () => {
+    if (!apiKey.trim()) return
+    await onSubmit({ method: "api-key", apiKey: apiKey.trim() })
+  }
+
+  return (
+    <div style={addFlowPanelStyle}>
+      <AddFlowHint>
+        Official Codex supports ChatGPT sign-in and API key authentication. Use
+        an OpenAI API key here for programmatic access.
+      </AddFlowHint>
+
+      <FormRow label="OpenAI API Key">
+        <SecretInput
+          placeholder="sk-..."
+          value={apiKey}
+          onChange={setApiKey}
+          style={addFlowTextInputStyle}
+          autoComplete="off"
+        />
+      </FormRow>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={submit}
+          disabled={submitting}
+        >
+          {submitting ?
+            <>
+              <Spin size={13} /> Connecting…
+            </>
+          : "Add with API Key"}
         </button>
         <button
           className="btn btn-ghost btn-sm"
@@ -3796,6 +3921,11 @@ const PROVIDER_TYPES = [
     desc: "Kimi models via API key",
   },
   {
+    id: "codex",
+    name: "Codex",
+    desc: "Official OpenAI Codex via ChatGPT or API key",
+  },
+  {
     id: "openai-compatible",
     name: "OpenAI-Compatible",
     desc: "Any OpenAI-compatible endpoint (Ollama, vLLM, LM Studio, etc.)",
@@ -4293,7 +4423,7 @@ export function ProvidersPage({ showToast }: ProvidersPageProps) {
               showActiveOnly ?
                 typeProviders.filter((p) => p.isActive)
               : typeProviders
-            if (showActiveOnly && visibleProviders.length === 0) return null
+            if (visibleProviders.length === 0) return null
             return [providerType, visibleProviders] as [string, Array<Provider>]
           })
           .filter((entry): entry is [string, Array<Provider>] => entry !== null)
