@@ -71,6 +71,48 @@ function Spin({ size = 14 }: { size?: number }) {
   )
 }
 
+interface AzureDeploymentMapping {
+  model: string
+  deployment: string
+}
+
+function normalizeAzureDeploymentMappings(
+  value: unknown,
+): Array<AzureDeploymentMapping> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => {
+    if (typeof item === "string") {
+      const trimmed = item.trim()
+      return trimmed ? [{ model: trimmed, deployment: trimmed }] : []
+    }
+    if (item && typeof item === "object") {
+      const model =
+        typeof (item as { model?: unknown }).model === "string" ?
+          (item as { model: string }).model.trim()
+        : ""
+      const deployment =
+        typeof (item as { deployment?: unknown }).deployment === "string" ?
+          (item as { deployment: string }).deployment.trim()
+        : ""
+      return model && deployment ? [{ model, deployment }] : []
+    }
+    return []
+  })
+}
+
+function serializeAzureDeploymentMappings(
+  mappings: Array<AzureDeploymentMapping>,
+): string {
+  return JSON.stringify(
+    mappings
+      .map((mapping) => ({
+        model: mapping.model.trim(),
+        deployment: mapping.deployment.trim(),
+      }))
+      .filter((mapping) => mapping.model && mapping.deployment),
+  )
+}
+
 // ─── Inline Auth Forms ────────────────────────────────────────────────────────
 
 function FormRow({
@@ -509,23 +551,42 @@ function AzureOpenAIAuthForm({
   const [apiKey, setApiKey] = useState("")
   const [endpoint, setEndpoint] = useState("")
   const [apiVersion, setApiVersion] = useState("")
-  const [deploymentsText, setDeploymentsText] = useState("")
-  const [isMultiline, setIsMultiline] = useState(false)
+  const [mappings, setMappings] = useState<Array<AzureDeploymentMapping>>([
+    { model: "", deployment: "" },
+  ])
+
+  const updateMapping = (
+    index: number,
+    field: keyof AzureDeploymentMapping,
+    value: string,
+  ) => {
+    setMappings((prev) =>
+      prev.map((mapping, i) =>
+        i === index ? { ...mapping, [field]: value } : mapping,
+      ),
+    )
+  }
+
+  const addMapping = () => {
+    setMappings((prev) => [...prev, { model: "", deployment: "" }])
+  }
+
+  const removeMapping = (index: number) => {
+    setMappings((prev) =>
+      prev.length === 1 ?
+        [{ model: "", deployment: "" }]
+      : prev.filter((_, i) => i !== index),
+    )
+  }
 
   const submit = async () => {
     if (!apiKey.trim()) return
-
-    // Parse deployments from either single-line or multi-line format
-    const deploymentsArray = deploymentsText
-      .split(/[,\n]/)
-      .map((s) => s.trim())
-      .filter(Boolean)
 
     await onSubmit({
       apiKey: apiKey.trim(),
       endpoint: endpoint.trim(),
       apiVersion: apiVersion.trim() || "2024-02-01",
-      deployments: JSON.stringify(deploymentsArray),
+      deployments: serializeAzureDeploymentMappings(mappings),
     })
   }
 
@@ -560,41 +621,57 @@ function AzureOpenAIAuthForm({
         />
       </FormRow>
 
-      <FormRow label="Deployments (optional)">
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {isMultiline ?
-            <textarea
-              className="sys-input"
-              placeholder="Enter deployment names, one per line"
-              value={deploymentsText}
-              onChange={(e) => setDeploymentsText(e.target.value)}
+      <FormRow label="Models + Deployments (optional)">
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {mappings.map((mapping, index) => (
+            <div
+              key={index}
               style={{
-                minHeight: 100,
-                fontFamily: "monospace",
-                fontSize: 13,
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr auto",
+                gap: 8,
+                alignItems: "center",
               }}
-            />
-          : <input
-              className="sys-input"
-              type="text"
-              placeholder="deployment1, deployment2, deployment3"
-              value={deploymentsText}
-              onChange={(e) => setDeploymentsText(e.target.value)}
-            />
-          }
+            >
+              <input
+                className="sys-input"
+                type="text"
+                placeholder="Model name (e.g. gpt-5.4)"
+                value={mapping.model}
+                onChange={(e) => updateMapping(index, "model", e.target.value)}
+              />
+              <input
+                className="sys-input"
+                type="text"
+                placeholder="Deployment name"
+                value={mapping.deployment}
+                onChange={(e) =>
+                  updateMapping(index, "deployment", e.target.value)
+                }
+              />
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => removeMapping(index)}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
           <button
             className="btn btn-ghost btn-sm"
-            onClick={() => setIsMultiline(!isMultiline)}
+            onClick={addMapping}
+            type="button"
             style={{ alignSelf: "flex-start" }}
           >
-            {isMultiline ? "Use single line" : "Use multi-line"}
+            + Add model mapping
           </button>
         </div>
       </FormRow>
 
       <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
-        Optionally set endpoint, API version, and deployments here, or configure
-        them later via the Configure button.
+        Configure app-facing model names separately from Azure deployment names.
+        You can also update mappings later via the provider’s Models menu.
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -626,10 +703,9 @@ function _ModelsDialog({
   const [configLoading, setConfigLoading] = useState(false)
 
   // Azure OpenAI deployment management
-  const [newDeployment, setNewDeployment] = useState("")
-  const [deployments, setDeployments] = useState<Array<string>>(
-    provider.config?.deployments || [],
-  )
+  const [azureMappings, setAzureMappings] = useState<
+    Array<AzureDeploymentMapping>
+  >(normalizeAzureDeploymentMappings(provider.config?.deployments))
 
   // OpenAI-compatible user-defined model management
   const [newModel, setNewModel] = useState("")
@@ -642,7 +718,9 @@ function _ModelsDialog({
 
   useEffect(() => {
     if (provider.type === "azure-openai") {
-      setDeployments(provider.config?.deployments || [])
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(provider.config?.deployments),
+      )
     }
     if (provider.type === "openai-compatible") {
       setUserModels((provider.config?.models as Array<string>) || [])
@@ -668,9 +746,10 @@ function _ModelsDialog({
   const handleOpen = () => {
     setOpen(true)
     if (models === null && !loading) load()
-    setNewDeployment("")
     if (provider.type === "azure-openai") {
-      setDeployments(provider.config?.deployments || [])
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(provider.config?.deployments),
+      )
     }
     if (provider.type === "openai-compatible") {
       setUserModels((provider.config?.models as Array<string>) || [])
@@ -701,28 +780,26 @@ function _ModelsDialog({
     }
   }
 
-  const handleAddDeployment = async () => {
-    if (!newDeployment.trim() || provider.type !== "azure-openai") return
-
-    const deploymentName = newDeployment.trim()
-    if (deployments.includes(deploymentName)) {
-      setError("Deployment already exists")
-      return
-    }
+  const saveAzureMappings = async (
+    nextMappings: Array<AzureDeploymentMapping>,
+  ) => {
+    if (provider.type !== "azure-openai") return
 
     setConfigLoading(true)
     setError(null)
     try {
-      const newDeployments = [...deployments, deploymentName]
       await updateProviderConfig(provider.id, {
         endpoint: provider.config?.endpoint,
         apiVersion: provider.config?.apiVersion || "2024-02-01",
-        deployments: newDeployments,
+        deployments: nextMappings
+          .map((mapping) => ({
+            model: mapping.model.trim(),
+            deployment: mapping.deployment.trim(),
+          }))
+          .filter((mapping) => mapping.model && mapping.deployment),
       })
-      setDeployments(newDeployments)
-      setNewDeployment("")
-      onModelsChanged?.() // Refresh provider data
-      // Reload models to show the new deployment
+      setAzureMappings(nextMappings)
+      onModelsChanged?.()
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -731,27 +808,30 @@ function _ModelsDialog({
     }
   }
 
-  const handleRemoveDeployment = async (deploymentName: string) => {
-    if (provider.type !== "azure-openai") return
+  const updateAzureMapping = (
+    index: number,
+    field: keyof AzureDeploymentMapping,
+    value: string,
+  ) => {
+    setAzureMappings((prev) =>
+      prev.map((mapping, i) =>
+        i === index ? { ...mapping, [field]: value } : mapping,
+      ),
+    )
+  }
 
-    setConfigLoading(true)
-    setError(null)
-    try {
-      const newDeployments = deployments.filter((d) => d !== deploymentName)
-      await updateProviderConfig(provider.id, {
-        endpoint: provider.config?.endpoint,
-        apiVersion: provider.config?.apiVersion || "2024-02-01",
-        deployments: newDeployments,
-      })
-      setDeployments(newDeployments)
-      onModelsChanged?.() // Refresh provider data
-      // Reload models to reflect the removed deployment
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setConfigLoading(false)
-    }
+  const addAzureMappingRow = () => {
+    setAzureMappings((prev) => [...prev, { model: "", deployment: "" }])
+  }
+
+  const removeAzureMappingRow = async (index: number) => {
+    if (provider.type !== "azure-openai") return
+    const nextMappings = azureMappings.filter((_, i) => i !== index)
+    await saveAzureMappings(nextMappings)
+  }
+
+  const persistAzureMappings = async () => {
+    await saveAzureMappings(azureMappings)
   }
 
   const handleAddUserModel = async () => {
@@ -984,39 +1064,83 @@ function _ModelsDialog({
                           marginBottom: 12,
                         }}
                       >
-                        Deployment Management
+                        Model ↔ Deployment Mapping
                       </div>
                       <div
                         style={{
                           display: "flex",
+                          flexDirection: "column",
                           gap: 8,
-                          alignItems: "center",
-                          marginBottom: 8,
+                          marginBottom: 10,
                         }}
                       >
-                        <input
-                          className="sys-input"
-                          placeholder="Add deployment name..."
-                          value={newDeployment}
-                          onChange={(e) => setNewDeployment(e.target.value)}
+                        {azureMappings.map((mapping, index) => (
+                          <div
+                            key={index}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 1fr auto",
+                              gap: 8,
+                              alignItems: "center",
+                            }}
+                          >
+                            <input
+                              className="sys-input"
+                              placeholder="Model name"
+                              value={mapping.model}
+                              onChange={(e) =>
+                                updateAzureMapping(
+                                  index,
+                                  "model",
+                                  e.target.value,
+                                )
+                              }
+                              disabled={configLoading}
+                              style={{ fontSize: 13 }}
+                            />
+                            <input
+                              className="sys-input"
+                              placeholder="Deployment name"
+                              value={mapping.deployment}
+                              onChange={(e) =>
+                                updateAzureMapping(
+                                  index,
+                                  "deployment",
+                                  e.target.value,
+                                )
+                              }
+                              disabled={configLoading}
+                              style={{ fontSize: 13 }}
+                            />
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => removeAzureMappingRow(index)}
+                              disabled={configLoading}
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={addAzureMappingRow}
                           disabled={configLoading}
-                          style={{ flex: 1, fontSize: 13 }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault()
-                              handleAddDeployment()
-                            }
-                          }}
-                        />
+                          type="button"
+                        >
+                          + Add mapping
+                        </button>
                         <button
                           className="btn btn-primary btn-sm"
-                          onClick={handleAddDeployment}
-                          disabled={configLoading || !newDeployment.trim()}
-                          style={{ minWidth: 32, padding: "6px 8px" }}
+                          onClick={persistAzureMappings}
+                          disabled={configLoading}
+                          type="button"
                         >
                           {configLoading ?
                             <Spin size={12} />
-                          : "+"}
+                          : "Save mappings"}
                         </button>
                       </div>
                       <div
@@ -1025,8 +1149,8 @@ function _ModelsDialog({
                           color: "var(--color-text-tertiary)",
                         }}
                       >
-                        Enter deployment names from your Azure OpenAI resource.
-                        Each deployment becomes a model.
+                        Model names are shown in the app. Deployment names are
+                        sent to Azure at request time.
                       </div>
                     </div>
                   )}
@@ -1221,10 +1345,23 @@ function _ModelsDialog({
                         >
                           {/* Remove deployment button for Azure OpenAI */}
                           {provider.type === "azure-openai"
-                            && deployments.includes(m.id) && (
+                            && azureMappings.some(
+                              (mapping) =>
+                                mapping.deployment === m.id
+                                || mapping.model === m.id,
+                            ) && (
                               <button
                                 className="btn btn-ghost btn-sm"
-                                onClick={() => handleRemoveDeployment(m.id)}
+                                onClick={() => {
+                                  const mappingIndex = azureMappings.findIndex(
+                                    (mapping) =>
+                                      mapping.deployment === m.id
+                                      || mapping.model === m.id,
+                                  )
+                                  if (mappingIndex !== -1) {
+                                    void removeAzureMappingRow(mappingIndex)
+                                  }
+                                }}
                                 disabled={configLoading}
                                 style={{
                                   minWidth: 32,
@@ -1295,9 +1432,9 @@ function ModelsMenuItem({
   const [search, setSearch] = useState("")
   const [configLoading, setConfigLoading] = useState(false)
   const [newDeployment, setNewDeployment] = useState("")
-  const [deployments, setDeployments] = useState<Array<string>>(
-    provider.config?.deployments || [],
-  )
+  const [azureMappings, setAzureMappings] = useState<
+    Array<AzureDeploymentMapping>
+  >(normalizeAzureDeploymentMappings(provider.config?.deployments))
 
   // OpenAI-compatible user-defined model management
   const [newModel, setNewModel] = useState("")
@@ -1307,10 +1444,15 @@ function ModelsMenuItem({
   const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>(
     normalizeOpenAICompatibleAPIFormat(provider.config?.apiFormat),
   )
+  const deployments = new Set(
+    azureMappings.map((mapping) => mapping.deployment),
+  )
 
   useEffect(() => {
     if (provider.type === "azure-openai") {
-      setDeployments(provider.config?.deployments || [])
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(provider.config?.deployments),
+      )
     }
     if (provider.type === "openai-compatible") {
       setUserModels((provider.config?.models as Array<string>) || [])
@@ -1336,9 +1478,10 @@ function ModelsMenuItem({
   const handleOpen = () => {
     setOpen(true)
     if (models === null && !loading) load()
-    setNewDeployment("")
     if (provider.type === "azure-openai") {
-      setDeployments(provider.config?.deployments || [])
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(provider.config?.deployments),
+      )
     }
     if (provider.type === "openai-compatible") {
       setUserModels((provider.config?.models as Array<string>) || [])
@@ -1372,20 +1515,25 @@ function ModelsMenuItem({
   const handleAddDeployment = async () => {
     if (!newDeployment.trim() || provider.type !== "azure-openai") return
     const deploymentName = newDeployment.trim()
-    if (deployments.includes(deploymentName)) {
+    if (
+      azureMappings.some((mapping) => mapping.deployment === deploymentName)
+    ) {
       setError("Deployment already exists")
       return
     }
     setConfigLoading(true)
     setError(null)
     try {
-      const newDeployments = [...deployments, deploymentName]
+      const nextMappings = [
+        ...azureMappings,
+        { model: deploymentName, deployment: deploymentName },
+      ]
       await updateProviderConfig(provider.id, {
         endpoint: provider.config?.endpoint,
         apiVersion: provider.config?.apiVersion || "2024-02-01",
-        deployments: newDeployments,
+        deployments: nextMappings,
       })
-      setDeployments(newDeployments)
+      setAzureMappings(nextMappings)
       setNewDeployment("")
       onModelsChanged?.()
       await load()
@@ -1401,13 +1549,17 @@ function ModelsMenuItem({
     setConfigLoading(true)
     setError(null)
     try {
-      const newDeployments = deployments.filter((d) => d !== deploymentName)
+      const nextMappings = azureMappings.filter(
+        (mapping) =>
+          mapping.deployment !== deploymentName
+          && mapping.model !== deploymentName,
+      )
       await updateProviderConfig(provider.id, {
         endpoint: provider.config?.endpoint,
         apiVersion: provider.config?.apiVersion || "2024-02-01",
-        deployments: newDeployments,
+        deployments: nextMappings,
       })
-      setDeployments(newDeployments)
+      setAzureMappings(nextMappings)
       onModelsChanged?.()
       await load()
     } catch (e) {
@@ -1883,7 +2035,7 @@ function ModelsMenuItem({
                           }}
                         >
                           {provider.type === "azure-openai"
-                            && deployments.includes(m.id) && (
+                            && deployments.has(m.id) && (
                               <button
                                 className="btn btn-ghost btn-sm"
                                 onClick={() => handleRemoveDeployment(m.id)}
@@ -3199,13 +3351,49 @@ function AddFlowAzureForm({
 }: AddFlowFormProps) {
   const [apiKey, setApiKey] = useState("")
   const [endpoint, setEndpoint] = useState("")
-  const submit = async () => {
-    if (!apiKey.trim() || !endpoint.trim()) return
-    await onSubmit({ apiKey: apiKey.trim(), endpoint: endpoint.trim() })
+  const [apiVersion, setApiVersion] = useState("")
+  const [mappings, setMappings] = useState<Array<AzureDeploymentMapping>>([
+    { model: "", deployment: "" },
+  ])
+
+  const updateMapping = (
+    index: number,
+    field: keyof AzureDeploymentMapping,
+    value: string,
+  ) => {
+    setMappings((prev) =>
+      prev.map((mapping, i) =>
+        i === index ? { ...mapping, [field]: value } : mapping,
+      ),
+    )
   }
+
+  const addMapping = () => {
+    setMappings((prev) => [...prev, { model: "", deployment: "" }])
+  }
+
+  const removeMapping = (index: number) => {
+    setMappings((prev) =>
+      prev.length === 1 ?
+        [{ model: "", deployment: "" }]
+      : prev.filter((_, i) => i !== index),
+    )
+  }
+
+  const submit = async () => {
+    if (!apiKey.trim()) return
+
+    await onSubmit({
+      apiKey: apiKey.trim(),
+      endpoint: endpoint.trim(),
+      apiVersion: apiVersion.trim() || "2024-02-01",
+      deployments: serializeAzureDeploymentMappings(mappings),
+    })
+  }
+
   return (
     <div style={addFlowPanelStyle}>
-      <FormRow label="Endpoint">
+      <FormRow label="Endpoint (optional)">
         <input
           type="text"
           placeholder="https://your-resource.openai.azure.com"
@@ -3214,6 +3402,67 @@ function AddFlowAzureForm({
           style={addFlowTextInputStyle}
           autoComplete="off"
         />
+      </FormRow>
+      <FormRow label="API Version (optional)">
+        <input
+          type="text"
+          placeholder="2024-02-01"
+          value={apiVersion}
+          onChange={(e) => setApiVersion(e.target.value)}
+          style={addFlowTextInputStyle}
+          autoComplete="off"
+        />
+      </FormRow>
+      <FormRow label="Models + Deployments (optional)">
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {mappings.map((mapping, index) => (
+            <div
+              key={index}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr auto",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Model name (e.g. gpt-5.4)"
+                value={mapping.model}
+                onChange={(e) => updateMapping(index, "model", e.target.value)}
+                style={addFlowTextInputStyle}
+                autoComplete="off"
+              />
+              <input
+                type="text"
+                placeholder="Deployment name"
+                value={mapping.deployment}
+                onChange={(e) =>
+                  updateMapping(index, "deployment", e.target.value)
+                }
+                style={addFlowTextInputStyle}
+                autoComplete="off"
+              />
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => removeMapping(index)}
+                disabled={submitting}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={addMapping}
+            disabled={submitting}
+            type="button"
+            style={{ alignSelf: "flex-start" }}
+          >
+            + Add model mapping
+          </button>
+        </div>
       </FormRow>
       <FormRow label="API Key">
         <SecretInput
@@ -3225,8 +3474,8 @@ function AddFlowAzureForm({
         />
       </FormRow>
       <AddFlowHint>
-        Use your Azure endpoint and key here. Deployments can be configured
-        after the provider is added.
+        Configure app-facing model names separately from Azure deployment names.
+        You can also update mappings later from the provider’s Models menu.
       </AddFlowHint>
       <div style={{ display: "flex", gap: 8 }}>
         <button
