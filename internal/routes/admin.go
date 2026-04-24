@@ -151,6 +151,10 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.POST("/providers/add/:type", handleAddProviderInstance)
 	router.POST("/providers/auth-and-create/:type", handleAuthAndCreateProvider)
 
+	// Antigravity Google OAuth2 authorization-code flow
+	// Note: oauth-callback and oauth-status are registered on the public group in server.go
+	router.POST("/providers/antigravity/start-oauth", handleAntigravityStartOAuth)
+
 	// System info and status
 	router.GET("/status", handleGetStatus)
 	router.GET("/auth-status", handleGetAuthStatus)
@@ -940,8 +944,18 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			},
 		})
 
+	// ── Antigravity — delegates to the authorization-code OAuth flow ─────────
+	case "antigravity":
+		// The auth-and-create path is no longer used for Antigravity;
+		// the frontend calls POST /providers/antigravity/start-oauth directly.
+		// Return a clear error so any stale callers know which endpoint to use.
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "Use POST /api/admin/providers/antigravity/start-oauth to begin Google OAuth",
+		})
+
 	// ── API-key based providers ────────────────────────────────────────────────
-	case "azure-openai", "antigravity", "google", "kimi":
+	case "azure-openai", "google", "kimi":
 		instanceID := providerRegistry.NextInstanceID(providerType)
 		gen := generic.NewGenericProvider(providerType, instanceID, "")
 
