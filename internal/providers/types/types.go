@@ -35,6 +35,7 @@ type AuthOptions struct {
 	Deployments         string `json:"deployments,omitempty"` // JSON-encoded []string, used by azure-openai
 	APIVersion          string `json:"apiVersion,omitempty"`  // e.g. "2024-02-01", used by azure-openai
 	AllowLocalEndpoints bool   `json:"allowLocalEndpoints,omitempty"`
+	OAuthProvider       string `json:"oauthProvider,omitempty"` // "github" (default) or "google" for Codex
 }
 
 type Model struct {

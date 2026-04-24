@@ -29,6 +29,7 @@ import (
 	azurepkg "omnillm/internal/providers/azure"
 
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
+	codexpkg "omnillm/internal/providers/codex"
 
 	ghservice "omnillm/internal/services/github"
 )
@@ -892,6 +893,53 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			},
 		})
 
+	// ── Codex ────────────────────────────────────────────────────────────────
+	case "codex":
+		if strings.TrimSpace(req.APIKey) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "apiKey is required for Codex authentication",
+			})
+			return
+		}
+
+		canonicalID := providerRegistry.NextInstanceID("codex")
+		cdx := codexpkg.NewCodexProvider(canonicalID)
+		if err := cdx.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Codex authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := cdx.SaveToDB(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to save Codex credentials: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(cdx, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register Codex provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         cdx.GetInstanceID(),
+				"type":       cdx.GetID(),
+				"name":       cdx.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
 	// ── API-key based providers ────────────────────────────────────────────────
 	case "azure-openai", "antigravity", "google", "kimi":
 		instanceID := providerRegistry.NextInstanceID(providerType)
@@ -1217,6 +1265,17 @@ func handleProviderAuth(c *gin.Context) {
 	}
 
 	cop, isCopilot := provider.(*copilot.GitHubCopilotProvider)
+
+	// Codex: API-key auth only.
+	if _, isCodex := provider.(*codexpkg.CodexProvider); isCodex {
+		if strings.TrimSpace(req.APIKey) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "apiKey is required for Codex authentication",
+			})
+			return
+		}
+	}
 
 	// Alibaba: API-key only — OAuth is not supported.
 	if aliProv, ok := provider.(*alibabapkg.Provider); ok {

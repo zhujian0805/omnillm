@@ -37,9 +37,9 @@ Route AI traffic through a controlled internal endpoint instead of binding appli
 
 ![Virtual Models](docs/assets/virtual-models.png)
 
-### Admin Demo Video
+### Admin Demo
 
-[OmniLLM Admin Demo (MP4)](pages/admin/assets/OmniLLM%20Admin.mp4)
+<video src="pages/admin/OmniLLM_Admin.mp4" controls muted playsinline preload="metadata"></video>
 
 ## Quick Start
 
