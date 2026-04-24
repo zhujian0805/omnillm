@@ -440,8 +440,7 @@ export const authAndCreateProvider = (
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const updateProviderConfig = (id: string, config: Record<string, any>) =>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  apiFetch<{ success?: boolean; config?: any }>(
+  apiFetch<{ success?: boolean; config?: Provider["config"] }>(
     `/api/admin/providers/${id}/config`,
     { method: "PUT", body: JSON.stringify(config) },
   )

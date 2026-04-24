@@ -1528,12 +1528,16 @@ function ModelsMenuItem({
         ...azureMappings,
         { model: deploymentName, deployment: deploymentName },
       ]
-      await updateProviderConfig(provider.id, {
+      const result = await updateProviderConfig(provider.id, {
         endpoint: provider.config?.endpoint,
         apiVersion: provider.config?.apiVersion || "2024-02-01",
         deployments: nextMappings,
       })
-      setAzureMappings(nextMappings)
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(
+          result.config?.deployments ?? nextMappings,
+        ),
+      )
       setNewDeployment("")
       onModelsChanged?.()
       await load()
@@ -1554,12 +1558,16 @@ function ModelsMenuItem({
           mapping.deployment !== deploymentName
           && mapping.model !== deploymentName,
       )
-      await updateProviderConfig(provider.id, {
+      const result = await updateProviderConfig(provider.id, {
         endpoint: provider.config?.endpoint,
         apiVersion: provider.config?.apiVersion || "2024-02-01",
         deployments: nextMappings,
       })
-      setAzureMappings(nextMappings)
+      setAzureMappings(
+        normalizeAzureDeploymentMappings(
+          result.config?.deployments ?? nextMappings,
+        ),
+      )
       onModelsChanged?.()
       await load()
     } catch (e) {
