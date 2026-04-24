@@ -769,18 +769,25 @@
 
 /* ─── Dialog ────────────────────────────────────────────────────────────── */
 
+:root {
+  --dialog-top-offset: 52px;
+  --dialog-padding-y: 24px;
+  --dialog-padding-x: 20px;
+}
+
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  top: 52px;
+  top: var(--dialog-top-offset);
   background: rgba(1,4,9,0.65);
   backdrop-filter: blur(6px);
   z-index: 100;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 24px 20px;
+  padding: var(--dialog-padding-y) var(--dialog-padding-x);
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .dialog-box {
@@ -789,12 +796,20 @@
   border-radius: var(--radius-xl);
   width: 100%;
   max-width: 560px;
-  max-height: calc(100vh - 52px - 48px);
+  max-height: calc(100vh - var(--dialog-top-offset) - (2 * var(--dialog-padding-y)));
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-modal);
   animation: slide-up 0.2s var(--ease) both;
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+@supports (height: 100dvh) {
+  .dialog-box {
+    max-height: calc(100dvh - var(--dialog-top-offset) - (2 * var(--dialog-padding-y)));
+  }
 }
 
 .dialog-header {
@@ -810,6 +825,8 @@
   padding: 18px 20px 22px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ─── Toast ─────────────────────────────────────────────────────────────── */
