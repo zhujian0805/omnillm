@@ -152,8 +152,8 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	router.POST("/providers/auth-and-create/:type", handleAuthAndCreateProvider)
 
 	// Antigravity Google OAuth2 authorization-code flow
+	// Note: oauth-callback and oauth-status are registered on the public group in server.go
 	router.POST("/providers/antigravity/start-oauth", handleAntigravityStartOAuth)
-	router.GET("/providers/antigravity/oauth-callback", handleAntigravityOAuthCallback)
 
 	// System info and status
 	router.GET("/status", handleGetStatus)
