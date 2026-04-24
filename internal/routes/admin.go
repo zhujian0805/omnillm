@@ -905,6 +905,15 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
+		if providerType == "azure-openai" {
+			if rawCfg, cfgErr := loadProviderConfig(gen.GetInstanceID()); cfgErr == nil && rawCfg != nil {
+				normCfg := normalizeProviderConfigForStorage(providerType, rawCfg)
+				if len(normCfg) > 0 {
+					_ = database.NewProviderConfigStore().Save(gen.GetInstanceID(), normCfg)
+				}
+			}
+		}
+
 		if err := providerRegistry.Register(gen, true); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
@@ -927,10 +936,13 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 						}
 					case map[string]interface{}:
 						model, _ := typed["model"].(string)
+						deployment, _ := typed["deployment"].(string)
 						model = strings.TrimSpace(model)
-						if model != "" {
-							_ = modelStateStore.SetEnabled(gen.GetInstanceID(), model, true)
-						}
+						deployment = strings.TrimSpace(deployment)
+						if model == "" { model = deployment }
+						if deployment == "" { deployment = model }
+						if model != "" { _ = modelStateStore.SetEnabled(gen.GetInstanceID(), model, true) }
+						if deployment != "" && deployment != model { _ = modelStateStore.SetEnabled(gen.GetInstanceID(), deployment, true) }
 					}
 				}
 			}
@@ -1332,6 +1344,15 @@ func handleProviderAuth(c *gin.Context) {
 	if isCopilot {
 		if err := cop.SaveToDB(); err != nil {
 			log.Error().Err(err).Str("provider", providerID).Msg("Failed to save token to database")
+		}
+	}
+
+	if provider.GetID() == "azure-openai" {
+		if rawCfg, cfgErr := loadProviderConfig(providerID); cfgErr == nil && rawCfg != nil {
+			normCfg := normalizeProviderConfigForStorage(provider.GetID(), rawCfg)
+			if len(normCfg) > 0 {
+				_ = database.NewProviderConfigStore().Save(providerID, normCfg)
+			}
 		}
 	}
 
