@@ -1481,6 +1481,12 @@ function ModelsMenuItem({
   const [azureMappings, setAzureMappings] = useState<
     Array<AzureDeploymentMapping>
   >(normalizeAzureDeploymentMappings(provider.config?.deployments))
+  const [azureEndpoint, setAzureEndpoint] = useState<string | undefined>(
+    provider.config?.endpoint,
+  )
+  const [azureAPIVersion, setAzureAPIVersion] = useState<string>(
+    provider.config?.apiVersion || "2024-02-01",
+  )
 
   // OpenAI-compatible user-defined model management
   const [newModel, setNewModel] = useState("")
@@ -1499,6 +1505,8 @@ function ModelsMenuItem({
       setAzureMappings(
         normalizeAzureDeploymentMappings(provider.config?.deployments),
       )
+      setAzureEndpoint(provider.config?.endpoint)
+      setAzureAPIVersion(provider.config?.apiVersion || "2024-02-01")
     }
     if (provider.type === "openai-compatible") {
       setUserModels((provider.config?.models as Array<string>) || [])
@@ -1575,8 +1583,8 @@ function ModelsMenuItem({
         { model: deploymentName, deployment: deploymentName },
       ]
       const result = await updateProviderConfig(provider.id, {
-        endpoint: provider.config?.endpoint,
-        apiVersion: provider.config?.apiVersion || "2024-02-01",
+        endpoint: azureEndpoint,
+        apiVersion: azureAPIVersion,
         deployments: nextMappings,
       })
       setAzureMappings(
@@ -1584,6 +1592,8 @@ function ModelsMenuItem({
           result.config?.deployments ?? nextMappings,
         ),
       )
+      setAzureEndpoint(result.config?.endpoint ?? azureEndpoint)
+      setAzureAPIVersion(result.config?.apiVersion ?? azureAPIVersion)
       setNewDeployment("")
       onModelsChanged?.()
       await load()
@@ -1605,8 +1615,8 @@ function ModelsMenuItem({
           && mapping.model !== deploymentName,
       )
       const result = await updateProviderConfig(provider.id, {
-        endpoint: provider.config?.endpoint,
-        apiVersion: provider.config?.apiVersion || "2024-02-01",
+        endpoint: azureEndpoint,
+        apiVersion: azureAPIVersion,
         deployments: nextMappings,
       })
       setAzureMappings(
@@ -1614,6 +1624,8 @@ function ModelsMenuItem({
           result.config?.deployments ?? nextMappings,
         ),
       )
+      setAzureEndpoint(result.config?.endpoint ?? azureEndpoint)
+      setAzureAPIVersion(result.config?.apiVersion ?? azureAPIVersion)
       onModelsChanged?.()
       await load()
     } catch (e) {
