@@ -50,10 +50,14 @@ func BuildOpenAIPayload(model string, messages []map[string]interface{}, request
 	}
 
 	if request.Temperature != nil {
-		payload["temperature"] = *request.Temperature
+		if !shared.IsReasoningModel(model) {
+			payload["temperature"] = *request.Temperature
+		}
 	}
 	if request.TopP != nil {
-		payload["top_p"] = *request.TopP
+		if !shared.IsReasoningModel(model) {
+			payload["top_p"] = *request.TopP
+		}
 	}
 	if request.MaxTokens != nil {
 		modelLower := strings.ToLower(model)
