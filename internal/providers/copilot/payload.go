@@ -71,10 +71,14 @@ func (a *CopilotAdapter) convertCIFToOpenAI(request *cif.CanonicalRequest, toolN
 	}
 
 	if request.Temperature != nil {
-		payload["temperature"] = *request.Temperature
+		if !shared.IsReasoningModel(payload["model"].(string)) {
+			payload["temperature"] = *request.Temperature
+		}
 	}
 	if request.TopP != nil {
-		payload["top_p"] = *request.TopP
+		if !shared.IsReasoningModel(payload["model"].(string)) {
+			payload["top_p"] = *request.TopP
+		}
 	}
 	if request.MaxTokens != nil {
 		if copilotModelUsesMaxCompletionTokens(payload["model"].(string)) {
