@@ -492,6 +492,38 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			},
 		})
 
+	// ——————————————————————————————————————————————————————————————
+	case "openai-compatible":
+		instanceID := openaicompatprovider.CanonicalInstanceID(req.Endpoint, req.APIKey)
+		prov := openaicompatprovider.NewProvider(instanceID, "")
+
+		if err := prov.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(prov, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         prov.GetInstanceID(),
+				"type":       prov.GetID(),
+				"name":       prov.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("Unknown provider type '%s'", providerType),

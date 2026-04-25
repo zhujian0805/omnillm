@@ -966,15 +966,21 @@ function _ModelsDialog({
 
   const handleAddUserModel = async () => {
     if (!newModel.trim() || provider.type !== "openai-compatible") return
-    const modelID = newModel.trim()
-    if (userModels.includes(modelID)) {
-      setError("Model already in list")
+    const ids = newModel
+      .trim()
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (ids.length === 0) return
+    const alreadyExists = ids.some((id) => userModels.includes(id))
+    if (alreadyExists) {
+      setError("One or more models already in list")
       return
     }
     setConfigLoading(true)
     setError(null)
     try {
-      const updated = [...userModels, modelID]
+      const updated = [...userModels, ...ids]
       await updateProviderConfig(provider.id, { models: updated })
       setUserModels(updated)
       setNewModel("")
@@ -1721,15 +1727,21 @@ function ModelsMenuItem({
 
   const handleAddUserModel = async () => {
     if (!newModel.trim() || provider.type !== "openai-compatible") return
-    const modelID = newModel.trim()
-    if (userModels.includes(modelID)) {
-      setError("Model already in list")
+    const ids = newModel
+      .trim()
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (ids.length === 0) return
+    const alreadyExists = ids.some((id) => userModels.includes(id))
+    if (alreadyExists) {
+      setError("One or more models already in list")
       return
     }
     setConfigLoading(true)
     setError(null)
     try {
-      const updated = [...userModels, modelID]
+      const updated = [...userModels, ...ids]
       await updateProviderConfig(provider.id, { models: updated })
       setUserModels(updated)
       setNewModel("")
@@ -3865,9 +3877,20 @@ function AddFlowOpenAICompatibleForm({
   const [apiFormat, setApiFormat] = useState<OpenAICompatibleAPIFormat>("")
 
   const addModel = () => {
-    const id = newModel.trim()
-    if (!id || models.includes(id)) return
-    setModels((prev) => [...prev, id])
+    const raw = newModel.trim()
+    if (!raw) return
+    const ids = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (ids.length === 0) return
+    setModels((prev) => {
+      const next = [...prev]
+      for (const id of ids) {
+        if (!next.includes(id)) next.push(id)
+      }
+      return next
+    })
     setNewModel("")
   }
 
