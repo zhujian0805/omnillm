@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"omnillm/internal/cif"
+	"omnillm/internal/providers/shared"
 	"strings"
 	"time"
 )
@@ -65,11 +66,8 @@ func BuildResponsesPayload(request *cif.CanonicalRequest, model string) map[stri
 		payload["instructions"] = *request.SystemPrompt
 	}
 
-	// gpt-5.4-pro and gpt-5.1-codex-max do not support temperature
-	modelLower := strings.ToLower(model)
-	supportsTemperature := !strings.Contains(modelLower, "gpt-5.4-pro") &&
-		!strings.Contains(modelLower, "gpt-5.1-codex-max")
-	if supportsTemperature {
+	// o-series and gpt-5+ reasoning models do not support temperature.
+	if !shared.IsReasoningModel(model) {
 		if request.Temperature != nil {
 			payload["temperature"] = *request.Temperature
 		} else {
