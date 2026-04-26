@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
+	generic "omnillm/internal/providers/generic"
 	"omnillm/internal/registry"
 	"strings"
 	"sync/atomic"
@@ -932,6 +933,110 @@ func TestRenameProviderEndpointValidatesAndPersistsMetadata(t *testing.T) {
 			t.Fatalf("expected in-memory provider name to update, got %q", provider.GetName())
 		}
 	})
+
+	t.Run("providers list reflects persisted metadata", func(t *testing.T) {
+		provider.SetName("Stale In-Memory Name")
+
+		resp := getWithAuth(t, srv.URL+"/api/admin/providers")
+		body := readBody(t, resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+		}
+
+		var providers []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Subtitle string `json:"subtitle"`
+		}
+		if err := json.Unmarshal([]byte(body), &providers); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+
+		for _, listed := range providers {
+			if listed.ID != instanceID {
+				continue
+			}
+			if listed.Name != "Renamed Provider" {
+				t.Fatalf("expected DB-backed name, got %q", listed.Name)
+			}
+			if listed.Subtitle != "Renamed Subtitle" {
+				t.Fatalf("expected DB-backed subtitle, got %q", listed.Subtitle)
+			}
+			return
+		}
+
+		t.Fatalf("provider %q not found in providers list", instanceID)
+	})
+}
+
+
+func TestRenameProviderEndpointPreservesCustomNameAfterReload(t *testing.T) {
+	instanceID := fmt.Sprintf("alibaba-reload-%d", time.Now().UnixNano())
+	provider := generic.NewGenericProvider("alibaba", instanceID, "Original Name")
+	provider.SetName("Original Name")
+
+	configStore := database.NewProviderConfigStore()
+	if err := configStore.Save(instanceID, map[string]interface{}{
+		"auth_type": "api-key",
+		"region":    "global",
+	}); err != nil {
+		t.Fatalf("failed to seed provider config: %v", err)
+	}
+
+	tokenStore := database.NewTokenStore()
+	if err := tokenStore.Save(instanceID, map[string]interface{}{
+		"access_token": "test-token",
+	}); err != nil {
+		t.Fatalf("failed to seed provider token: %v", err)
+	}
+
+	store := database.NewProviderInstanceStore()
+	if err := store.Save(&database.ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: "alibaba",
+		Name:       provider.GetName(),
+		Subtitle:   "Original Subtitle",
+		Priority:   3,
+		Activated:  true,
+	}); err != nil {
+		t.Fatalf("failed to seed provider record: %v", err)
+	}
+
+	reg := registry.GetProviderRegistry()
+	if err := reg.Register(provider, false); err != nil {
+		t.Fatalf("failed to register provider: %v", err)
+	}
+	defer func() {
+		_ = reg.Remove(instanceID)
+	}()
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := patchJSON(t, srv.URL+"/api/admin/providers/"+instanceID+"/name", `{"name":"Renamed Provider","subtitle":"Renamed Subtitle"}`)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+
+	_ = reg.Remove(instanceID)
+
+	record, err := store.Get(instanceID)
+	if err != nil {
+		t.Fatalf("failed to reload provider record: %v", err)
+	}
+	if record == nil {
+		t.Fatal("expected provider record to exist")
+	}
+
+	reloaded := generic.NewGenericProvider(record.ProviderID, record.InstanceID, record.Name)
+	if err := reloaded.LoadFromDB(); err != nil {
+		t.Fatalf("failed to reload provider from DB: %v", err)
+	}
+
+	if reloaded.GetName() != "Renamed Provider" {
+		t.Fatalf("expected custom name to survive reload, got %q", reloaded.GetName())
+	}
 }
 
 func TestStreamingEndpointsExposeExpectedEventShapes(t *testing.T) {

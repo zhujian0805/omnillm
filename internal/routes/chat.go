@@ -116,6 +116,7 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 		modelRoute, err := modelrouting.ResolveProvidersForModel(
 			attempt.RequestedModel,
 			attempt.NormalizedModel,
+			attempt.ProviderID,
 			modelCache,
 		)
 		if err != nil {

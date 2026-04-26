@@ -76,8 +76,10 @@ func (p *GitHubCopilotProvider) LoadFromDB() error {
 	if ea, ok := tokenData["expires_at"].(float64); ok {
 		p.expiresAt = int64(ea)
 	}
-	if name, ok := tokenData["name"].(string); ok && name != "" {
-		p.name = name
+	if p.name == "" {
+		if name, ok := tokenData["name"].(string); ok && name != "" {
+			p.name = name
+		}
 	}
 
 	// If we have a GitHub token, refresh the Copilot token if expired
@@ -104,5 +106,5 @@ func (p *GitHubCopilotProvider) SaveToDB() error {
 		"name":          p.name,
 	}
 
-	return tokenStore.Save(p.instanceID, p.id, tokenData)
+	return tokenStore.Save(p.instanceID, tokenData)
 }

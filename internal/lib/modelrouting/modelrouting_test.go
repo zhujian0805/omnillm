@@ -295,7 +295,7 @@ func TestResolveProvidersForModel_AlibabaOpenAICompatibleIncluded(t *testing.T) 
 	}
 
 	cache := NewModelCache()
-	route, err := ResolveProvidersForModel("qwen3.6-plus", "qwen3.6-plus", cache)
+	route, err := ResolveProvidersForModel("qwen3.6-plus", "qwen3.6-plus", "", cache)
 	if err != nil {
 		t.Fatalf("ResolveProvidersForModel() error = %v", err)
 	}

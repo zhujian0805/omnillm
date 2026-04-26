@@ -29,6 +29,7 @@ func handleGetProviders(c *gin.Context) {
 	providers := providerRegistry.ListProviders()
 
 	providerList := make([]map[string]interface{}, 0, len(providers))
+	instanceStore := database.NewProviderInstanceStore()
 	for _, provider := range providers {
 		config, configErr := loadProviderConfig(provider.GetInstanceID())
 		if configErr != nil {
@@ -40,17 +41,22 @@ func handleGetProviders(c *gin.Context) {
 			authStatus = "authenticated"
 		}
 
+		name := provider.GetName()
+		subtitle := ""
+		if dbRecord, dbErr := instanceStore.Get(provider.GetInstanceID()); dbErr == nil && dbRecord != nil {
+			if dbRecord.Name != "" {
+				name = dbRecord.Name
+			}
+			subtitle = dbRecord.Subtitle
+		}
+
 		providerInfo := map[string]interface{}{
 			"id":         provider.GetInstanceID(),
 			"type":       provider.GetID(),
-			"name":       provider.GetName(),
+			"name":       name,
+			"subtitle":   subtitle,
 			"isActive":   providerRegistry.IsActiveProvider(provider.GetInstanceID()),
 			"authStatus": authStatus,
-		}
-
-		// Load subtitle from DB record (it's not stored on the in-memory provider)
-		if dbRecord, dbErr := database.NewProviderInstanceStore().Get(provider.GetInstanceID()); dbErr == nil && dbRecord != nil {
-			providerInfo["subtitle"] = dbRecord.Subtitle
 		}
 
 		if normalizedConfig := normalizeProviderConfigForFrontend(provider.GetID(), config); normalizedConfig != nil {
@@ -117,7 +123,7 @@ func handleAddProviderInstance(c *gin.Context) {
 	var provider types.Provider
 	switch providerType {
 	case "github-copilot":
-		provider = copilot.NewGitHubCopilotProvider(instanceID)
+		provider = copilot.NewGitHubCopilotProvider(instanceID, "")
 	case "antigravity", "alibaba", "azure-openai", "google", "kimi":
 		provider = generic.NewGenericProvider(providerType, instanceID, "")
 	case "openai-compatible":
@@ -243,7 +249,7 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 
 	// ——————————————————————————————————————————————————————————————
 	case "github-copilot":
-		cop := copilot.NewGitHubCopilotProvider("copilot-tmp")
+		cop := copilot.NewGitHubCopilotProvider("copilot-tmp", "")
 
 		if req.Method == "oauth" || (req.GithubToken == "" && req.Token == "") {
 			deviceCode, err := cop.InitiateDeviceCodeFlow()

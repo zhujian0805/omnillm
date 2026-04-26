@@ -44,7 +44,7 @@ func TestCopilotAdapterExecute_TranslatesSpecificToolChoiceForChatCompletions(t 
 	}))
 	defer server.Close()
 
-	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
 	provider.baseURL = server.URL
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
@@ -118,7 +118,7 @@ func TestCopilotAdapterExecute_StripsThinkingPartsFromPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
 	provider.baseURL = server.URL
 	provider.token = "test-token"
 	adapter := provider.GetAdapter().(*CopilotAdapter)
@@ -191,7 +191,7 @@ data: {"id":"chatcmpl_refresh","model":"claude-haiku-4.5","choices":[{"index":0,
 	}))
 	defer server.Close()
 
-	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
 	provider.baseURL = server.URL
 	provider.githubToken = "github-token"
 	provider.token = "stale-token"
@@ -274,7 +274,7 @@ func TestCopilotAdapterExecuteStream_DisableAuthRetryMakesSingleAttempt(t *testi
 	}))
 	defer server.Close()
 
-	provider := NewGitHubCopilotProvider("github-copilot-test")
+	provider := NewGitHubCopilotProvider("github-copilot-test", "")
 	provider.baseURL = server.URL
 	provider.githubToken = "github-token"
 	provider.token = "stale-token"

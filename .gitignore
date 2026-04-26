@@ -29,6 +29,7 @@ omnillm.exe
 
 # local tool artifacts
 .playwright-mcp/
+.gocache/
 .tmp-gocache/
 .tmp-gomodcache/
 

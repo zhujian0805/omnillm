@@ -60,7 +60,7 @@ func SetupAuth(instanceID string, options *types.AuthOptions) (token, baseURL, n
 
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{"access_token": options.APIKey}
-	if err := tokenStore.Save(instanceID, "google", tokenData); err != nil {
+	if err := tokenStore.Save(instanceID, tokenData); err != nil {
 		return "", "", "", fmt.Errorf("failed to save google token: %w", err)
 	}
 

@@ -208,7 +208,7 @@ func (p *CodexProvider) SaveToDB() error {
 		data["expires_at"]   = p.expiresAt
 		data["auth_method"]  = "github"
 	}
-	return database.NewTokenStore().Save(p.instanceID, p.id, data)
+	return database.NewTokenStore().Save(p.instanceID, data)
 }
 
 // LoadFromDB restores credentials from the database.

@@ -62,6 +62,7 @@ func handleResponses(c *gin.Context) {
 	modelRoute, err := modelrouting.ResolveProvidersForModel(
 		canonicalRequest.Model,
 		normalizedModel,
+		"",
 		modelCache,
 	)
 	if err != nil {
