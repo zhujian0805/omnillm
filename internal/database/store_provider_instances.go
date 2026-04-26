@@ -98,3 +98,34 @@ func (pis *ProviderInstanceStore) SetActivation(instanceID string, activated boo
 	`, activatedInt, instanceID)
 	return err
 }
+
+func (pis *ProviderInstanceStore) UpdateMetadata(instanceID string, name *string, subtitle *string) error {
+	if name == nil && subtitle == nil {
+		return nil
+	}
+
+	if name != nil && subtitle != nil {
+		_, err := pis.db.db.Exec(`
+			UPDATE provider_instances
+			SET name = ?, subtitle = ?, updated_at = datetime('now')
+			WHERE instance_id = ?
+		`, *name, *subtitle, instanceID)
+		return err
+	}
+
+	if name != nil {
+		_, err := pis.db.db.Exec(`
+			UPDATE provider_instances
+			SET name = ?, updated_at = datetime('now')
+			WHERE instance_id = ?
+		`, *name, instanceID)
+		return err
+	}
+
+	_, err := pis.db.db.Exec(`
+		UPDATE provider_instances
+		SET subtitle = ?, updated_at = datetime('now')
+		WHERE instance_id = ?
+	`, *subtitle, instanceID)
+	return err
+}

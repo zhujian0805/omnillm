@@ -1120,7 +1120,6 @@ func handleRenameProvider(c *gin.Context) {
 		return
 	}
 
-	// Persist to database
 	instanceStore := database.NewProviderInstanceStore()
 	record, err := instanceStore.Get(providerID)
 	if err != nil || record == nil {
@@ -1128,27 +1127,31 @@ func handleRenameProvider(c *gin.Context) {
 		return
 	}
 
+	var newName *string
 	if req.Name != nil {
-		newName := strings.TrimSpace(*req.Name)
-		if newName == "" {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "name cannot be empty"})
 			return
 		}
-		record.Name = newName
-		// Update in-memory name on the live provider
+		newName = &trimmed
+		record.Name = trimmed
 		providerRegistry := registry.GetProviderRegistry()
 		if provider, provErr := providerRegistry.GetProvider(providerID); provErr == nil {
-			provider.SetName(newName)
+			provider.SetName(trimmed)
 		}
-		log.Info().Str("provider", providerID).Str("name", newName).Msg("Provider renamed")
+		log.Info().Str("provider", providerID).Str("name", trimmed).Msg("Provider renamed")
 	}
 
+	var newSubtitle *string
 	if req.Subtitle != nil {
-		record.Subtitle = strings.TrimSpace(*req.Subtitle)
-		log.Info().Str("provider", providerID).Str("subtitle", record.Subtitle).Msg("Provider subtitle updated")
+		trimmed := strings.TrimSpace(*req.Subtitle)
+		newSubtitle = &trimmed
+		record.Subtitle = trimmed
+		log.Info().Str("provider", providerID).Str("subtitle", trimmed).Msg("Provider subtitle updated")
 	}
 
-	if err := instanceStore.Save(record); err != nil {
+	if err := instanceStore.UpdateMetadata(providerID, newName, newSubtitle); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist provider metadata"})
 		return
 	}
