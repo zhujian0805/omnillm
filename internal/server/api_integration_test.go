@@ -219,6 +219,23 @@ func getWithAuth(t *testing.T, url string) *http.Response {
 	return resp
 }
 
+func patchJSON(t *testing.T, url, body string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPatch, url, bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-api-key")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	return resp
+}
+
 func readBody(t *testing.T, resp *http.Response) string {
 	t.Helper()
 	defer resp.Body.Close()
@@ -822,6 +839,99 @@ func TestAnthropicMessagesRouteRewritesAlibabaAnthropicAliasBeforeProxy(t *testi
 	if capturedModel != "claude-haiku-4.5" {
 		t.Fatalf("expected provider to receive model %q, got %q", "claude-haiku-4.5", capturedModel)
 	}
+}
+
+func TestRenameProviderEndpointValidatesAndPersistsMetadata(t *testing.T) {
+	instanceID := fmt.Sprintf("rename-provider-%d", time.Now().UnixNano())
+	provider := &stubProvider{
+		id:         "stub-provider",
+		instanceID: instanceID,
+		name:       "Original Name",
+		models: &providertypes.ModelsResponse{
+			Object: "list",
+			Data:   []providertypes.Model{},
+		},
+	}
+
+	reg := registry.GetProviderRegistry()
+	if err := reg.Register(provider, false); err != nil {
+		t.Fatalf("failed to register provider: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = reg.Remove(instanceID)
+	})
+
+	store := database.NewProviderInstanceStore()
+	if err := store.Save(&database.ProviderInstanceRecord{
+		InstanceID: instanceID,
+		ProviderID: provider.GetID(),
+		Name:       provider.GetName(),
+		Subtitle:   "Original Subtitle",
+		Priority:   7,
+		Activated:  true,
+	}); err != nil {
+		t.Fatalf("failed to seed provider record: %v", err)
+	}
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	t.Run("rejects empty name", func(t *testing.T) {
+		resp := patchJSON(t, srv.URL+"/api/admin/providers/"+instanceID+"/name", `{"name":"   "}`)
+		body := readBody(t, resp)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", resp.StatusCode, body)
+		}
+		if !strings.Contains(body, "name cannot be empty") {
+			t.Fatalf("expected empty-name validation error, got: %s", body)
+		}
+	})
+
+	t.Run("updates only requested metadata", func(t *testing.T) {
+		resp := patchJSON(t, srv.URL+"/api/admin/providers/"+instanceID+"/name", `{"name":"Renamed Provider","subtitle":"Renamed Subtitle"}`)
+		body := readBody(t, resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+		}
+
+		var payload struct {
+			Success  bool   `json:"success"`
+			Name     string `json:"name"`
+			Subtitle string `json:"subtitle"`
+		}
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatalf("invalid JSON: %v", err)
+		}
+		if !payload.Success {
+			t.Fatalf("expected success=true, got false: %s", body)
+		}
+		if payload.Name != "Renamed Provider" || payload.Subtitle != "Renamed Subtitle" {
+			t.Fatalf("unexpected payload: %+v", payload)
+		}
+
+		record, err := store.Get(instanceID)
+		if err != nil {
+			t.Fatalf("failed to reload provider record: %v", err)
+		}
+		if record == nil {
+			t.Fatal("expected provider record to exist")
+		}
+		if record.Name != "Renamed Provider" {
+			t.Fatalf("expected name to persist, got %q", record.Name)
+		}
+		if record.Subtitle != "Renamed Subtitle" {
+			t.Fatalf("expected subtitle to persist, got %q", record.Subtitle)
+		}
+		if record.Priority != 7 {
+			t.Fatalf("expected priority to remain 7, got %d", record.Priority)
+		}
+		if !record.Activated {
+			t.Fatal("expected activation flag to remain true")
+		}
+		if provider.GetName() != "Renamed Provider" {
+			t.Fatalf("expected in-memory provider name to update, got %q", provider.GetName())
+		}
+	})
 }
 
 func TestStreamingEndpointsExposeExpectedEventShapes(t *testing.T) {
