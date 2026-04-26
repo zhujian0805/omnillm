@@ -435,7 +435,7 @@ func SetupProviderAuth(instanceID string, options *types.AuthOptions) (token, ba
 	// Persist token (may be empty — that's fine).
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{"access_token": apiKey}
-	if err := tokenStore.Save(instanceID, "openai-compatible", tokenData); err != nil {
+	if err := tokenStore.Save(instanceID, tokenData); err != nil {
 		return "", "", "", nil, fmt.Errorf("openai-compatible: failed to save token: %w", err)
 	}
 

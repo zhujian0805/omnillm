@@ -74,7 +74,7 @@ func (p *GenericProvider) setupAntigravityAuth(options *types.AuthOptions) error
 		"client_id":     clientID,
 		"client_secret": clientSecret,
 	}
-	if err := tokenStore.Save(p.instanceID, "antigravity", tokenData); err != nil {
+	if err := tokenStore.Save(p.instanceID, tokenData); err != nil {
 		return fmt.Errorf("antigravity: failed to save client credentials: %w", err)
 	}
 
@@ -216,7 +216,7 @@ func (p *GenericProvider) PollGoogleDeviceCode(deviceCode string) error {
 			if tokenResp.RefreshToken != "" {
 				saved["refresh_token"] = tokenResp.RefreshToken
 			}
-			if err := tokenStore.Save(p.instanceID, "antigravity", saved); err != nil {
+			if err := tokenStore.Save(p.instanceID, saved); err != nil {
 				return fmt.Errorf("antigravity: failed to save token: %w", err)
 			}
 			log.Info().Str("provider", p.instanceID).Msg("Antigravity: Google OAuth completed")

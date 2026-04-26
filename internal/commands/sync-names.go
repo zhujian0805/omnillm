@@ -81,7 +81,7 @@ Supported providers: github-copilot, antigravity`,
 				newName = ghservice.CopilotProviderName(user)
 				// Persist name into token_data so LoadFromDB restores it on restart.
 				td["name"] = newName
-				_ = tokenStore.Save(inst.InstanceID, inst.ProviderID, td)
+				_ = tokenStore.Save(inst.InstanceID, td)
 
 			case "antigravity":
 				// Try stored email first; otherwise refresh the token and call userinfo.
@@ -103,7 +103,7 @@ Supported providers: github-copilot, antigravity`,
 						email = antigravitypkg.FetchUserEmail(accessToken)
 						if email != "" {
 							td["email"] = email
-							_ = tokenStore.Save(inst.InstanceID, inst.ProviderID, td)
+							_ = tokenStore.Save(inst.InstanceID, td)
 						}
 					}
 				}

@@ -26,7 +26,7 @@ func InitializeDatabase(configDir string) error {
 	dbPath := filepath.Join(configDir, "database.sqlite")
 	log.Debug().Str("path", dbPath).Msg("Initializing SQLite database")
 
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON")
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -55,157 +55,220 @@ func GetDatabase() *Database {
 }
 
 func (db *Database) createTables() error {
-	queries := []string{
-		// Configuration table
+	// Core tables — never modified after creation; schema changes go through migrations below.
+	tables := []string{
+		// Schema migrations — tracks which migrations have been applied.
+		`CREATE TABLE IF NOT EXISTS schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			applied_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+
+		// Key-value application configuration.
 		`CREATE TABLE IF NOT EXISTS config (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL,
+			key        TEXT PRIMARY KEY,
+			value      TEXT NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
 			updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 
-		// Provider instances table
+		// Provider instances — root entity for every configured AI provider.
 		`CREATE TABLE IF NOT EXISTS provider_instances (
-			instance_id TEXT PRIMARY KEY,
-			provider_id TEXT NOT NULL,
-			name TEXT NOT NULL,
-			priority INTEGER NOT NULL DEFAULT 0,
-			activated INTEGER NOT NULL DEFAULT 0 CHECK (activated IN (0, 1)),
-			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-			updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+			instance_id TEXT    PRIMARY KEY,
+			provider_id TEXT    NOT NULL,
+			name        TEXT    NOT NULL,
+			subtitle    TEXT    NOT NULL DEFAULT '',
+			priority    INTEGER NOT NULL DEFAULT 0,
+			activated   INTEGER NOT NULL DEFAULT 0 CHECK (activated IN (0, 1)),
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 
-		// Tokens table
+		// Credentials for each provider instance (one row per instance).
+		// provider_id is intentionally omitted — join provider_instances for that.
 		`CREATE TABLE IF NOT EXISTS tokens (
 			instance_id TEXT PRIMARY KEY,
-			provider_id TEXT NOT NULL,
-			token_data TEXT NOT NULL,
-			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-			updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			token_data  TEXT NOT NULL,
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
-		// Provider model states table
+		// Per-model enabled/disabled overrides for a provider instance.
 		`CREATE TABLE IF NOT EXISTS provider_model_states (
-			instance_id TEXT NOT NULL,
-			model_id TEXT NOT NULL,
-			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-			updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			instance_id TEXT    NOT NULL,
+			model_id    TEXT    NOT NULL,
+			enabled     INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (instance_id, model_id),
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
-		// Provider configurations table
+		// Provider-level configuration blob (one row per instance).
 		`CREATE TABLE IF NOT EXISTS provider_configs (
 			instance_id TEXT PRIMARY KEY,
 			config_data TEXT NOT NULL,
-			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-			updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
-		// Model configurations table
+		// Per-model configuration and version tracking.
+		// version is INTEGER so numeric ordering works correctly.
 		`CREATE TABLE IF NOT EXISTS model_configs (
-			instance_id TEXT NOT NULL,
-			model_id TEXT NOT NULL,
-			version TEXT NOT NULL DEFAULT '1',
-			config_data TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-			updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			instance_id TEXT    NOT NULL,
+			model_id    TEXT    NOT NULL,
+			version     INTEGER NOT NULL DEFAULT 1,
+			config_data TEXT    NOT NULL DEFAULT '{}',
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
 			PRIMARY KEY (instance_id, model_id),
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
-		// Provider models cache table
+		// Cached model list returned by each provider's /models endpoint.
 		`CREATE TABLE IF NOT EXISTS provider_models_cache (
 			instance_id TEXT PRIMARY KEY,
-			models_data TEXT NOT NULL,
-			cached_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			models_data TEXT    NOT NULL,
+			cached_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
 		)`,
 
-		// Chat sessions table
+		// Chat sessions.
 		`CREATE TABLE IF NOT EXISTS chat_sessions (
 			session_id TEXT PRIMARY KEY,
-			title TEXT NOT NULL,
-			model_id TEXT NOT NULL,
-			api_shape TEXT NOT NULL DEFAULT 'openai',
+			title      TEXT NOT NULL,
+			model_id   TEXT NOT NULL,
+			api_shape  TEXT NOT NULL DEFAULT 'openai',
 			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
 			updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 
-		// Chat messages table
+		// Chat messages — role is enforced at the DB level.
 		`CREATE TABLE IF NOT EXISTS chat_messages (
 			message_id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
-			role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-			content TEXT NOT NULL,
+			role       TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+			content    TEXT NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
 			FOREIGN KEY (session_id) REFERENCES chat_sessions (session_id) ON DELETE CASCADE
 		)`,
 
-		// Virtual models table
+		// Virtual (load-balanced) models.
 		`CREATE TABLE IF NOT EXISTS virtual_models (
-			virtual_model_id TEXT PRIMARY KEY,
-			name             TEXT NOT NULL,
-			description      TEXT NOT NULL DEFAULT '',
-			api_shape        TEXT NOT NULL DEFAULT 'openai',
-			lb_strategy      TEXT NOT NULL DEFAULT 'round-robin'
-			                 CHECK (lb_strategy IN ('round-robin','random','priority','weighted')),
+			virtual_model_id TEXT    PRIMARY KEY,
+			name             TEXT    NOT NULL,
+			description      TEXT    NOT NULL DEFAULT '',
+			api_shape        TEXT    NOT NULL DEFAULT 'openai',
+			lb_strategy      TEXT    NOT NULL DEFAULT 'round-robin'
+			                         CHECK (lb_strategy IN ('round-robin','random','priority','weighted')),
 			enabled          INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
 			updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 
-		// Virtual model upstreams table
+		// Upstream provider+model entries for each virtual model.
 		`CREATE TABLE IF NOT EXISTS virtual_model_upstreams (
 			id               INTEGER PRIMARY KEY AUTOINCREMENT,
-			virtual_model_id TEXT NOT NULL,
-			provider_id      TEXT NOT NULL DEFAULT '',
-			model_id         TEXT NOT NULL,
+			virtual_model_id TEXT    NOT NULL,
+			provider_id      TEXT    NOT NULL DEFAULT '',
+			model_id         TEXT    NOT NULL,
 			weight           INTEGER NOT NULL DEFAULT 1,
 			priority         INTEGER NOT NULL DEFAULT 0,
 			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
-			FOREIGN KEY (virtual_model_id)
-				REFERENCES virtual_models(virtual_model_id) ON DELETE CASCADE
+			FOREIGN KEY (virtual_model_id) REFERENCES virtual_models (virtual_model_id) ON DELETE CASCADE
 		)`,
-		// Backfill newer columns for existing databases
-		`ALTER TABLE virtual_model_upstreams ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE provider_instances ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''`,
 	}
 
-	for _, query := range queries {
-		if _, err := db.db.Exec(query); err != nil {
-			if strings.Contains(query, "ALTER TABLE") && strings.Contains(err.Error(), "duplicate column name") {
-				continue
-			}
-			return fmt.Errorf("failed to execute query: %w", err)
+	for _, q := range tables {
+		if _, err := db.db.Exec(q); err != nil {
+			return fmt.Errorf("failed to create table: %w", err)
 		}
 	}
 
-	// Create indexes
+	// Indexes — IF NOT EXISTS makes these idempotent on every startup.
+	// Note: idx_provider_model_states_instance_id is intentionally absent —
+	// the composite PK (instance_id, model_id) already covers instance_id lookups.
+	// idx_provider_models_cache_cached_at is intentionally absent — TTL checks
+	// always go through the PK; there is no bulk-expiry sweep.
 	indexes := []string{
-		`CREATE INDEX IF NOT EXISTS idx_provider_instances_provider_id ON provider_instances (provider_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_instances_priority ON provider_instances (priority)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_instances_activated ON provider_instances (activated)`,
-		`CREATE INDEX IF NOT EXISTS idx_tokens_provider_id ON tokens (provider_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_model_states_instance_id ON provider_model_states (instance_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_model_states_enabled ON provider_model_states (enabled)`,
-		`CREATE INDEX IF NOT EXISTS idx_model_configs_instance_id ON model_configs (instance_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_model_configs_model_id ON model_configs (model_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages (session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_instances_provider_id  ON provider_instances (provider_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_instances_priority      ON provider_instances (priority)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_instances_activated     ON provider_instances (activated)`,
+		`CREATE INDEX IF NOT EXISTS idx_provider_model_states_enabled    ON provider_model_states (enabled)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_configs_instance_id        ON model_configs (instance_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_model_configs_model_id           ON model_configs (model_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id         ON chat_messages (session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_virtual_model_upstreams_vmodel_id ON virtual_model_upstreams (virtual_model_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_provider_models_cache_cached_at ON provider_models_cache (cached_at)`,
 	}
 
-	for _, indexQuery := range indexes {
-		if _, err := db.db.Exec(indexQuery); err != nil {
+	for _, q := range indexes {
+		if _, err := db.db.Exec(q); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
 	}
 
+	if err := db.applyMigrations(); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
 	log.Debug().Msg("Database tables created successfully")
+	return nil
+}
+
+// migration represents a single, idempotent schema change.
+type migration struct {
+	version    int
+	statements []string
+}
+
+// migrations is the ordered list of all schema migrations.
+// Never edit an existing entry — always append a new one.
+var migrations = []migration{
+	// v1: add subtitle to provider_instances (backfill for pre-subtitle databases).
+	{1, []string{`ALTER TABLE provider_instances ADD COLUMN subtitle TEXT NOT NULL DEFAULT ''`}},
+	// v2: add provider_id to virtual_model_upstreams (backfill for pre-provider_id databases).
+	{2, []string{`ALTER TABLE virtual_model_upstreams ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`}},
+	// v3: add provider_id column to tokens for existing rows that pre-date its removal
+	//     from the schema (kept for backward-compat reads; new code ignores it).
+	//     No-op on fresh databases where the column was never added.
+	{3, []string{`ALTER TABLE tokens ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''`}},
+	// v4: add updated_at to provider_models_cache using a SQLite-safe backfill path.
+	{4, []string{
+		`ALTER TABLE provider_models_cache ADD COLUMN updated_at DATETIME`,
+		`UPDATE provider_models_cache SET updated_at = cached_at WHERE updated_at IS NULL`,
+	}},
+}
+
+// applyMigrations runs any migrations that have not yet been applied.
+func (db *Database) applyMigrations() error {
+	for _, m := range migrations {
+		var count int
+		err := db.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, m.version).Scan(&count)
+		if err != nil {
+			return fmt.Errorf("migration %d: failed to check status: %w", m.version, err)
+		}
+		if count > 0 {
+			continue // already applied
+		}
+
+		for _, statement := range m.statements {
+			if _, err := db.db.Exec(statement); err != nil {
+				// "duplicate column name" means the column exists — treat as already applied.
+				if strings.Contains(err.Error(), "duplicate column name") {
+					log.Debug().Int("version", m.version).Msg("Migration already applied (column exists), continuing")
+					continue
+				}
+				return fmt.Errorf("migration %d: %w", m.version, err)
+			}
+		}
+
+		if _, err := db.db.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, m.version); err != nil {
+			return fmt.Errorf("migration %d: failed to record: %w", m.version, err)
+		}
+		log.Debug().Int("version", m.version).Msg("Applied schema migration")
+	}
 	return nil
 }
 

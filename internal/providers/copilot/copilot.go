@@ -5,11 +5,14 @@ import (
 	ghservice "omnillm/internal/services/github"
 )
 
-func NewGitHubCopilotProvider(instanceID string) *GitHubCopilotProvider {
+func NewGitHubCopilotProvider(instanceID, name string) *GitHubCopilotProvider {
+	if name == "" {
+		name = "GitHub Copilot"
+	}
 	return &GitHubCopilotProvider{
 		id:           "github-copilot",
 		instanceID:   instanceID,
-		name:         "GitHub Copilot",
+		name:         name,
 		baseURL:      "https://api.githubcopilot.com",
 		tokenFetcher: ghservice.GetCopilotToken,
 	}

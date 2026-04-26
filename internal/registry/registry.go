@@ -2,7 +2,6 @@
 package registry
 
 import (
-	"encoding/json"
 	"fmt"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/types"
@@ -16,7 +15,6 @@ type ProviderRegistry struct {
 	providers       map[string]types.Provider
 	activeProvider  types.Provider
 	activeProviders map[string]struct{}
-	configStore     *database.ConfigStore
 	instanceStore   *database.ProviderInstanceStore
 }
 
@@ -30,7 +28,6 @@ func GetProviderRegistry() *ProviderRegistry {
 		globalRegistry = &ProviderRegistry{
 			providers:       make(map[string]types.Provider),
 			activeProviders: make(map[string]struct{}),
-			configStore:     database.NewConfigStore(),
 			instanceStore:   database.NewProviderInstanceStore(),
 		}
 	})
@@ -295,7 +292,9 @@ func (pr *ProviderRegistry) saveConfigAsync() error {
 	}
 	pr.mu.RUnlock()
 
-	// Save provider instances and activation state to database
+	// Persist activation state to provider_instances — this is the single source
+	// of truth for which providers are active. The old config.active_providers
+	// key is no longer written.
 	for id, provider := range providers {
 		_, isActive := activeProviders[id]
 
@@ -323,17 +322,10 @@ func (pr *ProviderRegistry) saveConfigAsync() error {
 		}
 	}
 
-	// Save active provider IDs to config store
 	activeIDs := make([]string, 0, len(activeProviders))
 	for id := range activeProviders {
 		activeIDs = append(activeIDs, id)
 	}
-
-	activeJSON, _ := json.Marshal(activeIDs)
-	if err := pr.configStore.Set("active_providers", string(activeJSON)); err != nil {
-		log.Warn().Err(err).Msg("Failed to save active providers config")
-	}
-
 	log.Debug().Strs("active", activeIDs).Msg("Provider configuration saved")
 	return nil
 }

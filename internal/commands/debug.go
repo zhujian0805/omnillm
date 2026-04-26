@@ -63,7 +63,7 @@ var DebugCmd = &cobra.Command{
 				fmt.Println("  No tokens stored. Run 'omnillm auth' to authenticate.")
 			}
 			for _, t := range tokens {
-				fmt.Printf("  Instance: %s (provider: %s)\n", t.InstanceID, t.ProviderID)
+				fmt.Printf("  Instance: %s\n", t.InstanceID)
 			}
 		}
 		fmt.Println()

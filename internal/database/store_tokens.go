@@ -18,9 +18,9 @@ func (ts *TokenStore) Get(instanceID string) (*TokenRecord, error) {
 	var record TokenRecord
 	var createdAtStr, updatedAtStr string
 	err := ts.db.db.QueryRow(`
-		SELECT instance_id, provider_id, token_data, created_at, updated_at
+		SELECT instance_id, token_data, created_at, updated_at
 		FROM tokens WHERE instance_id = ?
-	`, instanceID).Scan(&record.InstanceID, &record.ProviderID, &record.TokenData, &createdAtStr, &updatedAtStr)
+	`, instanceID).Scan(&record.InstanceID, &record.TokenData, &createdAtStr, &updatedAtStr)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -34,20 +34,19 @@ func (ts *TokenStore) Get(instanceID string) (*TokenRecord, error) {
 	return &record, nil
 }
 
-func (ts *TokenStore) Save(instanceID, providerID string, tokenData interface{}) error {
+func (ts *TokenStore) Save(instanceID string, tokenData interface{}) error {
 	tokenJSON, err := json.Marshal(tokenData)
 	if err != nil {
 		return err
 	}
 
 	_, err = ts.db.db.Exec(`
-		INSERT INTO tokens (instance_id, provider_id, token_data, updated_at)
-		VALUES (?, ?, ?, datetime('now'))
+		INSERT INTO tokens (instance_id, token_data, updated_at)
+		VALUES (?, ?, datetime('now'))
 		ON CONFLICT(instance_id) DO UPDATE SET
-			provider_id = excluded.provider_id,
 			token_data = excluded.token_data,
 			updated_at = datetime('now')
-	`, instanceID, providerID, string(tokenJSON))
+	`, instanceID, string(tokenJSON))
 	return err
 }
 
@@ -56,10 +55,14 @@ func (ts *TokenStore) Delete(instanceID string) error {
 	return err
 }
 
+// GetAllByProvider returns all token records for a given provider type.
+// Joins provider_instances to avoid relying on the deprecated provider_id column in tokens.
 func (ts *TokenStore) GetAllByProvider(providerID string) ([]TokenRecord, error) {
 	rows, err := ts.db.db.Query(`
-		SELECT instance_id, provider_id, token_data, created_at, updated_at
-		FROM tokens WHERE provider_id = ?
+		SELECT t.instance_id, t.token_data, t.created_at, t.updated_at
+		FROM tokens t
+		JOIN provider_instances pi ON pi.instance_id = t.instance_id
+		WHERE pi.provider_id = ?
 	`, providerID)
 	if err != nil {
 		return nil, err
@@ -70,7 +73,7 @@ func (ts *TokenStore) GetAllByProvider(providerID string) ([]TokenRecord, error)
 	for rows.Next() {
 		var record TokenRecord
 		var createdAtStr, updatedAtStr string
-		if err := rows.Scan(&record.InstanceID, &record.ProviderID, &record.TokenData, &createdAtStr, &updatedAtStr); err != nil {
+		if err := rows.Scan(&record.InstanceID, &record.TokenData, &createdAtStr, &updatedAtStr); err != nil {
 			return nil, err
 		}
 		record.CreatedAt = parseTime(createdAtStr)
