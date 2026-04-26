@@ -57,7 +57,7 @@ func TestGoogleLoadFromDB(t *testing.T) {
 	})
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("google-1", "google", map[string]any{
+	if err := tokenStore.Save("google-1", map[string]any{
 		"access_token": "saved-api-key",
 	}); err != nil {
 		t.Fatalf("failed to save token: %v", err)
@@ -132,7 +132,7 @@ func TestGoogleGetModelsFetchesFromAPI(t *testing.T) {
 	defer server.Close()
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("google-1", "google", map[string]any{
+	if err := tokenStore.Save("google-1", map[string]any{
 		"access_token": "test-api-key",
 	}); err != nil {
 		t.Fatalf("failed to save token: %v", err)
@@ -598,7 +598,7 @@ func TestGoogleStreamEndToEnd(t *testing.T) {
 	defer server.Close()
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("google-e2e", "google", map[string]any{
+	if err := tokenStore.Save("google-e2e", map[string]any{
 		"access_token": "e2e-test-key",
 	}); err != nil {
 		t.Fatalf("failed to save token: %v", err)
@@ -698,7 +698,7 @@ func TestGoogleStreamEndToEndWithTools(t *testing.T) {
 	defer server.Close()
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("google-tools", "google", map[string]any{
+	if err := tokenStore.Save("google-tools", map[string]any{
 		"access_token": "tool-test-key",
 	}); err != nil {
 		t.Fatalf("failed to save token: %v", err)
@@ -792,7 +792,7 @@ func TestGoogleStreamEndToEndWithSystemPrompt(t *testing.T) {
 	defer server.Close()
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("google-sys", "google", map[string]any{
+	if err := tokenStore.Save("google-sys", map[string]any{
 		"access_token": "sys-test-key",
 	}); err != nil {
 		t.Fatalf("failed to save token: %v", err)

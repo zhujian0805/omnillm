@@ -1,9 +1,13 @@
 package database
 
 import (
+	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestMain(m *testing.M) {
@@ -93,16 +97,23 @@ func TestProviderInstanceStoreCRUD(t *testing.T) {
 }
 
 func TestTokenStoreCRUD(t *testing.T) {
+	// Insert a provider_instances row so the FK and JOIN in GetAllByProvider work.
+	instanceStore := NewProviderInstanceStore()
+	if err := instanceStore.Save(&ProviderInstanceRecord{
+		InstanceID: "provider-1",
+		ProviderID: "mock",
+		Name:       "Mock Provider",
+	}); err != nil {
+		t.Fatalf("setup provider instance: %v", err)
+	}
+
 	store := NewTokenStore()
-	if err := store.Save("provider-1", "mock", map[string]any{"token": "abc", "expires": 123}); err != nil {
+	if err := store.Save("provider-1", map[string]any{"token": "abc", "expires": 123}); err != nil {
 		t.Fatalf("save failed: %v", err)
 	}
 	got, err := store.Get("provider-1")
 	if err != nil || got == nil {
 		t.Fatalf("get failed: %#v err=%v", got, err)
-	}
-	if got.ProviderID != "mock" {
-		t.Fatalf("unexpected provider id: %#v", got)
 	}
 	all, err := store.GetAllByProvider("mock")
 	if err != nil || len(all) == 0 {
@@ -220,6 +231,98 @@ func TestCreateTablesIsIdempotentForBackfill(t *testing.T) {
 	}
 	if err := db.createTables(); err != nil {
 		t.Fatalf("second createTables call failed: %v", err)
+	}
+}
+
+func TestCreateTablesMigratesLegacyProviderModelsCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	rawDB, err := sql.Open("sqlite", filepath.Join(tmpDir, "legacy.sqlite"))
+	if err != nil {
+		t.Fatalf("open legacy database: %v", err)
+	}
+	defer rawDB.Close()
+
+	legacy := &Database{db: rawDB}
+	statements := []string{
+		`CREATE TABLE schema_migrations (
+			version    INTEGER PRIMARY KEY,
+			applied_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE provider_instances (
+			instance_id TEXT PRIMARY KEY,
+			provider_id TEXT NOT NULL,
+			name        TEXT NOT NULL,
+			priority    INTEGER NOT NULL DEFAULT 0,
+			activated   INTEGER NOT NULL DEFAULT 0 CHECK (activated IN (0, 1)),
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE tokens (
+			instance_id TEXT PRIMARY KEY,
+			token_data  TEXT NOT NULL,
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE virtual_models (
+			virtual_model_id TEXT    PRIMARY KEY,
+			name             TEXT    NOT NULL,
+			description      TEXT    NOT NULL DEFAULT '',
+			api_shape        TEXT    NOT NULL DEFAULT 'openai',
+			lb_strategy      TEXT    NOT NULL DEFAULT 'round-robin'
+			                         CHECK (lb_strategy IN ('round-robin','random','priority','weighted')),
+			enabled          INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at       DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE TABLE virtual_model_upstreams (
+			id               INTEGER PRIMARY KEY AUTOINCREMENT,
+			virtual_model_id TEXT    NOT NULL,
+			model_id         TEXT    NOT NULL,
+			weight           INTEGER NOT NULL DEFAULT 1,
+			priority         INTEGER NOT NULL DEFAULT 0,
+			created_at       DATETIME NOT NULL DEFAULT (datetime('now')),
+			FOREIGN KEY (virtual_model_id) REFERENCES virtual_models (virtual_model_id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE provider_models_cache (
+			instance_id TEXT PRIMARY KEY,
+			models_data TEXT    NOT NULL,
+			cached_at   DATETIME NOT NULL DEFAULT (datetime('now')),
+			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO schema_migrations (version) VALUES (1), (2), (3)`,
+		`INSERT INTO provider_instances (instance_id, provider_id, name) VALUES ('legacy-provider', 'mock', 'Legacy Provider')`,
+		`INSERT INTO provider_models_cache (instance_id, models_data, cached_at) VALUES ('legacy-provider', '{}', '2026-04-25 12:34:56')`,
+	}
+
+	for _, statement := range statements {
+		if _, err := rawDB.Exec(statement); err != nil {
+			t.Fatalf("seed legacy schema: %v", err)
+		}
+	}
+
+	if err := legacy.createTables(); err != nil {
+		t.Fatalf("migrate legacy schema: %v", err)
+	}
+
+	var updatedAt sql.NullString
+	if err := rawDB.QueryRow(`SELECT updated_at FROM provider_models_cache WHERE instance_id = ?`, "legacy-provider").Scan(&updatedAt); err != nil {
+		t.Fatalf("read migrated updated_at: %v", err)
+	}
+	if !updatedAt.Valid || !parseTime(updatedAt.String).Equal(time.Date(2026, 4, 25, 12, 34, 56, 0, time.UTC)) {
+		t.Fatalf("expected updated_at to be backfilled from cached_at, got %#v", updatedAt)
+	}
+
+	cacheStore := &ProviderModelsCacheStore{db: legacy}
+	if err := cacheStore.Save("legacy-provider", `{"models":["x"]}`); err != nil {
+		t.Fatalf("save migrated cache row: %v", err)
+	}
+
+	if err := rawDB.QueryRow(`SELECT updated_at FROM provider_models_cache WHERE instance_id = ?`, "legacy-provider").Scan(&updatedAt); err != nil {
+		t.Fatalf("read updated cache row: %v", err)
+	}
+	if !updatedAt.Valid || parseTime(updatedAt.String).Equal(time.Date(2026, 4, 25, 12, 34, 56, 0, time.UTC)) {
+		t.Fatalf("expected save to refresh updated_at, got %#v", updatedAt)
 	}
 }
 

@@ -72,7 +72,7 @@ func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, base
 
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{"access_token": options.APIKey}
-	if err := tokenStore.Save(instanceID, "kimi", tokenData); err != nil {
+	if err := tokenStore.Save(instanceID, tokenData); err != nil {
 		return "", "", "", nil, fmt.Errorf("failed to save kimi token: %w", err)
 	}
 
@@ -154,7 +154,7 @@ func SaveOAuthToken(instanceID string, td *TokenData) (newInstanceID, name, base
 	}
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save(newInstanceID, "kimi", td); err != nil {
+	if err := tokenStore.Save(newInstanceID, td); err != nil {
 		return "", "", "", fmt.Errorf("kimi: failed to save OAuth token: %w", err)
 	}
 

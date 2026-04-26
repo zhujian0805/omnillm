@@ -190,7 +190,7 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 	if tokenResp.RefreshToken != "" {
 		tokenData["refresh_token"] = tokenResp.RefreshToken
 	}
-	if err := tokenStore.Save(state.ProviderID, "antigravity", tokenData); err != nil {
+	if err := tokenStore.Save(state.ProviderID, tokenData); err != nil {
 		log.Error().Err(err).Str("provider", state.ProviderID).Msg("Antigravity: failed to save tokens")
 		renderOAuthResult(c, false, "Failed to save credentials — please try again")
 		return

@@ -48,11 +48,12 @@ func (cs *ProviderModelsCacheStore) Get(instanceID string, ttl time.Duration) (*
 // Save stores the model list in the cache.
 func (cs *ProviderModelsCacheStore) Save(instanceID, modelsData string) error {
 	_, err := cs.db.db.Exec(`
-		INSERT INTO provider_models_cache (instance_id, models_data, cached_at)
-		VALUES (?, ?, datetime('now'))
+		INSERT INTO provider_models_cache (instance_id, models_data, cached_at, updated_at)
+		VALUES (?, ?, datetime('now'), datetime('now'))
 		ON CONFLICT(instance_id) DO UPDATE SET
 			models_data = excluded.models_data,
-			cached_at = datetime('now')
+			cached_at = datetime('now'),
+			updated_at = datetime('now')
 	`, instanceID, modelsData)
 	return err
 }

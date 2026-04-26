@@ -151,24 +151,44 @@ func (p *Provider) GetAdapter() types.ProviderAdapter {
 
 // LoadFromDB restores persisted credentials and config from the database.
 func (p *Provider) LoadFromDB() error {
-	token, baseURL, config, err := LoadTokenFromDB(p.instanceID)
+	token, _, _, err := LoadTokenFromDB(p.instanceID)
 	if err != nil {
 		return err
 	}
 	if token != "" {
 		p.token = token
 	}
-	if baseURL != "" {
-		p.baseURL = baseURL
+
+	// Load the full provider config (plan, region, base_url, etc.) from
+	// provider_configs. This must happen before marking configOnce as done so
+	// that GetModels and other callers get the correct base URL.
+	store := database.NewProviderConfigStore()
+	rec, err := store.Get(p.instanceID)
+	if err != nil {
+		log.Warn().Err(err).Str("provider", p.instanceID).Msg("alibaba: failed to load provider config")
+	} else if rec != nil {
+		var cfg map[string]interface{}
+		if jsonErr := json.Unmarshal([]byte(rec.ConfigData), &cfg); jsonErr != nil {
+			log.Warn().Err(jsonErr).Str("provider", p.instanceID).Msg("alibaba: failed to parse provider config")
+		} else {
+			p.applyConfig(cfg)
+			// Legacy providers stored access_token directly in provider_configs.
+			// Migrate it to p.token if the tokens table had nothing.
+			if p.token == "" {
+				if at, ok := shared.FirstString(cfg, "access_token"); ok && at != "" {
+					p.token = at
+				}
+			}
+		}
 	}
-	if config != nil {
-		p.applyConfig(config)
+
+	if p.name == "" {
+		p.name = APIKeyProviderName(p.config)
 	}
-	p.name = APIKeyProviderName(p.config)
 	// Mark configOnce as done so ensureConfig is a no-op — credentials were
 	// already loaded above via LoadFromDB (called at startup by the registry).
 	p.configOnce.Do(func() {})
-	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Alibaba: loaded from DB")
+	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Str("base_url", p.baseURL).Msg("Alibaba: loaded from DB")
 	return nil
 }
 
@@ -186,7 +206,7 @@ func SetupAPIKeyAuth(instanceID string, options *types.AuthOptions) (token, base
 
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{"access_token": options.APIKey}
-	if err := tokenStore.Save(instanceID, "alibaba", tokenData); err != nil {
+	if err := tokenStore.Save(instanceID, tokenData); err != nil {
 		return "", "", "", nil, fmt.Errorf("alibaba: failed to save token: %w", err)
 	}
 

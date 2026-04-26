@@ -75,7 +75,15 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 	return openaicompat.BuildChatRequest(model, request, stream, cfg)
 }
 
+// ErrHardcodedFallback is returned alongside a hardcoded model list when the
+// live DashScope /models API is unavailable. Callers that cache model lists
+// should treat this as a soft error and skip caching so a future request can
+// retry the live API.
+var ErrHardcodedFallback = fmt.Errorf("alibaba: models fetch failed, using hardcoded fallback")
+
 // GetModels returns the available models for this Alibaba instance.
+// If the live API is unreachable it returns the hardcoded Qwen-only catalog
+// together with ErrHardcodedFallback so callers can decide whether to cache.
 func GetModels(instanceID, token, baseURL string, config map[string]interface{}) (*types.ModelsResponse, error) {
 	if token == "" {
 		return nil, fmt.Errorf("alibaba: not authenticated")
@@ -85,7 +93,7 @@ func GetModels(instanceID, token, baseURL string, config map[string]interface{})
 		return resp, nil
 	}
 	log.Warn().Err(err).Str("provider", instanceID).Msg("alibaba: falling back to hardcoded model list")
-	return GetModelsHardcoded(instanceID), nil
+	return GetModelsHardcoded(instanceID), ErrHardcodedFallback
 }
 
 // GetModelsHardcoded returns the fallback model catalog (Qwen models only).

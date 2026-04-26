@@ -278,7 +278,7 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 			var provider types.Provider
 			switch inst.ProviderID {
 			case "github-copilot":
-				p := copilot.NewGitHubCopilotProvider(inst.InstanceID)
+				p := copilot.NewGitHubCopilotProvider(inst.InstanceID, inst.Name)
 				if err := p.LoadFromDB(); err != nil {
 					log.Warn().Err(err).Str("instance", inst.InstanceID).Msg("Failed to load provider token")
 				}
@@ -320,7 +320,7 @@ func registerDefaultProviders(reg *registry.ProviderRegistry, options StartOptio
 	}
 
 	// No saved providers - register default
-	copilotProvider := copilot.NewGitHubCopilotProvider("github-copilot-1")
+	copilotProvider := copilot.NewGitHubCopilotProvider("github-copilot-1", "")
 
 	// Try loading token from DB
 	copilotProvider.LoadFromDB()
