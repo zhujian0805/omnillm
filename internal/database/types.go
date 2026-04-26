@@ -48,7 +48,6 @@ type ProviderInstanceRecord struct {
 
 type TokenRecord struct {
 	InstanceID string    `json:"instance_id"`
-	ProviderID string    `json:"provider_id"`
 	TokenData  string    `json:"token_data"` // JSON string
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`

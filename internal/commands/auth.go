@@ -90,13 +90,13 @@ var AuthCmd = &cobra.Command{
 			}
 		}
 
-		if err := tokenStore.Save(instanceID, "github-copilot", tokenData); err != nil {
+		if err := tokenStore.Save(instanceID, tokenData); err != nil {
 			return fmt.Errorf("failed to save token: %w", err)
 		}
 
 		// Register provider in registry
 		providerRegistry := registry.GetProviderRegistry()
-		copilotProvider := copilot.NewGitHubCopilotProvider(instanceID)
+		copilotProvider := copilot.NewGitHubCopilotProvider(instanceID, "")
 		if err := copilotProvider.SetupAuth(&types.AuthOptions{GithubToken: copilotToken.Token}); err != nil {
 			return fmt.Errorf("failed to configure provider auth: %w", err)
 		}

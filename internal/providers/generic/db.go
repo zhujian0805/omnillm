@@ -44,19 +44,17 @@ func (p *GenericProvider) LoadFromDB() error {
 		}
 		p.configOnce.Do(func() {})
 
-		if p.id == "alibaba" && p.token != "" {
+		if p.id == "alibaba" && p.token != "" && p.name == "" {
 			p.name = alibabapkg.APIKeyProviderName(p.config)
 			log.Info().Str("instanceID", p.instanceID).Str("newName", p.name).Msg("Updated Alibaba API key provider name")
 		}
 
-		if p.id == "antigravity" {
+		if p.id == "antigravity" && p.name == "" {
 			// Prefer email-based name if available; otherwise keep the existing name.
-			if record != nil {
-				var td map[string]interface{}
-				if jsonErr := json.Unmarshal([]byte(record.TokenData), &td); jsonErr == nil {
-					if email, ok := td["email"].(string); ok && email != "" {
-						p.name = "Antigravity (" + email + ")"
-					}
+			var td map[string]interface{}
+			if jsonErr := json.Unmarshal([]byte(record.TokenData), &td); jsonErr == nil {
+				if email, ok := td["email"].(string); ok && email != "" {
+					p.name = "Antigravity (" + email + ")"
 				}
 			}
 		}
@@ -64,7 +62,9 @@ func (p *GenericProvider) LoadFromDB() error {
 
 	if p.id == "google" && p.token != "" {
 		p.baseURL = providerBaseURLs["google"]
-		p.name = "Google Gemini"
+		if p.name == "" {
+			p.name = "Google Gemini"
+		}
 	}
 
 	log.Debug().Str("provider", p.instanceID).Bool("has_token", p.token != "").Msg("Loaded generic provider token")

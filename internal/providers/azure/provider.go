@@ -19,7 +19,7 @@ func SetupAuth(instanceID string, options *types.AuthOptions) (token, endpoint s
 
 	tokenStore := database.NewTokenStore()
 	tokenData := map[string]interface{}{"access_token": options.APIKey}
-	if err := tokenStore.Save(instanceID, "azure-openai", tokenData); err != nil {
+	if err := tokenStore.Save(instanceID, tokenData); err != nil {
 		return "", "", nil, fmt.Errorf("failed to save azure token: %w", err)
 	}
 

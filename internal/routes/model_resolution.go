@@ -11,6 +11,7 @@ import (
 type resolvedModelAttempt struct {
 	RequestedModel  string
 	NormalizedModel string
+	ProviderID      string // non-empty when resolved from a virtual model upstream with a specific provider
 }
 
 func resolveRequestedModel(requestID, requestedModel string) (string, string) {
@@ -54,11 +55,13 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 			Str("request_id", requestID).
 			Str("virtual_model", vm.VirtualModelID).
 			Str("upstream", upstream.ModelID).
+			Str("provider", upstream.ProviderID).
 			Str("strategy", string(vm.LbStrategy)).
 			Msg("Virtual model routing candidate")
 		attempts = append(attempts, resolvedModelAttempt{
 			RequestedModel:  upstream.ModelID,
 			NormalizedModel: modelrouting.NormalizeModelName(upstream.ModelID),
+			ProviderID:      upstream.ProviderID,
 		})
 	}
 

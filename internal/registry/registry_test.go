@@ -52,7 +52,6 @@ func newTestRegistry() *ProviderRegistry {
 	return &ProviderRegistry{
 		providers:       make(map[string]providertypes.Provider),
 		activeProviders: make(map[string]struct{}),
-		configStore:     database.NewConfigStore(),
 		instanceStore:   database.NewProviderInstanceStore(),
 	}
 }
@@ -139,7 +138,7 @@ func TestRemoveDeletesProviderAndToken(t *testing.T) {
 	}
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("mock-1", "mock", map[string]string{"token": "secret"}); err != nil {
+	if err := tokenStore.Save("mock-1", map[string]string{"token": "secret"}); err != nil {
 		t.Fatalf("save token failed: %v", err)
 	}
 

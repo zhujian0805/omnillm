@@ -27,7 +27,7 @@ func TestAlibabaGetModelsFetchesLiveModels(t *testing.T) {
 	defer server.Close()
 
 	tokenStore := database.NewTokenStore()
-	if err := tokenStore.Save("alibaba-live", "alibaba", map[string]interface{}{
+	if err := tokenStore.Save("alibaba-live", map[string]interface{}{
 		"access_token": "test-token",
 		"auth_type":    "api-key",
 		"base_url":     server.URL,

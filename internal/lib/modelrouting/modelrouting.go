@@ -2,8 +2,10 @@
 package modelrouting
 
 import (
+	"errors"
 	"fmt"
 	"omnillm/internal/database"
+	alibaba "omnillm/internal/providers/alibaba"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/registry"
 	"sort"
@@ -42,6 +44,12 @@ func GetCachedOrFetchModels(provider types.Provider, cache *ModelCache) (*types.
 	// Fetch from provider
 	models, err := provider.GetModels()
 	if err != nil {
+		if errors.Is(err, alibaba.ErrHardcodedFallback) {
+			// Return the degraded hardcoded list for this request but do not
+			// cache it — the next request should retry the live API.
+			log.Debug().Str("provider", instanceID).Msg("Skipping model cache due to hardcoded fallback")
+			return models, nil
+		}
 		log.Warn().
 			Str("provider", provider.GetName()).
 			Err(err).
@@ -119,11 +127,30 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 }
 
 // ResolveProvidersForModel determines which providers and models to use for a given request.
+// If providerID is non-empty, only that specific provider is considered as a candidate.
 //
 //nolint:gocyclo // model resolution involves multiple fallback strategies
-func ResolveProvidersForModel(requestedModel, normalizedModel string, cache *ModelCache) (*ResolvedModelRoute, error) {
+func ResolveProvidersForModel(requestedModel, normalizedModel, providerID string, cache *ModelCache) (*ResolvedModelRoute, error) {
 	reg := registry.GetProviderRegistry()
 	activeProviders := reg.GetActiveProviders()
+
+	// If a specific provider is requested, filter to only that provider.
+	if providerID != "" {
+		filtered := make([]types.Provider, 0, 1)
+		for _, p := range activeProviders {
+			if p.GetInstanceID() == providerID {
+				filtered = append(filtered, p)
+				break
+			}
+		}
+		if len(filtered) == 0 {
+			return &ResolvedModelRoute{
+				SelectedModel:      nil,
+				CandidateProviders: []types.Provider{},
+			}, nil
+		}
+		activeProviders = filtered
+	}
 
 	if len(activeProviders) == 0 {
 		return nil, fmt.Errorf("no active providers available")
