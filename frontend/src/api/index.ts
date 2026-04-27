@@ -818,28 +818,28 @@ export interface VirtualModelPayload {
 }
 
 export const listVirtualModels = () =>
-  apiFetch<{ data: Array<VirtualModel> }>("/api/admin/vmodels").then(
+  apiFetch<{ data: Array<VirtualModel> }>("/api/admin/virtualmodels").then(
     (r) => r.data,
   )
 
 export const getVirtualModel = (id: string) =>
-  apiFetch<VirtualModel>(`/api/admin/vmodels/${encodeURIComponent(id)}`)
+  apiFetch<VirtualModel>(`/api/admin/virtualmodels/${encodeURIComponent(id)}`)
 
 export const createVirtualModel = (payload: VirtualModelPayload) =>
-  apiFetch<VirtualModel>("/api/admin/vmodels", {
+  apiFetch<VirtualModel>("/api/admin/virtualmodels", {
     method: "POST",
     body: JSON.stringify(payload),
   })
 
 export const updateVirtualModel = (id: string, payload: VirtualModelPayload) =>
-  apiFetch<VirtualModel>(`/api/admin/vmodels/${encodeURIComponent(id)}`, {
+  apiFetch<VirtualModel>(`/api/admin/virtualmodels/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   })
 
 export const deleteVirtualModel = (id: string) =>
   apiFetch<{ deleted: string }>(
-    `/api/admin/vmodels/${encodeURIComponent(id)}`,
+    `/api/admin/virtualmodels/${encodeURIComponent(id)}`,
     {
       method: "DELETE",
     },

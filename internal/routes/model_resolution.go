@@ -5,7 +5,7 @@ import (
 
 	"omnillm/internal/database"
 	"omnillm/internal/lib/modelrouting"
-	"omnillm/internal/lib/vmodelrouting"
+	"omnillm/internal/lib/virtualmodelrouting"
 
 	"github.com/rs/zerolog/log"
 )
@@ -67,7 +67,7 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
 	}
 
-	ordered := vmodelrouting.OrderUpstreams(upstreams, vm.LbStrategy, vm.VirtualModelID)
+	ordered := virtualmodelrouting.OrderUpstreams(upstreams, vm.LbStrategy, vm.VirtualModelID)
 	if len(ordered) == 0 {
 		log.Warn().Str("request_id", requestID).Str("virtual_model", vm.VirtualModelID).Msg("Virtual model has no routable upstream")
 		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
@@ -75,9 +75,12 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 
 	attempts := make([]resolvedModelAttempt, 0, len(ordered))
 	for _, upstream := range ordered {
-		// The stored model_id may carry a provider prefix (e.g. "alipay01/deepseek-v4-flash").
-		// Strip it here: provider_id is already explicit and authoritative, so we
-		// only forward the bare model name to the upstream.
+		// Preserve the stored upstream model_id exactly as configured. Virtual-model
+		// upstreams may intentionally include a provider prefix/subtitle segment
+		// (e.g. "alipay01/DeepSeek-V4-Flash") because some upstreams require the
+		// prefixed form as the actual request model identifier. We still derive the
+		// bare model for normalization/debugging, but execution must use the stored
+		// model string verbatim.
 		_, bareUpstreamModel := modelrouting.ParseProviderPrefix(upstream.ModelID)
 
 		log.Debug().
@@ -89,7 +92,7 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 			Str("strategy", string(vm.LbStrategy)).
 			Msg("Virtual model routing candidate")
 		attempts = append(attempts, resolvedModelAttempt{
-			RequestedModel:  bareUpstreamModel,
+			RequestedModel:  upstream.ModelID,
 			NormalizedModel: modelrouting.NormalizeModelName(bareUpstreamModel),
 			ProviderID:      upstream.ProviderID,
 		})
