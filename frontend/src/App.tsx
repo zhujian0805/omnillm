@@ -21,18 +21,24 @@ import { ConfigPage } from "@/pages/ConfigPage"
 import { LoggingPage } from "@/pages/LoggingPage"
 import { ProvidersPage } from "@/pages/ProvidersPage"
 import { AboutPage } from "@/pages/SettingsPage"
-import { VmodelPage } from "@/pages/VmodelPage"
+import { VirtualModelPage } from "@/pages/VirtualModelPage"
 
 const log = createLogger("app")
 
-type Tab = "providers" | "chat" | "logging" | "vmodel" | "config" | "about"
+type Tab =
+  | "providers"
+  | "chat"
+  | "logging"
+  | "virtualmodel"
+  | "config"
+  | "about"
 type Theme = "dark" | "light"
 
 const NAV_ITEMS = [
   { id: "providers" as const, label: "Providers", icon: Database },
   { id: "chat" as const, label: "Chat", icon: MessageSquare },
   { id: "logging" as const, label: "Logging", icon: BarChart3 },
-  { id: "vmodel" as const, label: "Virtual Models", icon: Layers },
+  { id: "virtualmodel" as const, label: "Virtual Models", icon: Layers },
   { id: "config" as const, label: "ToolConfig", icon: SlidersHorizontal },
   { id: "about" as const, label: "About", icon: Settings },
 ]
@@ -54,7 +60,7 @@ function isTab(value: string): value is Tab {
     value === "providers"
     || value === "chat"
     || value === "logging"
-    || value === "vmodel"
+    || value === "virtualmodel"
     || value === "config"
     || value === "about"
   )
@@ -460,7 +466,9 @@ export default function AppComponent() {
                 {tab === "providers" && <ProvidersPage showToast={showToast} />}
                 {tab === "chat" && <ChatPage showToast={showToast} />}
                 {tab === "logging" && <LoggingPage showToast={showToast} />}
-                {tab === "vmodel" && <VmodelPage showToast={showToast} />}
+                {tab === "virtualmodel" && (
+                  <VirtualModelPage showToast={showToast} />
+                )}
                 {tab === "config" && <ConfigPage showToast={showToast} />}
                 {tab === "about" && <AboutPage showToast={showToast} />}
               </div>

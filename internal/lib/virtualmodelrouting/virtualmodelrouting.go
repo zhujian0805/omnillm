@@ -1,5 +1,5 @@
-// Package vmodelrouting implements load-balancing strategies for virtual models.
-package vmodelrouting
+// Package virtualmodelrouting implements load-balancing strategies for virtual models.
+package virtualmodelrouting
 
 import (
 	// math/rand/v2 (Go 1.22+) uses a lock-free per-goroutine PCG source,

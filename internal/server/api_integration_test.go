@@ -735,22 +735,26 @@ func TestAnthropicMessagesRouteNormalizesAliasesBeforeProviderExecution(t *testi
 	}
 }
 
-func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *testing.T) {
-	const upstreamModel = "claude-haiku-4.5"
-	const virtualModel = "claude-mythos-5.0"
+// TestAnthropicMessagesRoutePreservesPrefixedVirtualModelUpstreamID is a regression
+// test for the bug where virtual-model upstreams stored with a provider-prefix
+// (e.g. "alipay01/DeepSeek-V4-Flash") had the prefix stripped before execution,
+// causing upstream providers that require the prefixed form to receive an invalid
+// model ID and return 400.
+func TestAnthropicMessagesRoutePreservesPrefixedVirtualModelUpstreamID(t *testing.T) {
+	const virtualModel = "prefixed-upstream-test"
+	const storedUpstreamModel = "alipay01/DeepSeek-V4-Flash"
 
-	var capturedModel string
-
-	registerStubProvider(
+	var executedModel string
+	providerID := registerStubProvider(
 		t,
-		upstreamModel,
+		storedUpstreamModel,
 		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-			capturedModel = req.Model
+			executedModel = req.Model
 			return &cif.CanonicalResponse{
-				ID:    "resp_virtual_model",
+				ID:    "resp_prefixed",
 				Model: req.Model,
 				Content: []cif.CIFContentPart{
-					cif.CIFTextPart{Type: "text", Text: "pong"},
+					cif.CIFTextPart{Type: "text", Text: "ok"},
 				},
 				StopReason: cif.StopReasonEndTurn,
 			}, nil
@@ -761,27 +765,92 @@ func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *tes
 	vmodelStore := database.NewVirtualModelStore()
 	if err := vmodelStore.Create(&database.VirtualModelRecord{
 		VirtualModelID: virtualModel,
-		Name:           "Claude Mythos 5.0",
-		Description:    "Anthropic virtual model alias",
+		Name:           "Prefixed Upstream Test",
+		Description:    "Ensure prefixed upstream model IDs are preserved",
 		APIShape:       "anthropic",
-		LbStrategy:     database.LbStrategyRoundRobin,
+		LbStrategy:     database.LbStrategyPriority,
 		Enabled:        true,
 	}); err != nil {
-		t.Fatalf("failed to create virtual model: %v", err)
+		t.Fatalf("create virtual model: %v", err)
 	}
-	t.Cleanup(func() {
-		_ = vmodelStore.Delete(virtualModel)
-	})
+	t.Cleanup(func() { _ = vmodelStore.Delete(virtualModel) })
 
 	upstreamStore := database.NewVirtualModelUpstreamStore()
 	if err := upstreamStore.SetForVModel(virtualModel, []database.VirtualModelUpstreamRecord{{
 		VirtualModelID: virtualModel,
-		ModelID:        upstreamModel,
-		Weight:         1,
+		ProviderID:     providerID,
+		ModelID:        storedUpstreamModel,
 		Priority:       0,
 	}}); err != nil {
-		t.Fatalf("failed to set virtual model upstreams: %v", err)
+		t.Fatalf("set upstreams: %v", err)
 	}
+	t.Cleanup(func() { upstreamStore.SetForVModel(virtualModel, nil) })
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	resp := postJSON(
+		t,
+		srv.URL+"/v1/messages",
+		fmt.Sprintf(`{"model":%q,"max_tokens":20,"messages":[{"role":"user","content":"ping"}]}`, virtualModel),
+		map[string]string{"anthropic-version": "2023-06-01"},
+	)
+	body := readBody(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, body)
+	}
+	if executedModel != storedUpstreamModel {
+		t.Fatalf("upstream model should be preserved as %q, but got %q — provider prefix was stripped", storedUpstreamModel, executedModel)
+	}
+}
+
+func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *testing.T) {
+	const upstreamModel = "claude-haiku-4.5"
+	const virtualModel = "claude-mythos-5.0"
+
+	var capturedModel string
+
+	registerStubProvider(
+	t,
+	upstreamModel,
+	func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+		capturedModel = req.Model
+		return &cif.CanonicalResponse{
+			ID:    "resp_virtual_model",
+			Model: req.Model,
+			Content: []cif.CIFContentPart{
+				cif.CIFTextPart{Type: "text", Text: "pong"},
+			},
+			StopReason: cif.StopReasonEndTurn,
+		}, nil
+	},
+	nil,
+	)
+
+	vmodelStore := database.NewVirtualModelStore()
+	if err := vmodelStore.Create(&database.VirtualModelRecord{
+	VirtualModelID: virtualModel,
+	Name:           "Claude Mythos 5.0",
+	Description:    "Anthropic virtual model alias",
+	APIShape:       "anthropic",
+	LbStrategy:     database.LbStrategyRoundRobin,
+	Enabled:        true,
+	}); err != nil {
+	t.Fatalf("failed to create virtual model: %v", err)
+	}
+	t.Cleanup(func() {
+	_ = vmodelStore.Delete(virtualModel)
+	})
+
+	upstreamStore := database.NewVirtualModelUpstreamStore()
+	if err := upstreamStore.SetForVModel(virtualModel, []database.VirtualModelUpstreamRecord{{
+	VirtualModelID: virtualModel,
+	ModelID:        upstreamModel,
+	Weight:         1,
+	Priority:       0,
+	}}); err != nil {
+	t.Fatalf("failed to set virtual model upstreams: %v", err)
+}
 
 	srv := newTestServer(t)
 	defer srv.Close()
