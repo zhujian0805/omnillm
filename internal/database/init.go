@@ -239,6 +239,27 @@ var migrations = []migration{
 		`ALTER TABLE provider_models_cache ADD COLUMN updated_at DATETIME`,
 		`UPDATE provider_models_cache SET updated_at = cached_at WHERE updated_at IS NULL`,
 	}},
+	// v5: rebuild the tokens table to remove the legacy provider_id column that some
+	// older databases have as TEXT NOT NULL without a DEFAULT value.  The column was
+	// dropped from the schema but may still exist in databases created before that
+	// change.  Migration v3 attempted to add it back with DEFAULT '', but was silently
+	// skipped when the column already existed with the broken NOT NULL constraint,
+	// causing every INSERT into tokens to fail with a constraint error.
+	// We use SQLite's table-rebuild idiom and drop any legacy index first.
+	{5, []string{
+		`DROP INDEX IF EXISTS idx_tokens_provider_id`,
+		`CREATE TABLE IF NOT EXISTS tokens_v5 (
+			instance_id TEXT PRIMARY KEY,
+			token_data  TEXT NOT NULL,
+			created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			updated_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+			FOREIGN KEY (instance_id) REFERENCES provider_instances (instance_id) ON DELETE CASCADE
+		)`,
+		`INSERT OR IGNORE INTO tokens_v5 (instance_id, token_data, created_at, updated_at)
+			SELECT instance_id, token_data, created_at, updated_at FROM tokens`,
+		`DROP TABLE tokens`,
+		`ALTER TABLE tokens_v5 RENAME TO tokens`,
+	}},
 }
 
 // applyMigrations runs any migrations that have not yet been applied.
