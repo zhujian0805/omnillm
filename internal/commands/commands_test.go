@@ -477,6 +477,6 @@ func TestNewClientDefaultServer(t *testing.T) {
 	t.Setenv("OMNILLM_API_KEY", "")
 
 	// The default is embedded in NewClient; verify the constant matches what start uses
-	const expectedDefault = "http://127.0.0.1:5005"
+	const expectedDefault = "http://127.0.0.1:5000"
 	_ = expectedDefault // guard against renaming without updating
 }
