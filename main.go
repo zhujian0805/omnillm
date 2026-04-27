@@ -18,7 +18,7 @@ var rootCmd = &cobra.Command{
 
 func main() {
 	// Persistent flags available to all commands
-	rootCmd.PersistentFlags().String("server", "http://127.0.0.1:5005",
+	rootCmd.PersistentFlags().String("server", "http://127.0.0.1:5000",
 		"OmniLLM server address (or set OMNILLM_SERVER)")
 	rootCmd.PersistentFlags().String("api-key", "",
 		"Admin API key for the server (or set OMNILLM_API_KEY)")

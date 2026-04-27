@@ -107,7 +107,7 @@ var StartCmd = &cobra.Command{
 }
 
 func init() {
-	StartCmd.Flags().IntP("port", "p", 5005, "Port to listen on")
+	StartCmd.Flags().IntP("port", "p", 5000, "Port to listen on")
 	StartCmd.Flags().String("host", "127.0.0.1", "IP or hostname to bind the server to")
 	StartCmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging")
 	StartCmd.Flags().StringP("account-type", "a", "individual", "Account type to use (individual, business, enterprise)")
