@@ -5,7 +5,7 @@ import (
 
 	"omnillm/internal/database"
 	"omnillm/internal/lib/modelrouting"
-	"omnillm/internal/lib/vmodelrouting"
+	"omnillm/internal/lib/virtualmodelrouting"
 
 	"github.com/rs/zerolog/log"
 )
@@ -67,7 +67,7 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
 	}
 
-	ordered := vmodelrouting.OrderUpstreams(upstreams, vm.LbStrategy, vm.VirtualModelID)
+	ordered := virtualmodelrouting.OrderUpstreams(upstreams, vm.LbStrategy, vm.VirtualModelID)
 	if len(ordered) == 0 {
 		log.Warn().Str("request_id", requestID).Str("virtual_model", vm.VirtualModelID).Msg("Virtual model has no routable upstream")
 		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
