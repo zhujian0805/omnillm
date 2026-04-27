@@ -27,7 +27,7 @@ func NewClient(cmd *cobra.Command) *Client {
 		server = v
 	}
 	if server == "" {
-		server = "http://127.0.0.1:5005"
+		server = "http://127.0.0.1:5000"
 	}
 	server = strings.TrimRight(server, "/")
 

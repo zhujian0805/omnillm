@@ -185,6 +185,8 @@ OpenAI-style (`/v1/chat/completions`, `/v1/models`, `/v1/embeddings`, `/v1/respo
 
 Manage multiple providers simultaneously. Switch the active backend without restarting. Provider priorities enable automatic failover — when a provider fails mid-request, OmniLLM transparently tries the next candidate in priority order.
 
+**Provider-prefix model routing** — When multiple providers serve the same model name, you can disambiguate by prefixing the model with a provider ID or subtitle (e.g., `provider-id:gpt-4o`). This works for both direct model names and virtual model upstreams, and is resolved automatically by the model routing layer.
+
 ### Virtual models
 
 Define abstract model IDs that map to specific provider models with configurable load-balancing strategies (round-robin, random, priority, weighted). This creates an abstraction layer between application code and upstream providers, enabling model swaps without touching client configuration.
@@ -257,7 +259,7 @@ Clients / Agents / Internal Apps
    ├─────────────────────────────────────────┤
    │  Admin Console + SSE/WS Log Streaming   │
    │  SQLite Persistence (provider, tokens,  │
-   │  configs, chat sessions, vmodels)       │
+   │  configs, chat sessions, virtual models)       │
    └─────────────────────────────────────────┘
             |
             v
@@ -278,7 +280,7 @@ Clients / Agents / Internal Apps
 | **Providers** | `internal/providers/` | Per-provider implementations (Copilot, Alibaba, Azure, Google, Kimi, Antigravity, OpenAI-Compatible, Generic) |
 | **Registry** | `internal/registry/` | Thread-safe `ProviderRegistry` — manages registered providers, active provider selection, failover |
 | **Model Routing** | `internal/lib/modelrouting/` | Resolves model names to candidate providers with caching |
-| **Virtual Model Routing** | `internal/lib/vmodelrouting/` | Routes abstract virtual model IDs to specific provider models with load-balancing strategies |
+| **Virtual Model Routing** | `internal/lib/virtualmodelrouting/` | Routes abstract virtual model IDs to specific provider models with load-balancing strategies |
 | **Database** | `internal/database/` | SQLite persistence via `modernc.org/sqlite` (pure Go, no CGO) — provider instances, tokens, configs, chat sessions, virtual models |
 | **Security** | `internal/security/` | SSRF protection for OpenAI-compatible endpoints |
 | **Rate Limiting** | `internal/lib/ratelimit/` | Configurable rate limiter with optional queue-on-reject behavior |
@@ -370,13 +372,21 @@ External config file editing (Claude Code, OpenCode, etc.) is disabled by defaul
 | `auth` | Authenticate providers without starting the server |
 | `check-usage` | Print GitHub Copilot usage/quota information |
 | `debug` | Print runtime, version, and path diagnostics |
-| `chat` | Launch an interactive provider chat shell |
+| `sync-names` | Refresh provider display names from live API metadata |
+| `provider` | Manage LLM provider instances (list, add, delete, activate, deactivate, switch, rename, priorities, usage) |
+| `model` | Manage models for a provider (list, refresh, toggle, version) |
+| `virtualmodel` | Manage virtual model aliases with load-balancing (list, get, create, update, delete) |
+| `config` | Manage external tool config files (list, get, set, import, backup) |
+| `settings` | View and update server settings (get, set) |
+| `status` | Show server and auth status |
+| `chat` | Interactive chat REPL or manage saved chat sessions (sessions, send) |
+| `logs` | Stream or view server logs (tail) |
 
 ### `start` options
 
 | Option | Alias | Default | Description |
 |---|---|---|---|
-| `--port` | `-p` | `5005` | Listening port |
+| `--port` | `-p` | `5000` | Listening port |
 | `--provider` | | `github-copilot` | Active provider |
 | `--verbose` | `-v` | `false` | Enable verbose logging |
 | `--account-type` | `-a` | `individual` | Copilot plan (`individual`, `business`, `enterprise`) |
@@ -462,11 +472,11 @@ External config file editing (Claude Code, OpenCode, etc.) is disabled by defaul
 | `PUT` | `/api/admin/config/:name` | Save a config file |
 | `POST` | `/api/admin/config/:name/import` | Import config from uploaded file |
 | `POST` | `/api/admin/config/:name/backup` | Create timestamped backup in same directory |
-| `GET` | `/api/admin/vmodels` | List virtual models |
-| `POST` | `/api/admin/vmodels` | Create virtual model |
-| `GET` | `/api/admin/vmodels/:id` | Get virtual model detail |
-| `PUT` | `/api/admin/vmodels/:id` | Update virtual model |
-| `DELETE` | `/api/admin/vmodels/:id` | Delete virtual model |
+| `GET` | `/api/admin/virtualmodels` | List virtual models |
+| `POST` | `/api/admin/virtualmodels` | Create virtual model |
+| `GET` | `/api/admin/virtualmodels/:id` | Get virtual model detail |
+| `PUT` | `/api/admin/virtualmodels/:id` | Update virtual model |
+| `DELETE` | `/api/admin/virtualmodels/:id` | Delete virtual model |
 
 ---
 

@@ -10,8 +10,8 @@ func TestStartCmdDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get port flag: %v", err)
 	}
-	if port != 5005 {
-		t.Fatalf("expected default port 5005, got %d", port)
+	if port != 5000 {
+		t.Fatalf("expected default port 5000, got %d", port)
 	}
 
 	provider, err := StartCmd.Flags().GetString("provider")
@@ -37,7 +37,7 @@ func TestStartCmdRejectsInvalidPort(t *testing.T) {
 func TestStartCmdRejectsInvalidRateLimit(t *testing.T) {
 	cmd := *StartCmd
 	cmd.SilenceUsage = true
-	cmd.SetArgs([]string{"--port", "5005", "--rate-limit", "bad"})
+	cmd.SetArgs([]string{"--port", "5000", "--rate-limit", "bad"})
 
 	err := cmd.Execute()
 	if err == nil || !strings.Contains(err.Error(), "invalid argument \"bad\"") {
