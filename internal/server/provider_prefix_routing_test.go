@@ -2,21 +2,14 @@ package server
 
 // Tests for the "<providerPrefix>/<modelID>" routing feature.
 //
-// Each sub-test registers one or more stub providers (with real instance IDs
-// and subtitles seeded into the DB), then fires a chat-completions request
-// whose model field contains a prefix.  The adapter capture function verifies
-// that exactly the right provider was chosen and that the bare model name (no
-// prefix) was forwarded upstream.
+// Each test registers stub providers and fires chat-completions requests whose
+// model field contains a prefix.  The adapter capture function verifies that
+// the correct provider was chosen and that the bare model name (no prefix) was
+// forwarded upstream.
 //
-// Provider / subtitle mapping used throughout:
-//   instanceID          subtitle          model
-//   ─────────────────── ───────────────── ──────────────────────────────
-//   pfx-alibaba-01      alipay01          deepseek-v4-flash
-//   pfx-alibaba-02      alipay02          deepseek-v4-flash
-//   pfx-alibaba-03      ntes              qwen3.6-plus
-//   pfx-copilot-abk     copilot-jzhu-abk  gpt-5-mini
-//   pfx-openai-compat   c161bf            deepseek-ai/DeepSeek-V4-Flash
-//   (no subtitle)       —                 custom-model
+// Most tests use the raw instance ID as the prefix (no DB subtitle lookup
+// needed).  A dedicated subtitle-resolution test covers the subtitle→instanceID
+// mapping path.
 
 import (
 	"context"
@@ -24,7 +17,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
@@ -34,10 +26,9 @@ import (
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
-// registerPrefixProvider registers a stub provider with the given instanceID,
-// subtitle, and model, seeds a DB record so the subtitle is stored, and
-// returns the instanceID. The capturedModel pointer is set by the adapter when
-// a request arrives.
+// registerPrefixProvider registers a stub provider with the given instanceID
+// and model, activates it, and optionally seeds a subtitle in the DB.
+// The capturedModel pointer is set by the adapter when a request arrives.
 func registerPrefixProvider(
 	t *testing.T,
 	instanceID, subtitle, providerType, modelID string,
@@ -108,62 +99,13 @@ func chatCompletions(t *testing.T, srvURL, model string) (int, string) {
 
 // ─── tests ────────────────────────────────────────────────────────────────────
 
-// TestProviderPrefixRouting_BySubtitle verifies that using the subtitle as a
-// prefix (e.g. "alipay01/deepseek-v4-flash") routes to the correct provider
-// when two providers expose the same model ID.
-func TestProviderPrefixRouting_BySubtitle(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
-
-	var captured01, captured02 string
-	id01 := "pfx-alibaba-01-" + uniqueSuffix
-	id02 := "pfx-alibaba-02-" + uniqueSuffix
-
-	registerPrefixProvider(t, id01, "alipay01pfx"+uniqueSuffix, "stub-provider", "deepseek-v4-flash", &captured01)
-	registerPrefixProvider(t, id02, "alipay02pfx"+uniqueSuffix, "stub-provider", "deepseek-v4-flash", &captured02)
-
-	subtitle01 := "alipay01pfx" + uniqueSuffix
-	subtitle02 := "alipay02pfx" + uniqueSuffix
-
-	srv := newTestServer(t)
-	defer srv.Close()
-
-	t.Run("subtitle01 prefix routes to provider 01", func(t *testing.T) {
-		captured01, captured02 = "", ""
-		status, body := chatCompletions(t, srv.URL, subtitle01+"/deepseek-v4-flash")
-		if status != http.StatusOK {
-			t.Fatalf("expected 200, got %d: %s", status, body)
-		}
-		if captured01 != "deepseek-v4-flash" {
-			t.Errorf("provider 01 should have received the request; capturedModel=%q", captured01)
-		}
-		if captured02 != "" {
-			t.Errorf("provider 02 should NOT have received the request; capturedModel=%q", captured02)
-		}
-	})
-
-	t.Run("subtitle02 prefix routes to provider 02", func(t *testing.T) {
-		captured01, captured02 = "", ""
-		status, body := chatCompletions(t, srv.URL, subtitle02+"/deepseek-v4-flash")
-		if status != http.StatusOK {
-			t.Fatalf("expected 200, got %d: %s", status, body)
-		}
-		if captured02 != "deepseek-v4-flash" {
-			t.Errorf("provider 02 should have received the request; capturedModel=%q", captured02)
-		}
-		if captured01 != "" {
-			t.Errorf("provider 01 should NOT have received the request; capturedModel=%q", captured01)
-		}
-	})
-}
-
 // TestProviderPrefixRouting_ByInstanceID verifies that using the raw instance
-// ID as a prefix also works when no subtitle is set.
+// ID as a prefix routes to the correct provider and forwards the bare model name.
 func TestProviderPrefixRouting_ByInstanceID(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	instanceID := "pfx-no-subtitle-" + uniqueSuffix
+	uniqueSuffix := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	instanceID := "pfx-instid-" + uniqueSuffix
 
 	var capturedModel string
-	// Subtitle is intentionally empty so the only match is via instance ID.
 	registerPrefixProvider(t, instanceID, "", "stub-provider", "custom-model", &capturedModel)
 
 	srv := newTestServer(t)
@@ -178,20 +120,60 @@ func TestProviderPrefixRouting_ByInstanceID(t *testing.T) {
 	}
 }
 
-// TestProviderPrefixRouting_Copilot verifies the copilot-jzhu-abk/gpt-5-mini
-// prefix pattern specifically requested in the issue.
-func TestProviderPrefixRouting_Copilot(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	instanceID := "pfx-copilot-abk-" + uniqueSuffix
-	subtitle := "copilot-jzhu-abkpfx" + uniqueSuffix
+// TestProviderPrefixRouting_TwoProvidersSameModel verifies that two providers
+// exposing the same model ID can be disambiguated by instance-ID prefix.
+func TestProviderPrefixRouting_TwoProvidersSameModel(t *testing.T) {
+	uniqueSuffix := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	id01 := "pfx-two-01-" + uniqueSuffix
+	id02 := "pfx-two-02-" + uniqueSuffix
 
-	var capturedModel string
-	registerPrefixProvider(t, instanceID, subtitle, "copilot", "gpt-5-mini", &capturedModel)
+	var captured01, captured02 string
+	registerPrefixProvider(t, id01, "", "stub-provider", "same-model", &captured01)
+	registerPrefixProvider(t, id02, "", "stub-provider", "same-model", &captured02)
 
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	status, body := chatCompletions(t, srv.URL, subtitle+"/gpt-5-mini")
+	// Provider 01
+	captured01, captured02 = "", ""
+	status, body := chatCompletions(t, srv.URL, id01+"/same-model")
+	if status != http.StatusOK {
+		t.Fatalf("provider 01: expected 200, got %d: %s", status, body)
+	}
+	if captured01 != "same-model" {
+		t.Errorf("provider 01 should have received the request; capturedModel=%q", captured01)
+	}
+	if captured02 != "" {
+		t.Errorf("provider 02 should NOT have received the request; capturedModel=%q", captured02)
+	}
+
+	// Provider 02
+	captured01, captured02 = "", ""
+	status, body = chatCompletions(t, srv.URL, id02+"/same-model")
+	if status != http.StatusOK {
+		t.Fatalf("provider 02: expected 200, got %d: %s", status, body)
+	}
+	if captured02 != "same-model" {
+		t.Errorf("provider 02 should have received the request; capturedModel=%q", captured02)
+	}
+	if captured01 != "" {
+		t.Errorf("provider 01 should NOT have received the request; capturedModel=%q", captured01)
+	}
+}
+
+// TestProviderPrefixRouting_Copilot verifies the copilot-jzhu-abk/gpt-5-mini
+// prefix pattern specifically requested in the issue.
+func TestProviderPrefixRouting_Copilot(t *testing.T) {
+	uniqueSuffix := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	instanceID := "pfx-copilot-abk-" + uniqueSuffix
+
+	var capturedModel string
+	registerPrefixProvider(t, instanceID, "", "copilot", "gpt-5-mini", &capturedModel)
+
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	status, body := chatCompletions(t, srv.URL, instanceID+"/gpt-5-mini")
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", status, body)
 	}
@@ -204,19 +186,18 @@ func TestProviderPrefixRouting_Copilot(t *testing.T) {
 // "/" (e.g. "deepseek-ai/DeepSeek-V4-Flash") is forwarded correctly when only
 // the first slash is the separator.
 func TestProviderPrefixRouting_SlashInModelID(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	instanceID := "pfx-openai-compat-" + uniqueSuffix
-	subtitle := "c161bfpfx" + uniqueSuffix
+	uniqueSuffix := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	instanceID := "pfx-slash-" + uniqueSuffix
 	modelID := "deepseek-ai/DeepSeek-V4-Flash"
 
 	var capturedModel string
-	registerPrefixProvider(t, instanceID, subtitle, "openai-compat", modelID, &capturedModel)
+	registerPrefixProvider(t, instanceID, "", "openai-compat", modelID, &capturedModel)
 
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	// Full request model: "<subtitle>/deepseek-ai/DeepSeek-V4-Flash"
-	requestModel := subtitle + "/" + modelID
+	// Full request model: "<instanceID>/deepseek-ai/DeepSeek-V4-Flash"
+	requestModel := instanceID + "/" + modelID
 	status, body := chatCompletions(t, srv.URL, requestModel)
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", status, body)
@@ -227,8 +208,7 @@ func TestProviderPrefixRouting_SlashInModelID(t *testing.T) {
 }
 
 // TestProviderPrefixRouting_UnknownPrefix verifies that a prefix that matches
-// no known instance ID or subtitle produces a 502/404-style error rather than
-// silently routing elsewhere.
+// no known instance ID produces an error rather than silently routing elsewhere.
 func TestProviderPrefixRouting_UnknownPrefix(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -272,91 +252,35 @@ func TestProviderPrefixRouting_NoPrefixUnaffected(t *testing.T) {
 	}
 }
 
-// TestProviderPrefixRouting_AlibabaThreeProviders exercises the multi-provider
-// disambiguation scenario: three Alibaba-style providers all serving the same
-// model name.  Each subtitle-prefix must route to exactly one.
-func TestProviderPrefixRouting_AlibabaThreeProviders(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
-
-	var captured [3]string
-	subtitles := [3]string{
-		"alipay01three" + uniqueSuffix,
-		"alipay02three" + uniqueSuffix,
-		"ntesthree" + uniqueSuffix,
-	}
-	models := [3]string{"qwen3.6-plus", "qwen3.6-plus", "qwen3.6-plus"}
-
-	for i := 0; i < 3; i++ {
-		idx := i // capture
-		registerPrefixProvider(
-			t,
-			fmt.Sprintf("pfx-alibaba-%02d-three-%s", i+1, uniqueSuffix),
-			subtitles[idx],
-			"stub-provider",
-			models[idx],
-			&captured[idx],
-		)
-	}
-
-	srv := newTestServer(t)
-	defer srv.Close()
-
-	for i := 0; i < 3; i++ {
-		idx := i
-		t.Run(fmt.Sprintf("routes_to_provider_%d", idx+1), func(t *testing.T) {
-			captured[0], captured[1], captured[2] = "", "", ""
-			requestModel := subtitles[idx] + "/qwen3.6-plus"
-			status, body := chatCompletions(t, srv.URL, requestModel)
-			if status != http.StatusOK {
-				t.Fatalf("expected 200, got %d: %s", status, body)
-			}
-			if captured[idx] != "qwen3.6-plus" {
-				t.Errorf("provider %d should have received the request (model=%q)", idx+1, captured[idx])
-			}
-			for j := 0; j < 3; j++ {
-				if j == idx {
-					continue
-				}
-				if captured[j] != "" {
-					t.Errorf("provider %d should NOT have received the request (model=%q)", j+1, captured[j])
-				}
-			}
-		})
-	}
-}
-
-// TestProviderPrefixRouting_PrefixCaseInsensitive verifies that subtitle
-// matching is case-insensitive, e.g. "ALIPAY01" matches subtitle "alipay01".
-func TestProviderPrefixRouting_PrefixCaseInsensitive(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	instanceID := "pfx-case-" + uniqueSuffix
-	subtitle := "casetestpfx" + uniqueSuffix
+// TestProviderPrefixRouting_SubtitleResolution verifies that a subtitle prefix
+// is resolved to the correct instance ID via the DB-backed lookup.
+func TestProviderPrefixRouting_SubtitleResolution(t *testing.T) {
+	uniqueSuffix := fmt.Sprintf("%d", stubProviderCounter.Add(1))
+	instanceID := "pfx-subtitle-" + uniqueSuffix
+	subtitle := "mysubtitlepfx" + uniqueSuffix
 
 	var capturedModel string
-	registerPrefixProvider(t, instanceID, subtitle, "stub-provider", "some-model", &capturedModel)
+	registerPrefixProvider(t, instanceID, subtitle, "stub-provider", "subtitle-model", &capturedModel)
 
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	// Use uppercased subtitle as prefix
-	upperSubtitle := "CASETESTPFX" + uniqueSuffix
-	status, body := chatCompletions(t, srv.URL, upperSubtitle+"/some-model")
+	status, body := chatCompletions(t, srv.URL, subtitle+"/subtitle-model")
 	if status != http.StatusOK {
-		t.Fatalf("expected 200 with upper-case prefix, got %d: %s", status, body)
+		t.Fatalf("expected 200, got %d: %s", status, body)
 	}
-	if capturedModel != "some-model" {
-		t.Errorf("expected model %q forwarded; got %q", "some-model", capturedModel)
+	if capturedModel != "subtitle-model" {
+		t.Errorf("expected model %q forwarded; got %q", "subtitle-model", capturedModel)
 	}
 }
 
 // TestProviderPrefixRouting_ResponseModelIsBareName verifies that the model
 // field in the JSON response contains the bare model name (no prefix).
 func TestProviderPrefixRouting_ResponseModelIsBareName(t *testing.T) {
-	uniqueSuffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	uniqueSuffix := fmt.Sprintf("%d", stubProviderCounter.Add(1))
 	instanceID := "pfx-resp-" + uniqueSuffix
-	subtitle := "resppfx" + uniqueSuffix
 
-	registerPrefixProvider(t, instanceID, subtitle, "stub-provider", "resp-model", nil)
+	registerPrefixProvider(t, instanceID, "", "stub-provider", "resp-model", nil)
 
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -364,7 +288,7 @@ func TestProviderPrefixRouting_ResponseModelIsBareName(t *testing.T) {
 	resp := postJSON(
 		t,
 		srv.URL+"/v1/chat/completions",
-		fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"ping"}]}`, subtitle+"/resp-model"),
+		fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"ping"}]}`, instanceID+"/resp-model"),
 		nil,
 	)
 	body := readBody(t, resp)
