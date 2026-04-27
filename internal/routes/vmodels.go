@@ -10,11 +10,11 @@ import (
 )
 
 func SetupVirtualModelRoutes(router *gin.RouterGroup) {
-	router.GET("/vmodels", handleListVirtualModels)
-	router.POST("/vmodels", handleCreateVirtualModel)
-	router.GET("/vmodels/:id", handleGetVirtualModel)
-	router.PUT("/vmodels/:id", handleUpdateVirtualModel)
-	router.DELETE("/vmodels/:id", handleDeleteVirtualModel)
+	router.GET("/virtualmodels", handleListVirtualModels)
+	router.POST("/virtualmodels", handleCreateVirtualModel)
+	router.GET("/virtualmodels/:id", handleGetVirtualModel)
+	router.PUT("/virtualmodels/:id", handleUpdateVirtualModel)
+	router.DELETE("/virtualmodels/:id", handleDeleteVirtualModel)
 }
 
 // ─── request / response types ─────────────────────────────────────────────────
@@ -26,7 +26,7 @@ type upstreamInput struct {
 	Priority   int    `json:"priority"`
 }
 
-type vmodelPayload struct {
+type virtualModelPayload struct {
 	VirtualModelID string          `json:"virtual_model_id" binding:"required"`
 	Name           string          `json:"name"             binding:"required"`
 	Description    string          `json:"description"`
@@ -36,14 +36,14 @@ type vmodelPayload struct {
 	Upstreams      []upstreamInput `json:"upstreams"`
 }
 
-type vmodelResponse struct {
+type virtualModelResponse struct {
 	database.VirtualModelRecord
 	Upstreams []database.VirtualModelUpstreamRecord `json:"upstreams"`
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-func vmWithUpstreams(vm *database.VirtualModelRecord) (*vmodelResponse, error) {
+func vmWithUpstreams(vm *database.VirtualModelRecord) (*virtualModelResponse, error) {
 	us := database.NewVirtualModelUpstreamStore()
 	upstreams, err := us.GetForVModel(vm.VirtualModelID)
 	if err != nil {
@@ -52,7 +52,7 @@ func vmWithUpstreams(vm *database.VirtualModelRecord) (*vmodelResponse, error) {
 	if upstreams == nil {
 		upstreams = []database.VirtualModelUpstreamRecord{}
 	}
-	return &vmodelResponse{VirtualModelRecord: *vm, Upstreams: upstreams}, nil
+	return &virtualModelResponse{VirtualModelRecord: *vm, Upstreams: upstreams}, nil
 }
 
 func saveUpstreams(virtualModelID string, inputs []upstreamInput) error {
@@ -116,7 +116,7 @@ func handleListVirtualModels(c *gin.Context) {
 		return
 	}
 
-	result := make([]vmodelResponse, 0, len(vmodels))
+	result := make([]virtualModelResponse, 0, len(vmodels))
 	for i := range vmodels {
 		resp, err := vmWithUpstreams(&vmodels[i])
 		if err != nil {
@@ -150,7 +150,7 @@ func handleGetVirtualModel(c *gin.Context) {
 }
 
 func handleCreateVirtualModel(c *gin.Context) {
-	var payload vmodelPayload
+	var payload virtualModelPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -200,7 +200,7 @@ func handleCreateVirtualModel(c *gin.Context) {
 
 func handleUpdateVirtualModel(c *gin.Context) {
 	id := c.Param("id")
-	var payload vmodelPayload
+	var payload virtualModelPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

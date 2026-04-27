@@ -1,4 +1,4 @@
-package vmodelrouting
+package virtualmodelrouting
 
 import (
 	"omnillm/internal/database"
