@@ -706,7 +706,12 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncViewport()
 			return m, nil
 		}
-		m.appendEntry(transcriptAssistant, msg.content)
+		content := strings.TrimSpace(msg.content)
+		if content == "" {
+			m.appendEntry(transcriptInfo, "(agent completed with no text response)")
+		} else {
+			m.appendEntry(transcriptAssistant, content)
+		}
 		m.syncViewport()
 		return m, nil
 	case agentProgressMsg:
@@ -1330,6 +1335,7 @@ func (m *chatTUIModel) sendAndStream(userText string) tea.Cmd {
 				case agentpkg.EventToken:
 					finalContent += event.Content
 				case agentpkg.EventToolCall:
+					finalContent = ""
 					if prog != nil {
 						prog.Send(agentProgressMsg{text: fmt.Sprintf("🔧 Calling tool `%s`…", event.Tool)})
 					}

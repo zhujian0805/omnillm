@@ -201,10 +201,29 @@ func (a *Agent) buildRequest() *cif.CanonicalRequest {
 	messages := a.memory.Messages()
 	cifTools := a.registry.ToCIFTools()
 
+	// Extract system prompt from memory and set it on the request.
+	// This ensures it's sent as a proper system message, not buried in conversation history.
+	var systemPrompt string
+	filtered := make([]cif.CIFMessage, 0, len(messages))
+	for _, msg := range messages {
+		if sm, ok := msg.(cif.CIFSystemMessage); ok {
+			if systemPrompt == "" {
+				systemPrompt = sm.Content
+			} else {
+				systemPrompt += "\n" + sm.Content
+			}
+		} else {
+			filtered = append(filtered, msg)
+		}
+	}
+
 	req := &cif.CanonicalRequest{
-		Messages: messages,
+		Messages: filtered,
 		Tools:    cifTools,
 		Stream:   false,
+	}
+	if systemPrompt != "" {
+		req.SystemPrompt = &systemPrompt
 	}
 	// Per OpenAI spec: tool_choice must only be set when tools are present.
 	if len(cifTools) > 0 {
