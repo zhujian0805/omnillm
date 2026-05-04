@@ -225,9 +225,8 @@ func cifMessagesToAnthropic(req *cif.CanonicalRequest) ([]map[string]any, error)
 	for _, msg := range req.Messages {
 		switch m := msg.(type) {
 		case cif.CIFSystemMessage:
-			if strings.TrimSpace(m.Content) != "" {
-				messages = append(messages, map[string]any{"role": "user", "content": m.Content})
-			}
+			// System messages are sent via req.SystemPrompt, skip here.
+			continue
 		case cif.CIFUserMessage:
 			content := anthropicContentBlocksFromUser(m)
 			messages = append(messages, map[string]any{"role": "user", "content": content})
