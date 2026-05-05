@@ -792,7 +792,9 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	var vpCmd, taCmd tea.Cmd
 	m.viewport, vpCmd = m.viewport.Update(msg)
-	m.textarea, taCmd = m.textarea.Update(msg)
+	if _, isMouse := msg.(tea.MouseMsg); !isMouse {
+		m.textarea, taCmd = m.textarea.Update(msg)
+	}
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if m.historySearchMode && !m.streamActive {
 			switch keyMsg.Type {
@@ -829,17 +831,7 @@ func (m chatTUIModel) View() string {
 	main.WriteString(div)
 	main.WriteString("\n")
 	main.WriteString(m.viewport.View())
-	// Scroll position indicator shown when the user has scrolled up.
-	if !m.viewport.AtBottom() {
-		pct := 0
-		if total := m.viewport.TotalLineCount(); total > 0 {
-			pct = int(m.viewport.ScrollPercent() * 100)
-		}
-		main.WriteString("\n")
-		main.WriteString(tuiHelpStyle.Render(fmt.Sprintf("── scroll %d%% ── (PgUp/PgDn to scroll, End to jump to bottom) ──", pct)))
-	} else {
-		main.WriteString("\n")
-	}
+	main.WriteString("\n")
 	main.WriteString(div)
 	main.WriteString("\n")
 	main.WriteString(m.textarea.View())
@@ -1002,12 +994,8 @@ func (m chatTUIModel) renderPickerModal() string {
 }
 
 func (m *chatTUIModel) syncViewport() {
-	atBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(m.renderTranscript())
-	// Only auto-scroll to bottom if the user hasn't scrolled up.
-	if atBottom {
-		m.viewport.GotoBottom()
-	}
+	m.viewport.GotoBottom()
 }
 
 func (m *chatTUIModel) appendEntry(kind transcriptEntryType, content string) {
