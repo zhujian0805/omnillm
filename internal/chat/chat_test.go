@@ -428,7 +428,7 @@ func TestRunAgentTurnWithCheckerExecutesPermissionedCommand(t *testing.T) {
 			t.Fatalf("tool name = %q", req.ToolName)
 		}
 		return true, nil
-	})
+	}, 10)
 	if err != nil {
 		t.Fatalf("RunAgentTurnWithChecker returned error: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestRunAgentTurnExecutesPermissionedCommand(t *testing.T) {
 }
 
 func TestTUIAgentDoneMsgShowsVisibleCompletionWhenContentEmpty(t *testing.T) {
-	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "agent", "anthropic-sdk", nil)
+	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "agent", "anthropic-sdk", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
 	m.viewport = viewport.New(80, 20)
@@ -605,7 +605,7 @@ func TestStreamAgentTurnWithCheckerAllowsEmptyFinalTurnAndDropsPreToolNarration(
 	client := &testClient{baseURL: server.URL, http: server.Client()}
 	eventCh, err := StreamAgentTurnWithChecker(context.Background(), client, "session-1", "claude-haiku-4.5", "anthropic-sdk", "show disk info", func(context.Context, toolspkg.PermissionRequest) (bool, error) {
 		return true, nil
-	})
+	}, 10)
 	if err != nil {
 		t.Fatalf("StreamAgentTurnWithChecker returned error: %v", err)
 	}
@@ -696,7 +696,7 @@ func TestRunAgentTurnWithCheckerReturnsEmptyForToolOnlyCompletion(t *testing.T) 
 	client := &testClient{baseURL: server.URL, http: server.Client()}
 	content, err := RunAgentTurnWithChecker(context.Background(), client, "session-1", "claude-sonnet-4.5", "anthropic-sdk", "show disk info", func(context.Context, toolspkg.PermissionRequest) (bool, error) {
 		return true, nil
-	})
+	}, 10)
 	if err != nil {
 		t.Fatalf("RunAgentTurnWithChecker returned error: %v", err)
 	}
@@ -709,7 +709,7 @@ func TestRunAgentTurnWithCheckerReturnsEmptyForToolOnlyCompletion(t *testing.T) 
 }
 
 func TestTUIHandlesPermissionRequestInTranscript(t *testing.T) {
-	m := newChatTUIModel(nil, "session-1", "gpt-5.4", "agent", "agent-sdk-go", nil)
+	m := newChatTUIModel(nil, "session-1", "gpt-5.4", "agent", "agent-sdk-go", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
 	m.viewport = viewport.New(80, 20)

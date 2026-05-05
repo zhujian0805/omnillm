@@ -80,7 +80,7 @@ func RunREPL(cmd CommandContext, c Client, requestedModel, existingSession strin
 		var assistantContent string
 		if session.Mode == "agent" {
 			sawToolActivity := false
-			eventCh, err := StreamAgentTurnWithChecker(context.Background(), c, session.ID, session.Model, session.AgentBackend, line, makeStdioPermissionChecker(cmd, &session))
+			eventCh, err := StreamAgentTurnWithChecker(context.Background(), c, session.ID, session.Model, session.AgentBackend, line, makeStdioPermissionChecker(cmd, &session), 25)
 			if err != nil {
 				_, _ = fmt.Fprintf(errOut, "Error: completion: %v\n", err)
 				continue
@@ -186,7 +186,7 @@ func makeStdioAskUser(cmd CommandContext) func(context.Context, string, []string
 	}
 }
 
-func RunAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model, backend, prompt string, checker toolspkg.PermissionChecker) (string, error) {
+func RunAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model, backend, prompt string, checker toolspkg.PermissionChecker, maxTurns int) (string, error) {
 	if err := PostMessage(c, sessionID, "user", prompt); err != nil {
 		return "", fmt.Errorf("store message: %w", err)
 	}
@@ -201,7 +201,7 @@ func RunAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model, ba
 		history = append(history, agentpkg.HistoryMessage{Role: msg.Role, Content: msg.Content})
 	}
 
-	result, err := agentpkg.RunTurn(ctx, c, sessionID, model, backend, prompt, history, checker, nil)
+	result, err := agentpkg.RunTurn(ctx, c, sessionID, model, backend, prompt, history, checker, nil, maxTurns)
 	if err != nil {
 		return "", err
 	}
@@ -216,14 +216,14 @@ func RunAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model, ba
 }
 
 func RunAgentTurn(c Client, sessionID, model, backend, prompt string, cmd CommandContext) (string, error) {
-	return RunAgentTurnWithChecker(context.Background(), c, sessionID, model, backend, prompt, makeStdioPermissionChecker(cmd, nil))
+	return RunAgentTurnWithChecker(context.Background(), c, sessionID, model, backend, prompt, makeStdioPermissionChecker(cmd, nil), 25)
 }
 
 // StreamAgentTurnWithChecker runs one agent turn using streaming so that tool
 // call progress is delivered incrementally. Events are emitted on the returned
 // channel until it is closed.  The caller is responsible for saving the final
 // assistant message.
-func StreamAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model, backend, prompt string, checker toolspkg.PermissionChecker) (<-chan agentpkg.Event, error) {
+func StreamAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model, backend, prompt string, checker toolspkg.PermissionChecker, maxTurns int) (<-chan agentpkg.Event, error) {
 	if err := PostMessage(c, sessionID, "user", prompt); err != nil {
 		return nil, fmt.Errorf("store message: %w", err)
 	}
@@ -238,7 +238,7 @@ func StreamAgentTurnWithChecker(ctx context.Context, c Client, sessionID, model,
 		history = append(history, agentpkg.HistoryMessage{Role: msg.Role, Content: msg.Content})
 	}
 
-	return agentpkg.StreamTurn(ctx, c, sessionID, model, backend, prompt, history, checker, nil)
+	return agentpkg.StreamTurn(ctx, c, sessionID, model, backend, prompt, history, checker, nil, maxTurns)
 }
 
 func supportedAgentBackends() []string {

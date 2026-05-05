@@ -189,7 +189,7 @@ func TestAgentMatrixSimpleTurn(t *testing.T) {
 					context.Background(), stub,
 					"sess-matrix", model, backend,
 					"Hello from "+tag,
-					nil, nil, nil,
+					nil, nil, nil, 10,
 				)
 				if err != nil {
 					t.Fatalf("RunTurn error: %v", err)
@@ -219,7 +219,7 @@ func TestAgentMatrixToolCallTurn(t *testing.T) {
 					context.Background(), stub,
 					"sess-tool", model, backend,
 					"What time is it?",
-					nil, nil, nil,
+					nil, nil, nil, 10,
 				)
 				if err != nil {
 					t.Fatalf("RunTurn error: %v", err)
@@ -252,7 +252,7 @@ func TestAgentMatrixStreamTurn(t *testing.T) {
 					context.Background(), stub,
 					"sess-stream", model, backend,
 					"Stream hello from "+tag,
-					nil, nil, nil,
+					nil, nil, nil, 10,
 				)
 				if err != nil {
 					t.Fatalf("StreamTurn error: %v", err)
@@ -490,7 +490,7 @@ func TestAgentMatrixCoreToolsRegistered(t *testing.T) {
 				context.Background(), stub,
 				"sess-tools", model, "agent-sdk-go",
 				"list the current directory",
-				nil, nil, nil,
+				nil, nil, nil, 10,
 			)
 			if err != nil {
 				t.Fatalf("[%s] RunTurn error: %v", model, err)
@@ -537,7 +537,7 @@ func TestAgentMatrixPermissionCheckerAllBackends(t *testing.T) {
 					checkerCalls++
 					return true, nil
 				},
-				nil,
+				nil, 10,
 			)
 			if err != nil {
 				t.Fatalf("[%s] RunTurn error: %v", tag, err)
@@ -692,7 +692,7 @@ func TestAgentMatrixMultiTurn(t *testing.T) {
 						fmt.Sprintf("sess-multiturn-%s-%s", backend, model),
 						model, backend,
 						ex.userPrompt,
-						history, nil, nil,
+						history, nil, nil, 10,
 					)
 					if err != nil {
 						t.Fatalf("[%s] turn %d: RunTurn error: %v", tag, turnN+1, err)

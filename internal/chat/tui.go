@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -41,6 +43,23 @@ var (
 	tuiPermissionBlockStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1)
 	ansiPrefixPattern       = regexp.MustCompile(`^(?:\x1b\[[0-9;]*m)*`)
 )
+
+// ConfigSaveCallback is invoked when the TUI state changes so the hosting binary
+// (e.g. omnicode) can persist user preferences.
+var ConfigSaveCallback func(model, mode, agentBackend string, autopilot bool, maxTurns int)
+
+// SetConfigSaveCallback sets the callback for persisting TUI preferences.
+func SetConfigSaveCallback(cb func(model, mode, agentBackend string, autopilot bool, maxTurns int)) {
+	ConfigSaveCallback = cb
+}
+
+// InitialConfig holds values restored from persisted config that the TUI
+// should apply on startup.
+var InitialConfig struct {
+	Mode      string
+	Autopilot bool
+	MaxTurns  int
+}
 
 const (
 	tuiSidebarWidth    = 30
@@ -362,6 +381,7 @@ type chatTUIModel struct {
 	normalPlaceholder  string
 	approvalPromptText string
 	autopilot          bool
+	maxTurns           int
 
 	promptHistory       []string
 	historyIndex        int
@@ -369,6 +389,8 @@ type chatTUIModel struct {
 	historySearchMode   bool
 	historySearchQuery  string
 	historySearchCursor int
+
+	onConfigSave func(model, mode, agentBackend string, autopilot bool, maxTurns int)
 
 	width        int
 	height       int
@@ -378,7 +400,7 @@ type chatTUIModel struct {
 	mdRenderer   *glamour.TermRenderer
 }
 
-func newChatTUIModel(c Client, sessionID, model, mode, agentBackend string, history []Message) chatTUIModel {
+func newChatTUIModel(c Client, sessionID, model, mode, agentBackend string, history []Message, onConfigSave func(model, mode, agentBackend string, autopilot bool, maxTurns int)) chatTUIModel {
 	sp := spinner.New()
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#A855F7"))
 	sp.Spinner = spinner.Dot
@@ -398,7 +420,7 @@ func newChatTUIModel(c Client, sessionID, model, mode, agentBackend string, hist
 		client:              c,
 		sessionID:           sessionID,
 		model:               model,
-		mode:                mode,
+		mode:                defaultMode(mode, InitialConfig.Mode),
 		agentBackend:        agentBackend,
 		spinner:             sp,
 		textarea:            ta,
@@ -407,6 +429,9 @@ func newChatTUIModel(c Client, sessionID, model, mode, agentBackend string, hist
 		historySearchCursor: -1,
 		normalPlaceholder:   ta.Placeholder,
 		approvalPromptText:  "y: approve  n: deny  Enter: confirm",
+		onConfigSave:        onConfigSave,
+		autopilot:            InitialConfig.Autopilot,
+		maxTurns:            max(InitialConfig.MaxTurns, 1),
 	}
 	for _, msg := range history {
 		switch msg.Role {
@@ -581,6 +606,7 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.agentTurnCancel()
 				m.agentTurnCancel = nil
 			}
+			m.saveConfig()
 			return m, tea.Quit
 		case tea.KeyEscape:
 			if m.historySearchMode {
@@ -600,6 +626,7 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyShiftTab:
 			m.autopilot = !m.autopilot
+			m.saveConfig()
 			m.syncViewport()
 			return m, nil
 		case tea.KeyUp, tea.KeyCtrlP:
@@ -772,11 +799,13 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.model = string(msg)
 		m.picker = nil
 		m.appendEntry(transcriptInfo, fmt.Sprintf("Switched model to `%s`", m.model))
+		m.saveConfig()
 		m.syncViewport()
 		return m, nil
 	case agentBackendChangedMsg:
 		m.agentBackend = string(msg)
 		m.appendEntry(transcriptInfo, fmt.Sprintf("Switched agent backend to `%s`", m.agentBackend))
+		m.saveConfig()
 		m.syncViewport()
 		return m, nil
 	case spinner.TickMsg:
@@ -1087,12 +1116,16 @@ func (m chatTUIModel) renderSidebar() string {
 		permDisplay,
 		"",
 		tuiSidebarHeaderStyle.Render("Context"),
-		tuiSidebarLabelStyle.Render("Session") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(truncateString(m.sessionID, valueWidth)),
-		tuiSidebarLabelStyle.Render("Model") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(truncateString(m.model, valueWidth)),
-		tuiSidebarLabelStyle.Render("Mode") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(truncateString(m.mode, valueWidth)),
+		tuiSidebarLabelStyle.Render("Session") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(m.sessionID),
+		tuiSidebarLabelStyle.Render("Model") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(m.model),
+		tuiSidebarLabelStyle.Render("Mode") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(m.mode),
+		tuiSidebarLabelStyle.Render("Max Turns") + "\n" + tuiSidebarValueStyle.Width(valueWidth).Render(fmt.Sprintf("%d", m.maxTurns)),
+	}
+	if wd, err := os.Getwd(); err == nil {
+		sections = append(sections, tuiSidebarLabelStyle.Render("Working Dir")+"\n"+tuiSidebarValueStyle.Width(valueWidth).Render(wd))
 	}
 	if m.agentBackend != "" {
-		sections = append(sections, tuiSidebarLabelStyle.Render("Agent")+"\n"+tuiSidebarValueStyle.Width(valueWidth).Render(truncateString(m.agentBackend, valueWidth)))
+		sections = append(sections, tuiSidebarLabelStyle.Render("Agent")+"\n"+tuiSidebarValueStyle.Width(valueWidth).Render(m.agentBackend))
 	}
 	sections = append(sections,
 		tuiSidebarLabelStyle.Render("Status")+"\n"+statusDot+" "+status,
@@ -1140,6 +1173,12 @@ func placeOverlayTopRight(base, sidebar string, totalWidth int) string {
 		result = append(result, strings.Repeat(" ", padding) + sideLines[i])
 	}
 	return strings.Join(result, "\n")
+}
+
+func (m *chatTUIModel) saveConfig() {
+	if m.onConfigSave != nil {
+		m.onConfigSave(m.model, m.mode, m.agentBackend, m.autopilot, m.maxTurns)
+	}
 }
 
 func (m *chatTUIModel) recordPromptHistory(text string) {
@@ -1294,6 +1333,13 @@ func tuiMax(a, b int) int {
 	return b
 }
 
+func defaultMode(current, saved string) string {
+	if saved != "" {
+		return saved
+	}
+	return current
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -1311,9 +1357,10 @@ func (m *chatTUIModel) sendAndStream(userText string) tea.Cmd {
 		sessionID := m.sessionID
 		model := m.model
 		backend := m.agentBackend
-		return func() tea.Msg {
-			defer cancel()
-			eventCh, err := StreamAgentTurnWithChecker(ctx, client, sessionID, model, backend, userText, checker)
+		maxTurns := m.maxTurns
+			return func() tea.Msg {
+				defer cancel()
+				eventCh, err := StreamAgentTurnWithChecker(ctx, client, sessionID, model, backend, userText, checker, maxTurns)
 			if err != nil {
 				return agentDoneMsg{err: err}
 			}
@@ -1478,13 +1525,14 @@ func (m chatTUIModel) handleSlash(text string) (tea.Model, tea.Cmd) {
 	}
 	switch fields[0] {
 	case "/quit", "/exit":
+		m.saveConfig()
 		return m, tea.Quit
 	case "/clear", "/cls":
 		m.entries = nil
 		m.syncViewport()
 		return m, nil
 	case "/help":
-		add(m.renderMD("**Commands:**\n\n- `/help` — show this help\n- `/new [title]` — start a new session\n- `/sessions` — browse and resume a previous session\n- `/session` — show current session info\n- `/mode` — show current mode\n- `/mode <chat|agent>` — switch mode\n- `/permissions` — toggle autopilot (auto-approve tool calls)\n- `/model` — show current model\n- `/model <id>` — switch model\n- `/agent` — show current backend and supported backends\n- `/agent <backend>` — switch agent backend (agent-sdk-go, google-adk, anthropic-sdk)\n- `/models` — open model picker\n- `/clear` or `/cls` — clear the screen\n- `/quit` or `/exit` — quit\n\n**Keyboard shortcuts:**\n\n- `Shift+Tab` — toggle autopilot (auto-approve tool calls)\n- The right-hand panel always shows permission and session status\n"))
+		add(m.renderMD("**Commands:**\n\n- `/help` — show this help\n- `/new [title]` — start a new session\n- `/sessions` — browse and resume a previous session\n- `/session` — show current session info\n- `/mode` — show current mode\n- `/mode <chat|agent>` — switch mode\n- `/permissions` — toggle autopilot (auto-approve tool calls)\n- `/model` — show current model\n- `/model <id>` — switch model\n- `/agent` — show current backend and supported backends\n- `/agent <backend>` — switch agent backend (agent-sdk-go, google-adk, anthropic-sdk)\n- `/max-turns [1-100]` — show or set max agent turns (default 25)`r`n- `/models` — open model picker\n- `/clear` or `/cls` — clear the screen\n- `/quit` or `/exit` — quit\n\n**Keyboard shortcuts:**\n\n- `Shift+Tab` — toggle autopilot (auto-approve tool calls)\n- The right-hand panel always shows permission and session status\n"))
 		return m, nil
 	case "/session":
 		add(m.renderMD(fmt.Sprintf("**Session:** `%s`\n**Mode:** `%s`\n**Model:** `%s`", m.sessionID, m.mode, m.model)))
@@ -1495,6 +1543,7 @@ func (m chatTUIModel) handleSlash(text string) (tea.Model, tea.Cmd) {
 			m.mode = *result.NewMode
 		}
 		add(m.renderMD(result.Response))
+		m.saveConfig()
 		return m, nil
 	case "/permissions":
 		m.autopilot = !m.autopilot
@@ -1503,7 +1552,22 @@ func (m chatTUIModel) handleSlash(text string) (tea.Model, tea.Cmd) {
 			status = "autopilot (tools auto-approved)"
 		}
 		add(m.renderMD(fmt.Sprintf("Permissions: **%s**", status)))
+		m.saveConfig()
 		m.syncViewport()
+		return m, nil
+	case "/max-turns":
+		if len(fields) == 1 {
+			add(m.renderMD(fmt.Sprintf("Max turns: **%d**", m.maxTurns)))
+			return m, nil
+		}
+		if n, err := strconv.Atoi(fields[1]); err != nil || n < 1 || n > 100 {
+			add(tuiErrorStyle.Render("Max turns must be between 1 and 100"))
+			return m, nil
+		} else {
+			m.maxTurns = n
+			add(m.renderMD(fmt.Sprintf("Max turns set to **%d**", n)))
+			m.saveConfig()
+		}
 		return m, nil
 	case "/agent":
 		if len(fields) == 1 {
@@ -1584,8 +1648,8 @@ func (m chatTUIModel) handleSlash(text string) (tea.Model, tea.Cmd) {
 }
 
 func RunTUI(c Client, sessionID, model, mode, agentBackend string, history []Message) error {
-	m := newChatTUIModel(c, sessionID, model, mode, agentBackend, history)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	m := newChatTUIModel(c, sessionID, model, mode, agentBackend, history, ConfigSaveCallback)
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	go func() { p.Send(progReadyMsg{p: p}) }()
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI: %w", err)

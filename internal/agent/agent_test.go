@@ -309,7 +309,7 @@ func TestRunTurnPostsDefaultToolsAsOpenAIToolsNotDeprecatedFunctions(t *testing.
 		},
 	}
 
-	result, err := RunTurn(context.Background(), client, "session-1", "deepseek-v4-flash", "agent-sdk-go", "List this directory", nil, nil, nil)
+	result, err := RunTurn(context.Background(), client, "session-1", "deepseek-v4-flash", "agent-sdk-go", "List this directory", nil, nil, nil, 10)
 	if err != nil {
 		t.Fatalf("RunTurn returned error: %v", err)
 	}
