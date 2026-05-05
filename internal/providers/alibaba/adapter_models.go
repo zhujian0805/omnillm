@@ -62,12 +62,32 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 	defTopP := 1.0
 
 	extras := map[string]any{}
-	if IsReasoningModel(model) && len(request.Tools) == 0 {
-		extras["enable_thinking"] = true
+	if IsReasoningModel(model) {
+		if len(request.Tools) == 0 {
+			extras["enable_thinking"] = true
+		} else {
+			// DashScope reasoning models require explicit opt-out when
+			// tools are present; omitting the flag causes a 400 error.
+			extras["enable_thinking"] = false
+		}
 	}
-	if isDeepSeekV4Model(model) && len(request.Tools) > 0 {
+	if isDeepSeekV4ModelID(model) && len(request.Tools) > 0 {
 		delete(extras, "enable_thinking")
 		extras["thinking"] = map[string]any{"type": "disabled"}
+	}
+
+	// Qwen reasoning models reject tool_choice="required" or object-style
+	// tool_choice when thinking mode is active. Strip tool_choice entirely
+	// so the upstream defaults to "auto".
+	if isQwenReasoningModel(model) && len(request.Tools) > 0 {
+		delete(extras, "enable_thinking")
+	}
+
+	// Non-reasoning third-party models (e.g. GLM) on DashScope require
+	// enable_thinking to be explicitly set to false when tools are present;
+	// omitting the flag causes a 400 "Required body invalid" error.
+	if !IsReasoningModel(model) && len(request.Tools) > 0 {
+		extras["enable_thinking"] = false
 	}
 
 	cfg := openaicompat.Config{
@@ -80,15 +100,24 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 	if err != nil {
 		return nil, err
 	}
-	if isDeepSeekV4Model(model) && len(request.Tools) > 0 {
+	if isDeepSeekV4ModelID(model) && len(request.Tools) > 0 {
 		chatReq.ToolChoice = nil
+	}
+	if isQwenReasoningModel(model) && len(request.Tools) > 0 {
+		chatReq.ToolChoice = nil
+	}
+	// Non-reasoning models (e.g. GLM) do not support reasoning_content in
+	// request messages. Strip it to avoid 400 errors.
+	if !IsReasoningModel(model) {
+		stripReasoningContent(chatReq.Messages)
 	}
 	return chatReq, nil
 }
 
-func isDeepSeekV4Model(modelID string) bool {
-	lower := strings.ToLower(strings.TrimSpace(modelID))
-	return strings.Contains(lower, "deepseek-v4")
+func stripReasoningContent(messages []openaicompat.Message) {
+	for i := range messages {
+		messages[i].ReasoningContent = ""
+	}
 }
 
 // ErrHardcodedFallback is returned alongside a hardcoded model list when the

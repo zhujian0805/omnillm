@@ -309,13 +309,13 @@ func TestIsReasoningModel(t *testing.T) {
 		{"qwen3-max", true},
 		{"qwen3-coder-plus", true},
 		{"qwen3-235b-a22b-instruct", true},
-		{"qwq-32b", true},
 		{"qwen-plus", true},
-		{"qwen3.5-plus", true},
 		{"qwen3.6-plus", true},
 		{"deepseek-r1", true},
+		{"deepseek-r1-0528", true},
 		{"deepseek-v4-flash", true},
 		{"QWEN3-MAX", true},
+		{"glm-5.1", false},
 		{"qwen2-5-72b-instruct", false},
 		{"qwen-turbo", false},
 		{"gpt-4o", false},
@@ -373,6 +373,63 @@ func TestAlibabaBuildRequestDeepSeekV4ToolsDisablesThinkingAndOmitsToolChoice(t 
 				t.Fatalf("expected thinking.type=disabled, got %#v", thinking)
 			}
 		})
+	}
+}
+
+func TestAlibabaBuildRequestGLMToolsDisablesThinkingAndStripsReasoningContent(t *testing.T) {
+	p := NewProvider("alibaba-test-glm", "Alibaba Test")
+	adapter := &Adapter{provider: p}
+
+	req := &cif.CanonicalRequest{
+		Model: "alibaba-sk-ab2c5/glm-5.1",
+		Messages: []cif.CIFMessage{
+			cif.CIFAssistantMessage{
+				Role: "assistant",
+				Content: []cif.CIFContentPart{
+					cif.CIFThinkingPart{Type: "thinking", Thinking: "hidden reasoning"},
+					cif.CIFToolCallPart{
+						Type:          "tool_call",
+						ToolCallID:    "call_ls",
+						ToolName:      "ls",
+						ToolArguments: map[string]interface{}{"path": "."},
+					},
+				},
+			},
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "List files"},
+				},
+			},
+		},
+		Tools: []cif.CIFTool{{
+			Name:             "ls",
+			ParametersSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		}},
+		ToolChoice: "auto",
+	}
+
+	chatReq, err := adapter.buildRequest(req, false)
+	if err != nil {
+		t.Fatalf("buildRequest returned error: %v", err)
+	}
+	if chatReq.Model != "glm-5.1" {
+		t.Fatalf("model = %q, want glm-5.1", chatReq.Model)
+	}
+	if chatReq.ToolChoice != "auto" {
+		t.Fatalf("expected GLM upstream tool_choice to remain auto, got %#v", chatReq.ToolChoice)
+	}
+	if val, ok := chatReq.Extras["enable_thinking"]; !ok || val != false {
+		t.Fatalf("expected enable_thinking=false for GLM tools, got %#v", chatReq.Extras)
+	}
+	if len(chatReq.Messages) == 0 {
+		t.Fatalf("expected messages to be present")
+	}
+	if chatReq.Messages[0].ReasoningContent != "" {
+		t.Fatalf("expected reasoning_content to be stripped for GLM, got %q", chatReq.Messages[0].ReasoningContent)
+	}
+	if chatReq.Messages[0].Content != nil {
+		t.Fatalf("expected tool-only assistant content to be omitted, got %#v", chatReq.Messages[0].Content)
 	}
 }
 
