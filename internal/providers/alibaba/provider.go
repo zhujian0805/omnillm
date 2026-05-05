@@ -19,6 +19,7 @@ const AlibabaAPIModeOpenAICompatible = "openai-compatible"
 
 var Models = []types.Model{
 	{ID: "qwen3.6-plus", Name: "Qwen3.6 Plus", MaxTokens: 131072, Provider: "alibaba"},
+	{ID: "qwen3.5-plus", Name: "Qwen3.5 Plus", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen3.5-omni-flash", Name: "Qwen3.5 Omni Flash", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen3-coder-next", Name: "Qwen3 Coder Next", MaxTokens: 131072, Provider: "alibaba"},
 	{ID: "qwen3-coder-plus", Name: "Qwen3 Coder Plus", MaxTokens: 131072, Provider: "alibaba"},
@@ -67,6 +68,15 @@ var qwenReasoningModelIDs = map[string]struct{}{
 
 var deepSeekV4ModelIDs = map[string]struct{}{
 	"deepseek-v4-flash": {},
+}
+
+// nonReasoningToolModelIDs are models that are NOT reasoning models but require
+// special tool handling when tools are present on DashScope. These are typically
+// third-party models (GLM, Qwen3.5-Plus) that reject tool_choice and require
+// explicit empty content for tool-only assistant messages.
+var nonReasoningToolModelIDs = map[string]struct{}{
+	"qwen3.5-plus": {},
+	"glm-5.1":      {},
 }
 
 
@@ -413,6 +423,11 @@ func isQwenReasoningModel(modelID string) bool {
 
 func isDeepSeekV4ModelID(modelID string) bool {
 	_, ok := deepSeekV4ModelIDs[strings.ToLower(RemapModel(modelID))]
+	return ok
+}
+
+func isNonReasoningToolModel(modelID string) bool {
+	_, ok := nonReasoningToolModelIDs[strings.ToLower(RemapModel(modelID))]
 	return ok
 }
 
