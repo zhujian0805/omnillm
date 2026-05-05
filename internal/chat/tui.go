@@ -689,6 +689,7 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.textareaExpanded {
 					lines := strings.Count(m.textarea.Value(), "\n") + 1
 					m.textarea.SetHeight(tuiMax(3, lines))
+					m.textarea.CursorEnd()
 				} else {
 					m.textarea.SetHeight(1)
 				}
