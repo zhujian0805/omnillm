@@ -170,4 +170,20 @@ func TestExecute_ReturnsAPIErrorDetails(t *testing.T) {
 	}
 }
 
+func TestMarshalAssistantToolOnlyContentShowsEmptyString(t *testing.T) {
+	body, err := Marshal(&ChatRequest{
+		Model: "glm-5.1",
+		Messages: []Message{
+			{Role: "assistant", Content: "", ToolCalls: []ToolCall{{ID: "call_1", Type: "function", Function: FunctionCallSpec{Name: "ls", Arguments: "{}"}}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	text := string(body)
+	if !strings.Contains(text, `"content":""`) {
+		t.Fatalf("expected content: \"\" in marshaled body: %s", text)
+	}
+}
+
 func stringPtr(s string) *string { return &s }

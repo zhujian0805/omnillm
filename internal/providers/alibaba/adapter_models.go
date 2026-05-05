@@ -83,10 +83,11 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 		delete(extras, "enable_thinking")
 	}
 
-	// Non-reasoning third-party models (e.g. GLM) on DashScope require
-	// enable_thinking to be explicitly set to false when tools are present;
-	// omitting the flag causes a 400 "Required body invalid" error.
-	if !IsReasoningModel(model) && len(request.Tools) > 0 {
+	// Non-reasoning Qwen models require enable_thinking to be explicitly set
+	// to false when tools are present; omitting the flag causes a 400 error.
+	// Third-party models (GLM, Qwen3.5-Plus) do not support enable_thinking
+	// at all — skip it for those.
+	if !IsReasoningModel(model) && !isNonReasoningToolModel(model) && len(request.Tools) > 0 {
 		extras["enable_thinking"] = false
 	}
 
@@ -106,10 +107,20 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 	if isQwenReasoningModel(model) && len(request.Tools) > 0 {
 		chatReq.ToolChoice = nil
 	}
+	// Non-reasoning third-party models (e.g. GLM, Qwen3.5-Plus) on DashScope
+	// reject tool_choice entirely when tools are present.
+	if isNonReasoningToolModel(model) && len(request.Tools) > 0 {
+		chatReq.ToolChoice = nil
+	}
 	// Non-reasoning models (e.g. GLM) do not support reasoning_content in
 	// request messages. Strip it to avoid 400 errors.
 	if !IsReasoningModel(model) {
 		stripReasoningContent(chatReq.Messages)
+	}
+	// Non-reasoning third-party models require explicit empty content for
+	// tool-only assistant messages; omitting content (nil) causes a 400 error.
+	if isNonReasoningToolModel(model) && len(request.Tools) > 0 {
+		ensureToolAssistantContent(chatReq.Messages)
 	}
 	return chatReq, nil
 }
@@ -117,6 +128,14 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 func stripReasoningContent(messages []openaicompat.Message) {
 	for i := range messages {
 		messages[i].ReasoningContent = ""
+	}
+}
+
+func ensureToolAssistantContent(messages []openaicompat.Message) {
+	for i := range messages {
+		if messages[i].Role == "assistant" && messages[i].Content == nil && len(messages[i].ToolCalls) > 0 {
+			messages[i].Content = ""
+		}
 	}
 }
 
