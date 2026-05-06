@@ -928,6 +928,11 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetHistoryNavigation()
 		}
 	}
+	// Auto-collapse expanded textarea when it becomes empty.
+	if m.textareaExpanded && m.textarea.Value() == "" {
+		m.textareaExpanded = false
+		m.textarea.SetHeight(1)
+	}
 	cmds = append(cmds, vpCmd, taCmd)
 	return m, tea.Batch(cmds...)
 }

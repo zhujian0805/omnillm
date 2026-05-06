@@ -312,6 +312,7 @@ func TestIsReasoningModel(t *testing.T) {
 		{"qwen3-235b-a22b-instruct", true},
 		{"qwen-plus", true},
 		{"qwen3.6-plus", true},
+		{"qwen3.6-flash", true},
 		{"deepseek-r1", true},
 		{"deepseek-r1-0528", true},
 		{"deepseek-v4-flash", true},
@@ -429,6 +430,12 @@ func TestAlibabaBuildRequestGLMToolsOmitsToolChoiceAndSetsEmptyContent(t *testin
 	if chatReq.Messages[0].ReasoningContent != "" {
 		t.Fatalf("expected reasoning_content to be stripped for GLM, got %q", chatReq.Messages[0].ReasoningContent)
 	}
+	if len(chatReq.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("expected one assistant tool call, got %#v", chatReq.Messages[0].ToolCalls)
+	}
+	if chatReq.Messages[0].ToolCalls[0].CallID != "call_ls" {
+		t.Fatalf("expected GLM assistant tool call alias call_id=call_ls, got %#v", chatReq.Messages[0].ToolCalls[0])
+	}
 	content, ok := chatReq.Messages[0].Content.(string)
 	if !ok {
 		t.Fatalf("expected assistant tool-only content to be empty string, got %#v (type %T)", chatReq.Messages[0].Content, chatReq.Messages[0].Content)
@@ -499,6 +506,47 @@ func TestAlibabaBuildRequestQwen35PlusToolsHandling(t *testing.T) {
 				t.Fatalf("expected tool-only assistant content to be empty string, got %q", content)
 			}
 		})
+	}
+}
+
+// ─── qwen3.6-flash with tools (Qwen reasoning model) ────────────────────────
+
+// TestAlibabaBuildRequestQwen36FlashToolsHandling verifies that qwen3.6-flash
+// (a Qwen reasoning model) strips enable_thinking and tool_choice when tools are
+// present, matching the same behaviour as other qwenReasoningModelIDs.
+func TestAlibabaBuildRequestQwen36FlashToolsHandling(t *testing.T) {
+	p := NewProvider("alibaba-test-qwen36flash", "Alibaba Test")
+	adapter := &Adapter{provider: p}
+
+	req := &cif.CanonicalRequest{
+		Model: "qwen3.6-flash",
+		Messages: []cif.CIFMessage{
+			cif.CIFUserMessage{
+				Role: "user",
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "List files"},
+				},
+			},
+		},
+		Tools: []cif.CIFTool{{
+			Name:             "ls",
+			ParametersSchema: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}},
+		}},
+		ToolChoice: "auto",
+	}
+
+	chatReq, err := adapter.buildRequest(req, false)
+	if err != nil {
+		t.Fatalf("buildRequest returned error: %v", err)
+	}
+	if chatReq.Model != "qwen3.6-flash" {
+		t.Fatalf("model = %q, want qwen3.6-flash", chatReq.Model)
+	}
+	if chatReq.ToolChoice != nil {
+		t.Fatalf("expected qwen3.6-flash tool_choice to be omitted, got %#v", chatReq.ToolChoice)
+	}
+	if _, exists := chatReq.Extras["enable_thinking"]; exists {
+		t.Fatalf("enable_thinking must be stripped for qwen3.6-flash with tools, got %#v", chatReq.Extras)
 	}
 }
 
