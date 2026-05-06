@@ -121,6 +121,7 @@ func (a *Adapter) buildRequest(request *cif.CanonicalRequest, stream bool) (*ope
 	// tool-only assistant messages; omitting content (nil) causes a 400 error.
 	if isNonReasoningToolModel(model) && len(request.Tools) > 0 {
 		ensureToolAssistantContent(chatReq.Messages)
+		ensureDashScopeToolCallAlias(chatReq.Messages)
 	}
 	return chatReq, nil
 }
@@ -135,6 +136,19 @@ func ensureToolAssistantContent(messages []openaicompat.Message) {
 	for i := range messages {
 		if messages[i].Role == "assistant" && messages[i].Content == nil && len(messages[i].ToolCalls) > 0 {
 			messages[i].Content = ""
+		}
+	}
+}
+
+func ensureDashScopeToolCallAlias(messages []openaicompat.Message) {
+	for i := range messages {
+		if messages[i].Role != "assistant" {
+			continue
+		}
+		for j := range messages[i].ToolCalls {
+			if messages[i].ToolCalls[j].ID != "" && messages[i].ToolCalls[j].CallID == "" {
+				messages[i].ToolCalls[j].CallID = messages[i].ToolCalls[j].ID
+			}
 		}
 	}
 }

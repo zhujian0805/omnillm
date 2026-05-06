@@ -68,7 +68,8 @@ type FunctionSpec struct {
 
 // ToolCall is a model-requested function invocation in an assistant message.
 type ToolCall struct {
-	ID       string           `json:"id"`
+	ID       string           `json:"id,omitempty"`
+	CallID   string           `json:"call_id,omitempty"`
 	Type     string           `json:"type"`
 	Function FunctionCallSpec `json:"function"`
 }
