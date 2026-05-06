@@ -184,6 +184,9 @@ func TestMarshalAssistantToolOnlyContentShowsEmptyString(t *testing.T) {
 	if !strings.Contains(text, `"content":""`) {
 		t.Fatalf("expected content: \"\" in marshaled body: %s", text)
 	}
+	if strings.Contains(text, `"call_id":"call_1"`) {
+		t.Fatalf("did not expect provider-specific call_id in shared marshaled body: %s", text)
+	}
 }
 
 func stringPtr(s string) *string { return &s }

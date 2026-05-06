@@ -400,6 +400,8 @@ type chatTUIModel struct {
 
 	onConfigSave func(model, mode, apiShape, agentBackend string, autopilot bool, maxTurns int)
 
+	textareaExpanded bool
+
 	width        int
 	height       int
 	mainWidth    int
@@ -414,7 +416,7 @@ func newChatTUIModel(c Client, sessionID, model, mode, apiShape, agentBackend st
 	sp.Spinner = spinner.Dot
 
 	ta := textarea.New()
-	ta.Placeholder = "Type a message… (Enter to send, Shift+Enter for newline)"
+	ta.Placeholder = "Type a message… (Enter to send, Ctrl+J to expand input)"
 	ta.SetWidth(80)
 	ta.SetHeight(1)
 	ta.Focus()
@@ -684,7 +686,12 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlJ:
 			if m.textarea.Focused() && !m.streamActive {
 				m.textarea.InsertString("\n")
-				return m, nil
+				m.textareaExpanded = true
+				lines := strings.Count(m.textarea.Value(), "\n") + 1
+				m.textarea.SetHeight(tuiMax(3, lines))
+				m.textarea.CursorEnd()
+				m.syncViewport()
+				return m, textarea.Blink
 			}
 		case tea.KeyEnter:
 			if m.historySearchMode {
@@ -921,6 +928,11 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetHistoryNavigation()
 		}
 	}
+	// Auto-collapse expanded textarea when it becomes empty.
+	if m.textareaExpanded && m.textarea.Value() == "" {
+		m.textareaExpanded = false
+		m.textarea.SetHeight(1)
+	}
 	cmds = append(cmds, vpCmd, taCmd)
 	return m, tea.Batch(cmds...)
 }
@@ -957,7 +969,7 @@ func (m chatTUIModel) View() string {
 		main.WriteString(status)
 	}
 	main.WriteString("\n")
-	main.WriteString(tuiHelpStyle.Render("Ctrl+C: quit  Ctrl+J: newline  ↑↓: history  PgUp/PgDn: scroll  Ctrl+R: search  Shift+Tab: autopilot  /help: commands  /apishape: API shape"))
+	main.WriteString(tuiHelpStyle.Render("Ctrl+C: quit  Ctrl+J: expand input  ↑↓: history  PgUp/PgDn: scroll  Ctrl+R: search  Shift+Tab: autopilot  /help: commands  /apishape: API shape"))
 
 	base := main.String()
 	if m.sidebarWidth > 0 {
