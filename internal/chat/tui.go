@@ -45,7 +45,7 @@ var (
 	tuiPermissionLabelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F59E0B"))
 	tuiPermissionBlockStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1)
 	tuiSelectionStyle       = lipgloss.NewStyle().Background(lipgloss.Color("#E8E8E8")).Foreground(lipgloss.Color("#111111"))
-	tuiInputShellStyle      = lipgloss.NewStyle().Background(lipgloss.Color("#1C1C1C")).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#3F3F46"))
+	tuiInputShellStyle      = lipgloss.NewStyle().Background(lipgloss.Color("#1C1C1C")).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#3B82F6"))
 	tuiInputAccentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#3B82F6"))
 	ansiPrefixPattern       = regexp.MustCompile(`^(?:\x1b\[[0-9;]*m)*`)
 )
@@ -1086,17 +1086,8 @@ func (m chatTUIModel) View() string {
 
 func (m chatTUIModel) renderTextarea() string {
 	taView := m.textarea.View()
-	lines := strings.Count(taView, "\n") + 1
-	accent := tuiInputAccentStyle.Width(1).Render("│")
-	barLines := make([]string, 0, lines)
-	for i := 0; i < lines; i++ {
-		barLines = append(barLines, accent)
-	}
-	bar := strings.Join(barLines, "\n")
 
-	inner := lipgloss.NewStyle().Padding(1, 2, 1, 1).Width(tuiMax(0, m.mainWidth-2)).Render(
-		lipgloss.JoinHorizontal(lipgloss.Top, bar, taView),
-	)
+	inner := lipgloss.NewStyle().Padding(0, 2, 0, 2).Width(tuiMax(0, m.mainWidth)).Render(taView)
 	return tuiInputShellStyle.Width(m.mainWidth).Render(inner)
 }
 
