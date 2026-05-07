@@ -45,6 +45,8 @@ var (
 	tuiPermissionLabelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F59E0B"))
 	tuiPermissionBlockStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#F59E0B")).Padding(0, 1)
 	tuiSelectionStyle       = lipgloss.NewStyle().Background(lipgloss.Color("#E8E8E8")).Foreground(lipgloss.Color("#111111"))
+	tuiInputShellStyle      = lipgloss.NewStyle().Background(lipgloss.Color("#1C1C1C")).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#3F3F46"))
+	tuiInputAccentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#3B82F6"))
 	ansiPrefixPattern       = regexp.MustCompile(`^(?:\x1b\[[0-9;]*m)*`)
 )
 
@@ -549,7 +551,7 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = m.mainWidth
 			m.viewport.Height = vpH
 		}
-		m.textarea.SetWidth(tuiMax(20, m.mainWidth-2))
+		m.textarea.SetWidth(tuiMax(20, m.mainWidth-6))
 		if m.mdRenderer != nil {
 			m.mdRenderer, _ = glamour.NewTermRenderer(glamour.WithAutoStyle(), glamour.WithWordWrap(tuiMax(20, m.mainWidth-6)))
 		}
@@ -1053,9 +1055,7 @@ func (m chatTUIModel) View() string {
 	main.WriteString("\n")
 	main.WriteString(m.viewport.View())
 	main.WriteString("\n")
-	main.WriteString(div)
-	main.WriteString("\n")
-	main.WriteString(m.textarea.View())
+	main.WriteString(m.renderTextarea())
 	if m.pendingPermission != nil {
 		main.WriteString("\n")
 		main.WriteString(tuiHelpStyle.Render(m.approvalPromptText))
@@ -1082,6 +1082,22 @@ func (m chatTUIModel) View() string {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderSessionPickerModal())
 	}
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderPickerModal())
+}
+
+func (m chatTUIModel) renderTextarea() string {
+	taView := m.textarea.View()
+	lines := strings.Count(taView, "\n") + 1
+	accent := tuiInputAccentStyle.Width(1).Render("│")
+	barLines := make([]string, 0, lines)
+	for i := 0; i < lines; i++ {
+		barLines = append(barLines, accent)
+	}
+	bar := strings.Join(barLines, "\n")
+
+	inner := lipgloss.NewStyle().Padding(1, 2, 1, 1).Width(tuiMax(0, m.mainWidth-2)).Render(
+		lipgloss.JoinHorizontal(lipgloss.Top, bar, taView),
+	)
+	return tuiInputShellStyle.Width(m.mainWidth).Render(inner)
 }
 
 func (m chatTUIModel) renderSessionPickerModal() string {
