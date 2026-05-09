@@ -49,7 +49,7 @@ type GitHubCopilotProvider struct {
 	expiresAt    int64  // Copilot token expiry (unix timestamp)
 	baseURL      string
 	tokenFetcher func(string) (*ghservice.CopilotTokenResponse, error)
-	shapeCache   modelShapeCache // populated by GetModels(); nil means uncached
+	shapeCache   modelShapeCache // populated once by GetModels(); read-only after that — no mutex needed
 }
 
 type CopilotAdapter struct {
