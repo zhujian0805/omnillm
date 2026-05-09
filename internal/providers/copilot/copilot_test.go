@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"omnillm/internal/cif"
 )
 
 func TestGetModels_PopulatesShapeCache(t *testing.T) {
@@ -14,10 +16,10 @@ func TestGetModels_PopulatesShapeCache(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"object":"list","data":[
-				{"id":"gpt-5.4","name":"GPT-5.4","capabilities":{},"supported_endpoints":["/responses","ws:/responses"]},
-				{"id":"claude-opus-4.7","name":"Claude Opus 4.7","capabilities":{},"supported_endpoints":["/v1/messages","/chat/completions"]},
-				{"id":"gpt-4o","name":"GPT-4o","capabilities":{},"supported_endpoints":["/chat/completions"]}
-			]}`))
+					{"id":"gpt-5.4","name":"GPT-5.4","capabilities":{},"supported_endpoints":["/responses","ws:/responses"]},
+					{"id":"claude-opus-4.7","name":"Claude Opus 4.7","capabilities":{},"supported_endpoints":["/v1/messages","/chat/completions"]},
+					{"id":"gpt-4o","name":"GPT-4o","capabilities":{},"supported_endpoints":["/chat/completions"]}
+				]}`))
 	}))
 	defer server.Close()
 
@@ -59,5 +61,46 @@ func TestGetModels_ShapeCacheRemainsNilOnServerError(t *testing.T) {
 
 	if provider.shapeCache != nil {
 		t.Errorf("expected shapeCache to remain nil on server error, got %v", provider.shapeCache)
+	}
+}
+
+func TestSelectShape_CacheHit(t *testing.T) {
+	provider := NewGitHubCopilotProvider("test", "")
+	provider.shapeCache = modelShapeCache{
+		"gpt-5.4":         shapeResponses,
+		"claude-opus-4.7": shapeChat,
+	}
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	if got := adapter.selectShape("gpt-5.4", nil); got != shapeResponses {
+		t.Errorf("expected shapeResponses for gpt-5.4, got %q", got)
+	}
+	if got := adapter.selectShape("claude-opus-4.7", nil); got != shapeChat {
+		t.Errorf("expected shapeChat for claude-opus-4.7, got %q", got)
+	}
+}
+
+func TestSelectShape_ForceChatCompletionsOverridesCache(t *testing.T) {
+	provider := NewGitHubCopilotProvider("test", "")
+	provider.shapeCache = modelShapeCache{"gpt-5.4": shapeResponses}
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	force := true
+	req := &cif.CanonicalRequest{Extensions: &cif.Extensions{ForceChatCompletions: &force}}
+	if got := adapter.selectShape("gpt-5.4", req); got != shapeChat {
+		t.Errorf("expected shapeChat when ForceChatCompletions=true, got %q", got)
+	}
+}
+
+func TestSelectShape_CacheMissFallsBackToHeuristic(t *testing.T) {
+	provider := NewGitHubCopilotProvider("test", "")
+	// shapeCache is nil — simulates pre-GetModels state
+	adapter := provider.GetAdapter().(*CopilotAdapter)
+
+	if got := adapter.selectShape("gpt-5.5", nil); got != shapeResponses {
+		t.Errorf("expected shapeResponses for gpt-5.5 heuristic fallback, got %q", got)
+	}
+	if got := adapter.selectShape("claude-opus-4.7", nil); got != shapeChat {
+		t.Errorf("expected shapeChat for claude fallback, got %q", got)
 	}
 }
