@@ -5,15 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -95,7 +91,7 @@ func doPOST(req *http.Request, stream bool) (*http.Response, error) {
 }
 
 func clonePOSTRetryRequest(req *http.Request, stream bool, err error) *http.Request {
-	if stream || req == nil || req.GetBody == nil || !shouldRetryPOSTTimeout(req.URL, err) {
+	if stream || req == nil || req.GetBody == nil || !shouldRetryPOSTTimeout(req, err) {
 		return nil
 	}
 	retryReq := req.Clone(req.Context())
@@ -107,18 +103,10 @@ func clonePOSTRetryRequest(req *http.Request, stream bool, err error) *http.Requ
 	return retryReq
 }
 
-func shouldRetryPOSTTimeout(target *url.URL, err error) bool {
-	if target == nil || !strings.EqualFold(target.Hostname(), "api.githubcopilot.com") || !strings.HasSuffix(strings.TrimRight(target.Path, "/"), "/responses") {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "client.timeout exceeded while awaiting headers")
+// shouldRetryPOSTTimeout returns true when the failed request should be
+// retried once. Currently always false; kept as an extension point.
+func shouldRetryPOSTTimeout(_ *http.Request, _ error) bool {
+	return false
 }
 
 func startSSEStream(body io.ReadCloser, parser func(io.ReadCloser, chan cif.CIFStreamEvent)) <-chan cif.CIFStreamEvent {
