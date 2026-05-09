@@ -10,6 +10,7 @@ import (
 	"time"
 	"bytes"
 	"context"
+	"strings"
 
 	"omnillm/internal/ingestion"
 	"omnillm/internal/serialization"
@@ -71,9 +72,9 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 			if resp.StatusCode == http.StatusOK {
 				var payload struct {
 					Data []struct {
-						ID           string `json:"id"`
-						Name         string `json:"name"`
-						Capabilities struct {
+						ID                 string   `json:"id"`
+						Name               string   `json:"name"`
+						Capabilities       struct {
 							Tokenizer string `json:"tokenizer"`
 							Limits    struct {
 								MaxContextWindowTokens int `json:"max_context_window_tokens"`
@@ -85,12 +86,19 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 								Dimensions        bool `json:"dimensions"`
 							} `json:"supports"`
 						} `json:"capabilities"`
+						SupportedEndpoints []string `json:"supported_endpoints"`
 					} `json:"data"`
 					Object string `json:"object"`
 				}
 
 				decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
 				if decodeErr == nil && len(payload.Data) > 0 {
+					// Build shape cache from supported_endpoints in the Copilot /models response
+					cache := make(modelShapeCache, len(payload.Data))
+					for _, m := range payload.Data {
+						cache[m.ID] = shapeFromEndpoints(m.SupportedEndpoints)
+					}
+					p.shapeCache = cache
 					models := make([]types.Model, 0, len(payload.Data))
 					for _, model := range payload.Data {
 						capabilities := map[string]interface{}{}
@@ -108,14 +116,16 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 						}
 
 						maxTokens := model.Capabilities.Limits.MaxContextWindowTokens
+						outputTokens := model.Capabilities.Limits.MaxOutputTokens
 						if maxTokens == 0 {
-							maxTokens = model.Capabilities.Limits.MaxOutputTokens
+							maxTokens = outputTokens
 						}
 
 						models = append(models, types.Model{
 							ID:           model.ID,
 							Name:         firstNonEmpty(model.Name, model.ID),
 							MaxTokens:    maxTokens,
+							OutputTokens: outputTokens,
 							Provider:     p.instanceID,
 							Capabilities: capabilities,
 						})
@@ -248,4 +258,25 @@ func (p *GitHubCopilotProvider) GetUsage() (map[string]interface{}, error) {
 		return nil, fmt.Errorf("GitHub token not available")
 	}
 	return ghservice.GetCopilotUsage(p.githubToken)
+}
+
+// shapeFromEndpoints returns the preferred copilotAPIShape for a model given
+// its supported_endpoints list from the Copilot /models response.
+// A model that lists /responses but NOT /chat/completions is responses-only.
+// All other models default to chat/completions.
+func shapeFromEndpoints(endpoints []string) copilotAPIShape {
+	hasResponses := false
+	hasChat := false
+	for _, ep := range endpoints {
+		if strings.HasSuffix(ep, "/responses") {
+			hasResponses = true
+		}
+		if strings.HasSuffix(ep, "/chat/completions") {
+			hasChat = true
+		}
+	}
+	if hasResponses && !hasChat {
+		return shapeResponses
+	}
+	return shapeChat
 }
