@@ -64,6 +64,27 @@ var (
 	tuiTableCellStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5E7EB")).Padding(0, 1)
 	tuiTableAccentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#F59E0B")).Bold(true)
 	ansiPrefixPattern       = regexp.MustCompile(`^(?:\x1b\[[0-9;]*m)*`)
+	omnicodeLogoLeft        = []string{
+		"                    ",
+		"█▀▀█ █▄  ▄█ █▄  █  █ ",
+		"█  █ █ ▀▀ █ █ ▀▄█  █ ",
+		"▀▀▀▀ ▀    ▀ ▀  ▀▀  ▀ ",
+	}
+	omnicodeLogoRight = []string{
+		"                   ",
+		"█▀▀▀ █▀▀█ █▀▀▄ █▀▀▀",
+		"█    █  █ █  █ █▀▀▀",
+		"▀▀▀▀ ▀▀▀▀ ▀▀▀  ▀▀▀▀",
+	}
+	omnicodeLogoStyle = logoStyle{
+		left:          lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")),
+		right:         tuiSidebarHeaderStyle,
+		leftShadow:    lipgloss.NewStyle().Foreground(lipgloss.Color("#24242A")),
+		rightShadow:   lipgloss.NewStyle().Foreground(lipgloss.Color("#3A3A42")),
+		leftShadowBg:  lipgloss.NewStyle().Background(lipgloss.Color("#24242A")),
+		rightShadowBg: lipgloss.NewStyle().Background(lipgloss.Color("#3A3A42")),
+	}
+	omnicodeLogo = renderOmnicodeLogo()
 )
 
 // ConfigSaveCallback is invoked when the TUI state changes so the hosting binary
@@ -88,6 +109,15 @@ const (
 	tuiSidebarWidth    = 30
 	tuiMinSidebarWidth = 60
 )
+
+type logoStyle struct {
+	left          lipgloss.Style
+	right         lipgloss.Style
+	leftShadow    lipgloss.Style
+	rightShadow   lipgloss.Style
+	leftShadowBg  lipgloss.Style
+	rightShadowBg lipgloss.Style
+}
 
 type transcriptEntryType string
 
@@ -1396,6 +1426,41 @@ func (m chatTUIModel) renderTranscript() string {
 	return m.renderSelectionHighlight(transcript)
 }
 
+func renderOmnicodeLogo() string {
+	rows := make([]string, 0, len(omnicodeLogoLeft))
+	draw := func(line string, fg, shadow, bg lipgloss.Style) string {
+		var row strings.Builder
+		fgOnBg := fg.Background(bg.GetBackground())
+		for _, char := range line {
+			switch char {
+			case '_':
+				row.WriteString(bg.Render(" "))
+			case '^':
+				row.WriteString(fgOnBg.Render("▀"))
+			case '~':
+				row.WriteString(shadow.Render("▀"))
+			case ' ':
+				row.WriteRune(char)
+			default:
+				row.WriteString(fg.Render(string(char)))
+			}
+		}
+		return row.String()
+	}
+
+	for i, left := range omnicodeLogoLeft {
+		right := ""
+		if i < len(omnicodeLogoRight) {
+			right = omnicodeLogoRight[i]
+		}
+		rows = append(rows,
+			draw(left, omnicodeLogoStyle.left, omnicodeLogoStyle.leftShadow, omnicodeLogoStyle.leftShadowBg)+" "+
+				draw(right, omnicodeLogoStyle.right, omnicodeLogoStyle.rightShadow, omnicodeLogoStyle.rightShadowBg),
+		)
+	}
+	return strings.Join(rows, "\n")
+}
+
 func (m chatTUIModel) renderWelcomeBanner() string {
 	cwd, _ := os.Getwd()
 	version := "v0.0.1"
@@ -1409,10 +1474,7 @@ func (m chatTUIModel) renderWelcomeBanner() string {
 	subtleColor := lipgloss.Color("#9CA3AF")
 	highlightColor := lipgloss.Color("#C4B5FD")
 
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(accentColor).
-		Render("◆  OMNICODE  ◆")
+	title := omnicodeLogo
 
 	subtitle := lipgloss.NewStyle().
 		Foreground(subtleColor).
@@ -1420,7 +1482,7 @@ func (m chatTUIModel) renderWelcomeBanner() string {
 	if m.model != "" {
 		subtitle = lipgloss.NewStyle().
 			Foreground(subtleColor).
-			Render(version + "  •  " + cwd + "  •  ") +
+			Render(version+"  •  "+cwd+"  •  ") +
 			lipgloss.NewStyle().Foreground(highlightColor).Render(m.model)
 	}
 
