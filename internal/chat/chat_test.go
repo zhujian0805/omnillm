@@ -158,7 +158,7 @@ func TestRenderFooterStatusPrefersContextualState(t *testing.T) {
 	}
 
 	m.showInlineHelp = true
-	if got := m.renderFooterStatus(); !strings.Contains(got, "Ctrl+R search") {
+	if got := m.renderFooterStatus(); !strings.Contains(got, "Ctrl+O expand/collapse") {
 		t.Fatalf("inline help footer = %q", got)
 	}
 
@@ -752,7 +752,7 @@ func TestTUILeftMouseCopiesVisibleTranscriptTextOnRelease(t *testing.T) {
 	}
 }
 
-func TestTUILeftMouseClickExpandsToolResult(t *testing.T) {
+func TestTUILeftMouseClickDoesNotExpandToolResultHint(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -775,12 +775,12 @@ func TestTUILeftMouseClickExpandsToolResult(t *testing.T) {
 	model, _ = updated.Update(tea.MouseMsg{X: 3, Y: hintY, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
 	updated = model.(chatTUIModel)
 
-	if !updated.expandedEntries[1] {
-		t.Fatal("expected clicking tool result hint to expand it")
+	if updated.expandedEntries[1] {
+		t.Fatal("clicking tool result hint should not expand it")
 	}
 }
 
-func TestTUILeftMouseClickUsesPressPositionWhenHoverIsStale(t *testing.T) {
+func TestTUILeftMouseClickDoesNotExpandToolResultWhenHoverIsStale(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -814,12 +814,12 @@ func TestTUILeftMouseClickUsesPressPositionWhenHoverIsStale(t *testing.T) {
 	if updated.expandedEntries[1] {
 		t.Fatal("did not expect stale hovered assistant entry to expand")
 	}
-	if !updated.expandedEntries[2] {
-		t.Fatal("expected clicked tool result entry to expand")
+	if updated.expandedEntries[2] {
+		t.Fatal("clicking tool result should not expand it")
 	}
 }
 
-func TestTUILeftMouseClickExpandsToolResultBody(t *testing.T) {
+func TestTUILeftMouseClickDoesNotExpandToolResultBody(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -842,8 +842,8 @@ func TestTUILeftMouseClickExpandsToolResultBody(t *testing.T) {
 	model, _ = updated.Update(tea.MouseMsg{X: 3, Y: bodyY, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
 	updated = model.(chatTUIModel)
 
-	if !updated.expandedEntries[1] {
-		t.Fatal("expected clicking tool result body to expand it")
+	if updated.expandedEntries[1] {
+		t.Fatal("clicking tool result body should not expand it")
 	}
 }
 
@@ -945,7 +945,7 @@ func TestTUIAssistantResponseClickDoesNotToggleExpansion(t *testing.T) {
 	}
 }
 
-func TestTUICtrlEDoesNotToggleAssistantResponse(t *testing.T) {
+func TestTUICtrlODoesNotToggleAssistantResponse(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -958,14 +958,14 @@ func TestTUICtrlEDoesNotToggleAssistantResponse(t *testing.T) {
 	m.syncViewport()
 	m.hoveredEntry = 0
 
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated := model.(chatTUIModel)
 	if updated.expandedEntries[1] {
-		t.Fatal("Ctrl+E should not toggle assistant response expansion")
+		t.Fatal("Ctrl+O should not toggle assistant response expansion")
 	}
 }
 
-func TestTUILeftMouseClickTogglesSameToolResultAfterEntryIndexShift(t *testing.T) {
+func TestTUILeftMouseClickDoesNotToggleToolResultAfterEntryIndexShift(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -998,35 +998,52 @@ func TestTUILeftMouseClickTogglesSameToolResultAfterEntryIndexShift(t *testing.T
 	if updated.expandedEntries[1] {
 		t.Fatal("first tool result expanded after clicking second tool result")
 	}
-	if !updated.expandedEntries[2] {
-		t.Fatal("clicked second tool result did not expand after entry index shifted")
+	if updated.expandedEntries[2] {
+		t.Fatal("clicking second tool result should not expand after entry index shifted")
 	}
 }
 
-func TestTUICtrlETogglesToolResultExpansion(t *testing.T) {
+func TestTUICtrlOTogglesAllToolResultExpansion(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
 	m.viewport = viewport.New(80, 50)
-	m.entries = append(m.entries, transcriptEntry{
-		id:       1,
-		kind:     transcriptToolResult,
-		toolName: "Read",
-		content:  strings.Join([]string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}, "\n"),
-	})
+	m.entries = append(m.entries,
+		transcriptEntry{
+			id:       1,
+			kind:     transcriptToolResult,
+			toolName: "Read",
+			content:  strings.Join([]string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}, "\n"),
+		},
+		transcriptEntry{
+			id:       2,
+			kind:     transcriptToolResult,
+			toolName: "Write",
+			content:  strings.Join([]string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}, "\n"),
+		},
+		transcriptEntry{
+			id:       3,
+			kind:     transcriptToolResult,
+			toolName: "Short",
+			content:  "short output",
+		},
+	)
 	m.syncViewport()
 	m.hoveredEntry = 0
 
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated := model.(chatTUIModel)
-	if !updated.expandedEntries[1] {
-		t.Fatal("expected Ctrl+E to expand hovered tool result")
+	if !updated.expandedEntries[1] || !updated.expandedEntries[2] {
+		t.Fatal("expected Ctrl+O to expand all expandable tool results")
+	}
+	if updated.expandedEntries[3] {
+		t.Fatal("Ctrl+O should not mark non-overflowing tool results as expanded")
 	}
 
-	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated = model.(chatTUIModel)
-	if updated.expandedEntries[1] {
-		t.Fatal("expected second Ctrl+E to collapse hovered tool result")
+	if updated.expandedEntries[1] || updated.expandedEntries[2] {
+		t.Fatal("expected second Ctrl+O to collapse all expandable tool results")
 	}
 }
 
