@@ -158,6 +158,144 @@ func truncateTo(s string, n int) string {
 	return s[:n] + "…"
 }
 
+// ─── schedule_heartbeat ─────────────────────────────────────────────────────
+
+type scheduleHeartbeatTool struct{}
+
+func ScheduleHeartbeat() Tool { return &scheduleHeartbeatTool{} }
+
+func (t *scheduleHeartbeatTool) Name() string { return "schedule_heartbeat" }
+func (t *scheduleHeartbeatTool) Description() string {
+	return "Schedule a heartbeat automation entry for periodic checks or reminders. " +
+		"This creates a managed task entry that can be tracked via task_list/task_get/task_stop."
+}
+func (t *scheduleHeartbeatTool) InputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"interval_seconds": map[string]any{"type": "integer", "description": "Heartbeat interval in seconds."},
+			"prompt":           map[string]any{"type": "string", "description": "Prompt/instruction to execute each heartbeat."},
+			"target":           map[string]any{"type": "string", "description": "Optional worker/target label for routing."},
+		},
+		"required": []string{"interval_seconds", "prompt"},
+	}
+}
+func (t *scheduleHeartbeatTool) Execute(ctx context.Context, call Context, input json.RawMessage) Result {
+	var p struct {
+		IntervalSeconds int    `json:"interval_seconds"`
+		Prompt          string `json:"prompt"`
+		Target          string `json:"target"`
+	}
+	if err := json.Unmarshal(input, &p); err != nil {
+		return Result{Output: "error: " + err.Error(), IsError: true}
+	}
+	p.Prompt = strings.TrimSpace(p.Prompt)
+	p.Target = strings.TrimSpace(p.Target)
+	if p.IntervalSeconds <= 0 {
+		return Result{Output: "error: interval_seconds must be > 0", IsError: true}
+	}
+	if p.Prompt == "" {
+		return Result{Output: "error: prompt is required", IsError: true}
+	}
+	if call.TaskStore == nil {
+		return Result{Output: "error: task store not available", IsError: true}
+	}
+
+	id := call.TaskStore.nextID()
+	desc := fmt.Sprintf("heartbeat every %ds", p.IntervalSeconds)
+	if p.Target != "" {
+		desc += " -> " + p.Target
+	}
+	run := &TaskRun{
+		ID:          id,
+		Description: desc,
+		Status:      TaskRunPending,
+		Output:      fmt.Sprintf("Heartbeat scheduled: every %d seconds\nPrompt: %s", p.IntervalSeconds, p.Prompt),
+	}
+	call.TaskStore.add(run)
+
+	return Result{
+		Title:  "Heartbeat scheduled",
+		Output: fmt.Sprintf("Job ID: %s\nInterval: %ds\nTarget: %s\nPrompt: %s", id, p.IntervalSeconds, defaultLabel(p.Target, "default"), p.Prompt),
+	}
+}
+
+// ─── trigger_event ──────────────────────────────────────────────────────────
+
+type triggerEventTool struct{}
+
+func TriggerEvent() Tool { return &triggerEventTool{} }
+
+func (t *triggerEventTool) Name() string { return "trigger_event" }
+func (t *triggerEventTool) Description() string {
+	return "Trigger an automation event and optionally route it to a named worker. " +
+		"Useful for harness-native event-driven workflows."
+}
+func (t *triggerEventTool) InputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"event_type": map[string]any{"type": "string", "description": "Event type name."},
+			"payload":    map[string]any{"type": "string", "description": "Event payload or summary."},
+			"target":     map[string]any{"type": "string", "description": "Optional worker target."},
+		},
+		"required": []string{"event_type"},
+	}
+}
+func (t *triggerEventTool) Execute(ctx context.Context, call Context, input json.RawMessage) Result {
+	var p struct {
+		EventType string `json:"event_type"`
+		Payload   string `json:"payload"`
+		Target    string `json:"target"`
+	}
+	if err := json.Unmarshal(input, &p); err != nil {
+		return Result{Output: "error: " + err.Error(), IsError: true}
+	}
+	p.EventType = strings.TrimSpace(p.EventType)
+	p.Payload = strings.TrimSpace(p.Payload)
+	p.Target = strings.TrimSpace(p.Target)
+	if p.EventType == "" {
+		return Result{Output: "error: event_type is required", IsError: true}
+	}
+
+	message := fmt.Sprintf("Event: %s", p.EventType)
+	if p.Payload != "" {
+		message += "\nPayload: " + p.Payload
+	}
+
+	if call.SendMessageFn != nil {
+		target := p.Target
+		if target == "" {
+			target = "event-handler"
+		}
+		resp, err := call.SendMessageFn(ctx, target, message)
+		if err != nil {
+			return Result{Output: "error: failed to dispatch event: " + err.Error(), IsError: true}
+		}
+		return Result{Title: "Event triggered", Output: fmt.Sprintf("Target: %s\nResponse:\n%s", target, strings.TrimSpace(resp))}
+	}
+
+	if call.TaskStore != nil {
+		id := call.TaskStore.nextID()
+		call.TaskStore.add(&TaskRun{
+			ID:          id,
+			Description: "event " + p.EventType,
+			Status:      TaskRunPending,
+			Output:      message,
+		})
+		return Result{Title: "Event queued", Output: fmt.Sprintf("Event %s queued as task %s", p.EventType, id)}
+	}
+
+	return Result{Output: fmt.Sprintf("Event %s accepted (no dispatcher configured)", p.EventType)}
+}
+
+func defaultLabel(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 // ─── delete_cron / list_crons reuse task_stop / task_list via TaskStore ───────
 // They are intentionally thin wrappers so the agent can use task_stop <id> and
 // task_list to manage cron jobs without a separate store.

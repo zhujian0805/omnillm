@@ -931,20 +931,21 @@ func TestManagerRegistryPassthrough(t *testing.T) {
 	}
 }
 
-// ─── RegisterCoreTools registers all 36 tools ─────────────────────────────────
+// ─── RegisterCoreTools registers all core tools ──────────────────────────────
 
 func TestRegisterCoreToolsCount(t *testing.T) {
 	m := NewManager()
 	RegisterCoreTools(m)
 
 	tools := m.Registry().List()
-	// 36 tools as of groups.go: bash, powershell, read, write, edit, multiedit,
+	// 40 tools as of groups.go: bash, powershell, read, write, edit, multiedit,
 	// apply_patch, glob, grep, ls, notebook_edit, web_fetch, web_search,
 	// codesearch, get_current_time, calculator, sleep, ask_user_question, lsp,
 	// tool_search, config, todo_write, task_create, task_get, task_list,
 	// task_output, task_stop, task_update, enter_plan_mode, exit_plan_mode,
-	// enter_worktree, exit_worktree, schedule_cron, send_message, agent, batch
-	const wantCount = 37 // includes load_skill
+	// enter_worktree, exit_worktree, schedule_cron, schedule_heartbeat,
+	// trigger_event, send_message, agent, batch, orchestrate_agents, load_skill
+	const wantCount = 40
 	if len(tools) != wantCount {
 		names := make([]string, len(tools))
 		for i, t2 := range tools {
