@@ -25,7 +25,7 @@ func RunTurn(ctx context.Context, c Client, sessionID, model, backend, apiShape,
 	registerDefaultTools(registry)
 	registry.SetPermissionChecker(checker)
 	registry.SetAskUserCallback(askUser)
-	registry.SendMessageFn = MakeSubAgentFn(SubAgentOptions{
+	orchestrator := SessionOrchestrator(sessionID, SubAgentOptions{
 		Client:   c,
 		Model:    model,
 		Backend:  backend,
@@ -34,6 +34,7 @@ func RunTurn(ctx context.Context, c Client, sessionID, model, backend, apiShape,
 		Checker:  checker,
 		AskUser:  askUser,
 	})
+	registry.SendMessageFn = orchestrator.SendMessage
 	wsDir := workspaceDir()
 	_ = AppendDailyLog(wsDir, fmt.Sprintf("[%s] run_start model=%s prompt=%q", sessionID, model, trimForLog(prompt, 160)))
 
@@ -72,7 +73,7 @@ func StreamTurn(ctx context.Context, c Client, sessionID, model, backend, apiSha
 	registerDefaultTools(registry)
 	registry.SetPermissionChecker(checker)
 	registry.SetAskUserCallback(askUser)
-	registry.SendMessageFn = MakeSubAgentFn(SubAgentOptions{
+	orchestrator := SessionOrchestrator(sessionID, SubAgentOptions{
 		Client:   c,
 		Model:    model,
 		Backend:  backend,
@@ -81,6 +82,7 @@ func StreamTurn(ctx context.Context, c Client, sessionID, model, backend, apiSha
 		Checker:  checker,
 		AskUser:  askUser,
 	})
+	registry.SendMessageFn = orchestrator.SendMessage
 	wsDir := workspaceDir()
 	_ = AppendDailyLog(wsDir, fmt.Sprintf("[%s] stream_start model=%s prompt=%q", sessionID, model, trimForLog(prompt, 160)))
 

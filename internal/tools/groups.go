@@ -52,11 +52,14 @@ func RegisterCoreTools(m *Manager) {
 
 	// ── Scheduler ─────────────────────────────────────────────────────────────
 	m.Register(ScheduleCron(), Metadata{Category: CategoryScheduler, ReadOnly: false})
+	m.Register(ScheduleHeartbeat(), Metadata{Category: CategoryScheduler, ReadOnly: false})
+	m.Register(TriggerEvent(), Metadata{Category: CategoryScheduler, ReadOnly: false})
 
 	// ── Multi-agent / Messaging ───────────────────────────────────────────────
 	m.Register(SendMessage(), Metadata{Category: CategoryUtility, ReadOnly: false})
 	m.Register(AgentTool(), Metadata{Category: CategoryUtility, ReadOnly: false})
 	m.Register(Batch(), Metadata{Category: CategoryUtility, ReadOnly: false})
+	m.Register(OrchestrateAgents(), Metadata{Category: CategoryUtility, ReadOnly: false})
 
 	// ── Skill loader ──────────────────────────────────────────────────────────
 	m.Register(LoadSkill(), Metadata{Category: CategoryUtility, ReadOnly: false})
@@ -128,11 +131,13 @@ func InitSkillMembership(r *Registry) {
 		}
 	}
 	// scheduler skill
-	if t := r.Get("schedule_cron"); t != nil {
-		r.RegisterSkillTool(t, SkillScheduler)
+	for _, name := range []string{"schedule_cron", "schedule_heartbeat", "trigger_event"} {
+		if t := r.Get(name); t != nil {
+			r.RegisterSkillTool(t, SkillScheduler)
+		}
 	}
 	// agent skill
-	for _, name := range []string{"send_message", "agent", "batch"} {
+	for _, name := range []string{"send_message", "agent", "batch", "orchestrate_agents"} {
 		if t := r.Get(name); t != nil {
 			r.RegisterSkillTool(t, SkillAgent)
 		}

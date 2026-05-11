@@ -35,41 +35,49 @@ func MakeSubAgentFn(opts SubAgentOptions) func(ctx context.Context, to, message 
 		id := atomic.AddUint64(&subAgentCounter, 1)
 		sessionID := fmt.Sprintf("subagent-%s-%d", sanitizeSubAgentID(to), id)
 
-		// Isolated registry — no SendMessageFn wired to prevent unbounded recursion.
-		registry := tools.NewRegistry()
-		registerSubAgentTools(registry)
-		if opts.Checker != nil {
-			registry.SetPermissionChecker(opts.Checker)
-		}
-		if opts.AskUser != nil {
-			registry.SetAskUserCallback(opts.AskUser)
-		}
-		tools.InitRegistryStores(registry)
-		tools.InitSkillMembership(registry)
-
-		// Fresh memory + persistent context for the sub-agent.
-		memory := NewBufferMemory(64)
-		sysPrompt := buildSystemPrompt(detectHostOS())
-		memory.Append(Message{Role: "system", Content: []ContentBlock{TextBlock(sysPrompt)}})
-		wsDir := workspaceDir()
-		if pc := LoadWorkspaceContext(wsDir); !pc.IsEmpty() {
-			injectPersistentContext(memory, pc)
-		}
-
-		dispatch := selectDispatch(opts.Client, opts.Model, opts.Backend, opts.APIShape)
-		ag := NewAgent(registry, memory, opts.MaxTurns, dispatch)
-
-		_ = AppendDailyLog(wsDir, fmt.Sprintf("[%s] subagent_start parent_target=%q", sessionID, to))
-
-		result, err := ag.Run(ctx, sessionID, message)
+		result, err := runIsolatedSubAgentTurn(ctx, opts, sessionID, message, nil)
 		if err != nil {
+			wsDir := workspaceDir()
 			_ = AppendDailyLog(wsDir, fmt.Sprintf("[%s] subagent_error err=%q", sessionID, trimForLog(err.Error(), 200)))
 			return "", fmt.Errorf("sub-agent %q failed: %w", to, err)
 		}
-
+		wsDir := workspaceDir()
 		_ = AppendDailyLog(wsDir, fmt.Sprintf("[%s] subagent_done steps=%d", sessionID, result.Steps))
 		return result.Output, nil
 	}
+}
+
+func runIsolatedSubAgentTurn(ctx context.Context, opts SubAgentOptions, sessionID, prompt string, history []HistoryMessage) (*RunResult, error) {
+	if opts.MaxTurns <= 0 {
+		opts.MaxTurns = 10
+	}
+
+	// Isolated registry — no SendMessageFn wired to prevent unbounded recursion.
+	registry := tools.NewRegistry()
+	registerSubAgentTools(registry)
+	if opts.Checker != nil {
+		registry.SetPermissionChecker(opts.Checker)
+	}
+	if opts.AskUser != nil {
+		registry.SetAskUserCallback(opts.AskUser)
+	}
+	tools.InitRegistryStores(registry)
+	tools.InitSkillMembership(registry)
+
+	memory := NewBufferMemory(64)
+	sysPrompt := buildSystemPrompt(detectHostOS())
+	memory.Append(Message{Role: "system", Content: []ContentBlock{TextBlock(sysPrompt)}})
+	wsDir := workspaceDir()
+	if pc := LoadWorkspaceContext(wsDir); !pc.IsEmpty() {
+		injectPersistentContext(memory, pc)
+	}
+	seedHistory(memory, history, prompt)
+
+	dispatch := selectDispatch(opts.Client, opts.Model, opts.Backend, opts.APIShape)
+	ag := NewAgent(registry, memory, opts.MaxTurns, dispatch)
+
+	_ = AppendDailyLog(wsDir, fmt.Sprintf("[%s] subagent_start", sessionID))
+	return ag.Run(ctx, sessionID, prompt)
 }
 
 // registerSubAgentTools registers core tools for sub-agents, excluding
@@ -79,7 +87,7 @@ func registerSubAgentTools(registry *tools.Registry) {
 	tools.RegisterCoreTools(m)
 	for _, t := range m.Registry().List() {
 		switch t.Name() {
-		case "agent", "send_message", "enter_worktree", "exit_worktree":
+		case "agent", "send_message", "orchestrate_agents", "enter_worktree", "exit_worktree":
 			// Intentionally excluded: prevent recursive spawning and worktree
 			// interference between parent/child sessions.
 			continue
