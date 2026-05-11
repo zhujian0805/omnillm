@@ -947,7 +947,7 @@ func TestTUIAssistantResponseClickDoesNotToggleExpansion(t *testing.T) {
 }
 
 func TestTUICtrlODoesNotToggleAssistantResponse(t *testing.T) {
-	// Ctrl+O has been removed. Pressing it should now be a no-op.
+	// Ctrl+O should only toggle tool results, not assistant responses
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -958,7 +958,7 @@ func TestTUICtrlODoesNotToggleAssistantResponse(t *testing.T) {
 		content: strings.Repeat("assistant response\n", 35),
 	})
 	m.syncViewport()
-	m.hoveredEntry = 0
+	m.textarea.Reset()
 
 	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated := model.(chatTUIModel)
@@ -1006,7 +1006,7 @@ func TestTUILeftMouseClickDoesNotToggleToolResultAfterEntryIndexShift(t *testing
 	}
 }
 
-func TestTUISpaceTogglesFocusedToolResultExpansion(t *testing.T) {
+func TestTUICtrlOTogglesAllToolResults(t *testing.T) {
 	m := newChatTUIModel(nil, "session-1", "claude-haiku-4.5", "chat", DefaultAPIShape, "", nil, nil)
 	m.ready = true
 	m.mainWidth = 80
@@ -1032,41 +1032,28 @@ func TestTUISpaceTogglesFocusedToolResultExpansion(t *testing.T) {
 		},
 	)
 	m.syncViewport()
+	m.textarea.Reset()
 
-	// Space on focused expandable entry toggles only that one.
-	m.hoveredEntry = 0
-	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	// Ctrl+O expands all tool results when any are collapsed
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated := model.(chatTUIModel)
-	if !updated.expandedEntries[1] {
-		t.Fatal("expected Space to expand focused tool result")
-	}
-	if updated.expandedEntries[2] {
-		t.Fatal("Space should not expand non-focused tool results")
+	if !updated.expandedEntries[1] || !updated.expandedEntries[2] || !updated.expandedEntries[3] {
+		t.Fatal("Ctrl+O should expand all tool results when any are collapsed")
 	}
 
-	// Pressing Space again on the same focused entry collapses it.
-	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	// Ctrl+O collapses all tool results when all are expanded
+	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated = model.(chatTUIModel)
-	if updated.expandedEntries[1] {
-		t.Fatal("expected second Space to collapse focused tool result")
+	if updated.expandedEntries[1] || updated.expandedEntries[2] || updated.expandedEntries[3] {
+		t.Fatal("Ctrl+O should collapse all tool results when all are expanded")
 	}
 
-	// Space on a non-overflowing tool result still toggles item expansion state.
-	updated.textarea.Reset()
-	updated.hoveredEntry = 2
-	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	// Ctrl+O does not work when textarea has input
+	updated.textarea.InsertString("text")
+	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	updated = model.(chatTUIModel)
-	if !updated.expandedEntries[3] {
-		t.Fatal("Space should toggle non-overflowing tool result item state")
-	}
-
-	// Space with no hovered entry falls through to the textarea.
-	updated.textarea.Reset()
-	updated.hoveredEntry = -1
-	model, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
-	updated = model.(chatTUIModel)
-	if updated.textarea.Value() != " " {
-		t.Fatalf("Space with no hovered entry should reach textarea; got %q", updated.textarea.Value())
+	if updated.expandedEntries[1] || updated.expandedEntries[2] || updated.expandedEntries[3] {
+		t.Fatal("Ctrl+O should not toggle when textarea has input")
 	}
 }
 
