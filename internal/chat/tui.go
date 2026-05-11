@@ -835,17 +835,27 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showInlineHelp = !m.showInlineHelp
 				return m, nil
 			}
-			if m.textarea.Focused() && !m.streamActive && len(msg.Runes) == 1 && msg.Runes[0] == ' ' && m.textarea.Value() == "" && m.hoveredEntry >= 0 && m.hoveredEntry < len(m.entries) {
-				entry := m.entries[m.hoveredEntry]
-				if entry.kind == transcriptToolResult {
-					if m.expandedEntries[entry.id] {
-						delete(m.expandedEntries, entry.id)
-					} else {
-						m.expandedEntries[entry.id] = true
+		case tea.KeyCtrlO:
+			if m.textarea.Focused() && strings.TrimSpace(m.textarea.Value()) == "" {
+				// Toggle all tool results: if any are collapsed, expand all; otherwise collapse all
+				anyCollapsed := false
+				for _, entry := range m.entries {
+					if entry.kind == transcriptToolResult && !m.expandedEntries[entry.id] {
+						anyCollapsed = true
+						break
 					}
-					m.syncViewport()
-					return m, nil
 				}
+				for _, entry := range m.entries {
+					if entry.kind == transcriptToolResult {
+						if anyCollapsed {
+							m.expandedEntries[entry.id] = true
+						} else {
+							delete(m.expandedEntries, entry.id)
+						}
+					}
+				}
+				m.syncViewport()
+				return m, nil
 			}
 		case tea.KeyUp, tea.KeyCtrlP:
 			if !m.textarea.Focused() || m.streamActive {
@@ -1755,7 +1765,7 @@ func (m chatTUIModel) renderToolResultOutput(content string, expanded bool) stri
 	}
 
 	if !expanded && len(lines) > toolResultMaxLines {
-		out = append(out, tuiToolResultLineStyle.Width(width).Render(fmt.Sprintf("… (%d lines hidden) [click or space to expand]", len(lines)-toolResultMaxLines)))
+		out = append(out, tuiToolResultLineStyle.Width(width).Render(fmt.Sprintf("… (%d lines hidden)", len(lines)-toolResultMaxLines)))
 	}
 	return strings.Join(out, "\n")
 }
