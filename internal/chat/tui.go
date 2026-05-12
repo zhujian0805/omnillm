@@ -780,16 +780,16 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.slashPicker = nil
-				if sel.TakesArgs {
+				current := strings.TrimSpace(m.textarea.Value())
+				if sel.TakesArgs && !strings.EqualFold(current, sel.Name) {
 					m.applyTextareaValue(sel.Name + " ")
-					m.textarea.CursorEnd()
 					return m, nil
 				}
 				m.applyTextareaValue(sel.Name)
 				return m.submitTextareaInput()
 			}
-			// Fall through: any other key edits the textarea and the
-			// post-update lifecycle step will recompute the filter.
+			// Key not consumed by the picker — let the outer switch and
+			// the textarea handle it; updateSlashPicker reruns the filter.
 		}
 		switch msg.Type {
 		case tea.KeyCtrlC:
@@ -2959,24 +2959,8 @@ func (m chatTUIModel) handleSlash(text string) (tea.Model, tea.Cmd) {
 		if len(fields) > 1 {
 			sub = strings.ToLower(fields[1])
 		}
-		if sub == "" {
-			add(m.renderMD("**Spec-driven development workflow**\n\n" +
-				"**REPL shortcuts** (no agent needed):\n\n" +
-				"- `/spec init <title>` — create `specs/<N>-<slug>/` + `spec.md` template\n" +
-				"- `/spec status` — show all specs and which artifacts are present\n\n" +
-				"---\n\n" +
-				"**spec-kit workflow** — specify → plan → tasks → implement\n\n" +
-				"- `spec_init` — create numbered spec dir + blank spec.md\n" +
-				"- `spec_write` — add user stories (P1/P2/P3), Given-When-Then scenarios\n" +
-				"- `spec_plan` — scaffold plan.md (Phase 0-3, tech context, data model)\n" +
-				"- `spec_tasks` — generate tasks.md (atomic tasks per story, `[P]` = parallelizable)\n\n" +
-				"**OpenSpec workflow** — propose → apply → archive\n\n" +
-				"- `spec_write` — propose requirements (SHALL/MUST), entities, edge cases\n" +
-				"- `spec_read` — review spec + artifact dependency graph\n" +
-				"- `spec_status` — scan artifact completion (spec → plan → tasks → code)\n\n" +
-				"---\n\n" +
-				"All commands available in `/mode agent` after `load_skill(\"spec\")`.\n\n" +
-				"**Example:** \"load the spec skill and create a spec for user authentication\"\n"))
+		if sub == "" || sub == "help" {
+			add(m.renderMD(specHelpMarkdown()))
 		} else {
 			var sb strings.Builder
 			handleSpecCommand(&sb, fields)
