@@ -1234,6 +1234,10 @@ func (m chatTUIModel) View() string {
 	main.WriteString("\n")
 	main.WriteString(m.viewport.View())
 	main.WriteString("\n")
+	if overlay := m.renderSlashPicker(); overlay != "" {
+		main.WriteString(overlay)
+		main.WriteString("\n")
+	}
 	main.WriteString(m.renderTextarea())
 	if status := m.renderFooterStatus(); status != "" {
 		main.WriteString("\n")
@@ -1276,6 +1280,49 @@ func (m chatTUIModel) renderTextarea() string {
 	shellInnerWidth := tuiMax(0, contentWidth-2)
 	inner := lipgloss.NewStyle().Padding(0, 2, 0, 2).Width(inputWidth).Render(taView)
 	return tuiInputShellStyle.Width(shellInnerWidth).Render(inner)
+}
+
+func (m chatTUIModel) renderSlashPicker() string {
+	if m.slashPicker == nil {
+		return ""
+	}
+	muted := lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	selectedStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("12")).Padding(0, 1)
+	normalStyle := lipgloss.NewStyle().Padding(0, 1)
+
+	width := tuiMax(40, m.transcriptBlockMaxWidth())
+	visible := slashPickerVisible
+	if visible > len(m.slashPicker.filtered) {
+		visible = len(m.slashPicker.filtered)
+	}
+	start := m.slashPicker.scrollOffset
+	end := start + visible
+	if end > len(m.slashPicker.filtered) {
+		end = len(m.slashPicker.filtered)
+	}
+
+	var rows strings.Builder
+	if len(m.slashPicker.filtered) == 0 {
+		rows.WriteString(muted.Render("  No matching commands"))
+	} else {
+		for i := start; i < end; i++ {
+			c := m.slashPicker.filtered[i]
+			label := fmt.Sprintf("%-14s %s", c.Name, muted.Render(c.Summary))
+			if i == m.slashPicker.selectedIdx {
+				rows.WriteString(selectedStyle.Width(width - 4).Render(label))
+			} else {
+				rows.WriteString(normalStyle.Render(label))
+			}
+			if i < end-1 {
+				rows.WriteString("\n")
+			}
+		}
+	}
+
+	header := lipgloss.NewStyle().Bold(true).Render("Commands")
+	hint := muted.Render("Enter selects • Esc closes • ↑↓ navigate")
+	body := lipgloss.JoinVertical(lipgloss.Left, header+"  "+hint, rows.String())
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("12")).Padding(0, 1).Width(width - 2).Render(body)
 }
 
 func (m chatTUIModel) renderSingleLineTextarea(width int) string {
