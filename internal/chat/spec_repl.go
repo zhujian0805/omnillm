@@ -161,3 +161,77 @@ func nextSpecNumber(specsRoot string) (string, error) {
 	}
 	return fmt.Sprintf("%03d", max+1), nil
 }
+
+// specKitHelpMarkdown returns the help text for the Spec Kit workflow,
+// shown by /speckit.help. It documents the lifecycle, the offline scaffold
+// commands, and the full inventory of agent-routed Spec Kit commands.
+func specKitHelpMarkdown() string {
+	return `**Spec Kit workflow**
+
+Spec Kit organises feature work as durable artifacts under ` + "`specs/<NNN>-<slug>/`" + `:
+
+- ` + "`spec.md`" + ` — what & why (user stories, requirements, scenarios)
+- ` + "`plan.md`" + ` — how (technical context, phases, contracts)
+- ` + "`tasks.md`" + ` — ordered, dependency-aware implementation tasks
+- ` + "`.speckit-state.json`" + ` — lifecycle metadata
+
+**Lifecycle**
+
+` + "`draft`" + ` -> ` + "`in_progress`" + ` -> ` + "`completed`" + ` -> ` + "`archived`" + `
+
+After implementation: validate -> mark completed (` + "`/speckit.complete`" + `) -> optionally archive (` + "`/speckit.archive`" + `).
+
+**Typical pipeline**
+
+` + "`/specify.init <title>`" + ` (offline) -> ` + "`/speckit.specify`" + ` -> ` + "`/speckit.clarify`" + ` -> ` + "`/speckit.plan`" + ` -> ` + "`/speckit.tasks`" + ` -> ` + "`/speckit.implement`" + ` -> ` + "`/speckit.taskstoissues`" + ` (optional, GitHub) -> ` + "`/speckit.complete`" + ` -> ` + "`/speckit.archive`" + `
+
+**Offline commands** (no LLM call; run instantly)
+
+- ` + "`/specify.init <title>`" + ` — scaffold a new ` + "`specs/<NNN>-<slug>/spec.md`" + ` + lifecycle file
+- ` + "`/speckit.status [dir]`" + ` — list specs and artifact-presence + lifecycle state across the repo
+- ` + "`/speckit.help`" + ` — this help
+
+**Agent-routed commands** (load the spec skill and run via the agent)
+
+` + specdriven.RenderSpecKitCommandTable() + `
+
+Tip: in the TUI, type ` + "`/speckit`" + ` to filter the picker to all Spec Kit commands.
+`
+}
+
+// openSpecHelpMarkdown returns the help text for the OpenSpec workflow,
+// shown by /openspec:help (alias /opsx:help). It documents the change-delta
+// lifecycle and the full inventory of agent-routed OpenSpec commands.
+func openSpecHelpMarkdown() string {
+	return `**OpenSpec workflow**
+
+OpenSpec manages requirements-driven changes under ` + "`openspec/changes/<change>/`" + `:
+
+- ` + "`proposal.md`" + ` — why this change is being proposed
+- ` + "`design.md`" + ` — technical design and trade-offs
+- ` + "`specs/general/spec.md`" + ` — delta requirements (ADDED/MODIFIED/REMOVED)
+- ` + "`tasks.md`" + ` — implementation work items
+
+Completed changes are archived to ` + "`openspec/changes/archive/`" + ` and their delta specs are merged into ` + "`openspec/specs/`" + `.
+
+**Lifecycle**
+
+` + "`propose`" + ` -> ` + "`apply`" + ` -> ` + "`archive`" + ` (with ` + "`sync`" + ` to merge deltas)
+
+**Offline commands** (no LLM call; run instantly)
+
+- ` + "`/openspec:init <change-name>`" + ` — scaffold ` + "`openspec/changes/<slug>/`" + ` with proposal/design/tasks/spec stubs
+- ` + "`/openspec:help`" + ` — this help
+
+**Agent-routed commands** (load the spec skill and run via the agent)
+
+` + specdriven.RenderOpenSpecCommandTable() + `
+
+Profiles: **core** is the standard propose/apply/archive flow. **expanded** adds scaffolding and verification helpers.
+
+**Deprecated aliases:** the previous ` + "`/opsx:*`" + ` namespace remains accepted for backwards compatibility but is no longer documented; please prefer ` + "`/openspec:*`" + `.
+
+Tip: in the TUI, type ` + "`/openspec`" + ` to filter the picker to all OpenSpec commands.
+`
+}
+

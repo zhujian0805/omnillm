@@ -452,8 +452,10 @@ func printHelp(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  /models <filter>   List model selectors matching a filter")
 	_, _ = fmt.Fprintln(w, "  /specify.init      Spec Kit: scaffold a new spec directory (offline)")
 	_, _ = fmt.Fprintln(w, "  /speckit.status    Spec Kit: list specs and artifact status (offline)")
-	_, _ = fmt.Fprintln(w, "  /opsx:init <name>  OpenSpec: scaffold a new change directory (offline)")
-	_, _ = fmt.Fprintln(w, "  /speckit.* /opsx:* Run a Spec Kit / OpenSpec command via the agent")
+	_, _ = fmt.Fprintln(w, "  /speckit.help      Spec Kit: show workflow help")
+	_, _ = fmt.Fprintln(w, "  /openspec:init <name>  OpenSpec: scaffold a new change directory (offline)")
+	_, _ = fmt.Fprintln(w, "  /openspec:help     OpenSpec: show workflow help")
+	_, _ = fmt.Fprintln(w, "  /speckit.* /openspec:* Run a Spec Kit / OpenSpec command via the agent")
 	_, _ = fmt.Fprintln(w, "  /clear, /cls       Clear the screen")
 	_, _ = fmt.Fprintln(w, "  /quit, /exit       Leave the chat shell")
 }
@@ -491,10 +493,10 @@ func handleDirectSpecCommand(w io.Writer, fields []string) (bool, error) {
 			_, _ = fmt.Fprintf(w, "Error: %v\n", err)
 		}
 		return true, nil
-	case "/opsx:init":
+	case "/openspec:init", "/opsx:init":
 		if arg == "" {
-			_, _ = fmt.Fprintln(w, "Usage: /opsx:init <change-name>")
-			_, _ = fmt.Fprintln(w, "Example: /opsx:init add-user-auth")
+			_, _ = fmt.Fprintln(w, "Usage: /openspec:init <change-name>")
+			_, _ = fmt.Fprintln(w, "Example: /openspec:init add-user-auth")
 			return true, nil
 		}
 		if err := openSpecREPLInit(w, arg); err != nil {
@@ -510,6 +512,12 @@ func handleDirectSpecCommand(w io.Writer, fields []string) (bool, error) {
 			_, _ = fmt.Fprintf(w, "Error: %v\n", err)
 		}
 		return true, nil
+	case "/speckit.help":
+		_, _ = fmt.Fprint(w, specKitHelpMarkdown())
+		return true, nil
+	case "/openspec:help", "/opsx:help":
+		_, _ = fmt.Fprint(w, openSpecHelpMarkdown())
+		return true, nil
 	}
 	return false, nil
 }
@@ -519,6 +527,11 @@ func handleSpecWorkflowSlashCommand(w io.Writer, fields []string, session *Sessi
 		return false, "", nil
 	}
 	name := strings.ToLower(fields[0])
+	// Backwards compat: accept the deprecated /opsx:* aliases by rewriting
+	// them to their canonical /openspec:* counterparts before lookup.
+	if strings.HasPrefix(name, "/opsx:") {
+		name = "/openspec:" + strings.TrimPrefix(name, "/opsx:")
+	}
 	arg := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(strings.Join(fields, " "), fields[0])), " "))
 
 	for _, cmd := range specdriven.SpecKitCommands() {
