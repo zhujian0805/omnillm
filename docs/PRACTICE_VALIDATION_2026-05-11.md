@@ -96,6 +96,7 @@ Implemented:
 - Cron scheduling primitive.
 - Heartbeat scheduling primitive.
 - Event trigger primitive with worker dispatch or task fallback.
+- Runtime execution loops for cron/heartbeat jobs with cancellation support.
 
 Evidence:
 - `internal/tools/cron.go`

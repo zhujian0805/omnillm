@@ -17,7 +17,7 @@ var allSkills = map[string]string{
 	SkillTask:         "Background tasks: task_create/get/list/output/stop/update",
 	SkillPlan:         "Plan mode: enter_plan_mode, exit_plan_mode",
 	SkillWorktree:     "Git worktrees: enter_worktree, exit_worktree",
-	SkillScheduler:    "Cron scheduling: schedule_cron",
+	SkillScheduler:    "Scheduling automation: schedule_cron, schedule_heartbeat, trigger_event",
 	SkillAgent:        "Multi-agent: send_message, agent, batch",
 	SkillUtilityExtra: "Extra utilities: calculator, sleep, lsp, tool_search, config",
 }
