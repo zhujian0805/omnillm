@@ -480,6 +480,11 @@ func handleDirectSpecCommand(w io.Writer, fields []string) (bool, error) {
 		return false, nil
 	}
 	name := strings.ToLower(fields[0])
+	// Backwards compat: rewrite the deprecated /opsx:* aliases to canonical
+	// /openspec:* form so the switch below only needs one branch per command.
+	if strings.HasPrefix(name, "/opsx:") {
+		name = "/openspec:" + strings.TrimPrefix(name, "/opsx:")
+	}
 	arg := strings.TrimSpace(strings.Join(fields[1:], " "))
 
 	switch name {
@@ -493,7 +498,7 @@ func handleDirectSpecCommand(w io.Writer, fields []string) (bool, error) {
 			_, _ = fmt.Fprintf(w, "Error: %v\n", err)
 		}
 		return true, nil
-	case "/openspec:init", "/opsx:init":
+	case "/openspec:init":
 		if arg == "" {
 			_, _ = fmt.Fprintln(w, "Usage: /openspec:init <change-name>")
 			_, _ = fmt.Fprintln(w, "Example: /openspec:init add-user-auth")
@@ -515,7 +520,7 @@ func handleDirectSpecCommand(w io.Writer, fields []string) (bool, error) {
 	case "/speckit.help":
 		_, _ = fmt.Fprint(w, specKitHelpMarkdown())
 		return true, nil
-	case "/openspec:help", "/opsx:help":
+	case "/openspec:help":
 		_, _ = fmt.Fprint(w, openSpecHelpMarkdown())
 		return true, nil
 	}
