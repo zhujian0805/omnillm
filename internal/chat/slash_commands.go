@@ -1,5 +1,10 @@
 package chat
 
+import (
+	"sort"
+	"strings"
+)
+
 // slashCommand describes one built-in TUI slash command.
 type slashCommand struct {
 	Name      string   // canonical name including leading "/"
@@ -28,4 +33,56 @@ func slashCommands() []slashCommand {
 		{Name: "/clear", Aliases: []string{"/cls"}, Summary: "clear the screen"},
 		{Name: "/quit", Aliases: []string{"/exit"}, Summary: "quit"},
 	}
+}
+
+// fuzzySlashFilter ranks the catalog against filter using the same
+// scoring shape as fuzzyScore in tui.go: prefix > substring > subsequence.
+// Aliases are considered. The leading "/" in filter is ignored so users
+// who type "mo" get the same results as "/mo".
+func fuzzySlashFilter(all []slashCommand, filter string) []slashCommand {
+	q := strings.TrimSpace(strings.ToLower(filter))
+	q = strings.TrimPrefix(q, "/")
+	if q == "" {
+		out := make([]slashCommand, len(all))
+		copy(out, all)
+		return out
+	}
+
+	type match struct {
+		cmd   slashCommand
+		score int
+		order int
+	}
+
+	var matches []match
+	for i, c := range all {
+		best := 0
+		matched := false
+		candidates := append([]string{c.Name}, c.Aliases...)
+		for _, name := range candidates {
+			text := strings.TrimPrefix(strings.ToLower(name), "/")
+			if score, ok := fuzzyScore(text, q); ok {
+				matched = true
+				if score > best {
+					best = score
+				}
+			}
+		}
+		if matched {
+			matches = append(matches, match{cmd: c, score: best, order: i})
+		}
+	}
+
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].score != matches[j].score {
+			return matches[i].score > matches[j].score
+		}
+		return matches[i].order < matches[j].order
+	})
+
+	out := make([]slashCommand, len(matches))
+	for i, m := range matches {
+		out[i] = m.cmd
+	}
+	return out
 }
