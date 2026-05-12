@@ -71,6 +71,60 @@ func RenderTasks(specNumber, title string, groups []TaskGroup) string {
 	return sb.String()
 }
 
+// renderMarkdownTable renders a simple markdown table with the supplied headers
+// and rows.
+func renderMarkdownTable(headers []string, rows [][]string) string {
+	var sb strings.Builder
+	if len(headers) == 0 {
+		return ""
+	}
+
+	sb.WriteString("| ")
+	sb.WriteString(strings.Join(headers, " | "))
+	sb.WriteString(" |\n")
+
+	sb.WriteString("|")
+	for i := range headers {
+		if i > 0 {
+			sb.WriteString("|")
+		}
+		sb.WriteString(" --- ")
+	}
+	sb.WriteString("|\n")
+
+	for _, row := range rows {
+		sb.WriteString("| ")
+		for i := range headers {
+			if i > 0 {
+				sb.WriteString(" | ")
+			}
+			if i < len(row) {
+				sb.WriteString(row[i])
+			}
+		}
+		sb.WriteString(" |\n")
+	}
+	return sb.String()
+}
+
+func artifactRequiresText(kind ArtifactStatus) string {
+	if len(kind.Requires) == 0 {
+		return "—"
+	}
+	parts := make([]string, 0, len(kind.Requires))
+	for _, req := range kind.Requires {
+		parts = append(parts, string(req))
+	}
+	return strings.Join(parts, " → ")
+}
+
+func artifactStatusText(present bool) string {
+	if present {
+		return "✓ present"
+	}
+	return "○ missing"
+}
+
 // ─── Scaffold helpers ────────────────────────────────────────────────────────
 
 // ScaffoldTaskGroups builds an initial task breakdown from a Spec, providing a
@@ -167,19 +221,20 @@ func BuildOrder() []ArtifactStatus {
 	}
 }
 
-// RenderStatus builds a human-readable status board for a spec directory.
+// RenderStatus builds a markdown table for spec directory artifact status.
 func RenderStatus(specDir string, present map[ArtifactKind]bool) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Spec: %s\n", specDir))
-	sb.WriteString("Artifacts:\n")
+	rows := make([][]string, 0, len(BuildOrder()))
 	for _, a := range BuildOrder() {
-		icon := "○"
-		status := "missing"
-		if present[a.Kind] {
-			icon = "✓"
-			status = "present"
-		}
-		sb.WriteString(fmt.Sprintf("  %s %-5s %-17s %s\n", icon, a.Kind, a.Filename, status))
+		rows = append(rows, []string{
+			string(a.Kind),
+			a.Filename,
+			artifactRequiresText(a),
+			artifactStatusText(present[a.Kind]),
+		})
 	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("### Spec: `%s`\n\n", specDir))
+	sb.WriteString(renderMarkdownTable([]string{"Artifact", "File", "Requires", "Status"}, rows))
 	return sb.String()
 }
