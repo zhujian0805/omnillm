@@ -1,6 +1,8 @@
 package chat
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestSlashCommandsCatalogShape(t *testing.T) {
 	cmds := slashCommands()
@@ -33,4 +35,57 @@ func TestSlashCommandsCatalogShape(t *testing.T) {
 			t.Errorf("catalog missing required command %q", must)
 		}
 	}
+}
+
+func TestFuzzySlashFilter(t *testing.T) {
+	all := slashCommands()
+
+	cases := []struct {
+		name    string
+		filter  string
+		want    []string
+		notWant []string
+	}{
+		{name: "empty returns all", filter: "", want: []string{"/help"}},
+		{name: "leading slash only returns all", filter: "/", want: []string{"/help"}},
+		{name: "prefix match", filter: "/mo", want: []string{"/mode", "/model", "/models"}},
+		{name: "no leading slash still matches", filter: "mo", want: []string{"/mode", "/model", "/models"}},
+		{name: "question mark alias", filter: "?", want: []string{"/help"}},
+		{name: "no match", filter: "/zzzz", notWant: []string{"/help"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fuzzySlashFilter(all, tc.filter)
+			if tc.filter == "" || tc.filter == "/" {
+				if len(got) != len(all) {
+					t.Fatalf("filter %q: want all %d, got %d", tc.filter, len(all), len(got))
+				}
+				return
+			}
+			if len(tc.want) > 0 && len(got) < len(tc.want) {
+				t.Fatalf("filter %q: want at least %v, got %v", tc.filter, tc.want, slashNames(got))
+			}
+			for i, name := range tc.want {
+				if got[i].Name != name {
+					t.Errorf("filter %q: position %d want %q got %q (full=%v)", tc.filter, i, name, got[i].Name, slashNames(got))
+				}
+			}
+			for _, nw := range tc.notWant {
+				for _, g := range got {
+					if g.Name == nw {
+						t.Errorf("filter %q: did not want %q", tc.filter, nw)
+					}
+				}
+			}
+		})
+	}
+}
+
+func slashNames(cs []slashCommand) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.Name
+	}
+	return out
 }
