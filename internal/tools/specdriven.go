@@ -13,7 +13,7 @@ import (
 	"omnillm/internal/specdriven"
 )
 
-// ─── Internal helpers (extracted from legacy spec_* tools) ────────────────────
+// ─── Internal helpers ────────────────────────────────────────────────────────
 
 // runSpecInit creates a new spec directory and populates an initial spec.md template.
 // Input shape: {title, overview, specs_dir}
@@ -35,7 +35,7 @@ func runSpecInit(_ context.Context, call Context, input json.RawMessage) Result 
 	}
 
 	// Determine next feature number.
-	number, err := nextSpecNumber(specsRoot)
+	number, err := specdriven.NextSpecNumber(specsRoot)
 	if err != nil {
 		return Result{Output: "error determining spec number: " + err.Error(), IsError: true}
 	}
@@ -795,31 +795,7 @@ func deriveTitle(feature string) string {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// nextSpecNumber scans the specs directory and returns the next zero-padded number.
-func nextSpecNumber(specsRoot string) (string, error) {
-	entries, err := os.ReadDir(specsRoot)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "001", nil
-		}
-		return "", err
-	}
-	max := 0
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if len(name) >= 3 {
-			var n int
-			_, err := fmt.Sscanf(name[:3], "%d", &n)
-			if err == nil && n > max {
-				max = n
-			}
-		}
-	}
-	return fmt.Sprintf("%03d", max+1), nil
-}
+// nextSpecNumber moved to specdriven.NextSpecNumber.
 
 // loadSpecHeader reads a spec.md and extracts the minimal header fields
 // (Number, Slug, Title, Overview, CreatedAt, Entities) without full parsing.
@@ -866,10 +842,7 @@ type openSpecArchiveTool struct{}
 type openSpecBulkArchiveTool struct{}
 type openSpecOnboardTool struct{}
 
-// Legacy /openspec:proposal, /openspec:apply, /openspec:archive wrapper
-// tools have been removed. The modern openspec_propose / openspec_apply /
-// openspec_archive tools cover the same functionality and the slash
-// commands now share the /openspec: namespace.
+
 
 func OpenSpecPropose() Tool        { return &openSpecProposeTool{} }
 func OpenSpecExplore() Tool        { return &openSpecExploreTool{} }
