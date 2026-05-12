@@ -11,6 +11,7 @@ package specdriven
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -191,4 +192,32 @@ func Slugify(title string) string {
 		slug = strings.TrimRight(slug, "-")
 	}
 	return slug
+}
+
+// NextSpecNumber scans specsRoot for existing numbered directories and
+// returns the next zero-padded 3-digit number. Returns "001" if specsRoot
+// does not exist.
+func NextSpecNumber(specsRoot string) (string, error) {
+	entries, err := os.ReadDir(specsRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "001", nil
+		}
+		return "", err
+	}
+	max := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if len(name) < 3 {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(name[:3], "%d", &n); err == nil && n > max {
+			max = n
+		}
+	}
+	return fmt.Sprintf("%03d", max+1), nil
 }

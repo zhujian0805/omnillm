@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"omnillm/internal/tools"
@@ -170,6 +171,11 @@ func detectHostOS() string {
 	return osName
 }
 
+// systemPromptCache memoizes the rendered system prompt per OS. The prompt
+// is ~2KB and rendered on every agent turn; the inputs are stable per run, so
+// the result is safe to cache for the lifetime of the process.
+var systemPromptCache sync.Map // map[string]string
+
 // buildSystemPrompt returns an OS-aware system prompt so the LLM generates
 // shell commands appropriate for the host platform.
 func buildSystemPrompt(osName string) string {
@@ -177,6 +183,15 @@ func buildSystemPrompt(osName string) string {
 	if osName == "" {
 		osName = detectHostOS()
 	}
+	if cached, ok := systemPromptCache.Load(osName); ok {
+		return cached.(string)
+	}
+	prompt := renderSystemPrompt(osName)
+	systemPromptCache.Store(osName, prompt)
+	return prompt
+}
+
+func renderSystemPrompt(osName string) string {
 	shellTool := "bash"
 	shellSyntax := "bash/sh"
 	wrongShellRule := "Do not use the powershell tool unless the OS is windows."
