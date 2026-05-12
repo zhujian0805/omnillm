@@ -70,8 +70,6 @@ func TestSlashPickerClosesWhenSlashDeleted(t *testing.T) {
 	if m.slashPicker != nil {
 		t.Errorf("picker should close after deleting leading /")
 	}
-	// strings import used to silence unused on smaller test runs
-	_ = strings.TrimSpace
 }
 
 func namesOf(cs []slashCommand) []string {
@@ -149,5 +147,17 @@ func TestSlashPickerEnterOnArgTakingFillsInput(t *testing.T) {
 	}
 	if got := m.textarea.Value(); got != "/model " {
 		t.Errorf("textarea should be %q, got %q", "/model ", got)
+	}
+}
+
+func TestSlashPickerViewIncludesCommandRow(t *testing.T) {
+	m := newTestTUIModel()
+	m = typeRune(t, m, '/')
+	out := m.View()
+	if !strings.Contains(out, "Commands") {
+		t.Errorf("View() missing header; got:\n%s", out)
+	}
+	if !strings.Contains(out, "/help") {
+		t.Errorf("View() should list /help; got:\n%s", out)
 	}
 }
