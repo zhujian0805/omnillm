@@ -32,9 +32,16 @@ func TestSlashCommandsCatalogShape(t *testing.T) {
 		}
 	}
 
-	for _, must := range []string{"/help", "/new", "/sessions", "/session", "/mode", "/apishape", "/permissions", "/model", "/agent", "/max-turns", "/models", "/specify.init", "/speckit.specify", "/speckit.status", "/opsx:init", "/opsx:propose", "/clear", "/quit"} {
+	for _, must := range []string{"/help", "/new", "/sessions", "/session", "/mode", "/apishape", "/permissions", "/model", "/agent", "/max-turns", "/models", "/specify.init", "/speckit.specify", "/speckit.status", "/speckit.help", "/openspec:init", "/openspec:propose", "/openspec:help", "/clear", "/quit"} {
 		if !seen[must] {
 			t.Errorf("catalog missing required command %q", must)
+		}
+	}
+
+	// /opsx:* aliases must remain accepted for backwards compatibility.
+	for _, alias := range []string{"/opsx:init", "/opsx:propose", "/opsx:help"} {
+		if !seen[alias] {
+			t.Errorf("catalog missing deprecated alias %q (still required for one release)", alias)
 		}
 	}
 
@@ -61,7 +68,7 @@ func TestFuzzySlashFilter(t *testing.T) {
 		{name: "question mark alias", filter: "?", want: []string{"/help"}},
 		{name: "specify init prefix match", filter: "/specify", want: []string{"/specify.init"}},
 		{name: "speckit status fuzzy match", filter: "speckit.stat", want: []string{"/speckit.status"}},
-		{name: "opsx init prefix match", filter: "opsx:init", want: []string{"/opsx:init"}},
+		{name: "openspec init prefix match", filter: "openspec:init", want: []string{"/openspec:init"}},
 		{name: "no match", filter: "/zzzz", notWant: []string{"/help"}},
 	}
 
@@ -103,7 +110,7 @@ func slashNames(cs []slashCommand) []string {
 
 func TestRenderSlashHelp(t *testing.T) {
 	out := renderSlashHelp(slashCommands())
-	for _, want := range []string{"/help", "/models", "/specify.init", "/speckit.status", "/opsx:init", "/quit", "show available commands"} {
+	for _, want := range []string{"/help", "/models", "/specify.init", "/speckit.status", "/openspec:init", "/quit", "show available commands"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("renderSlashHelp output missing %q\n---\n%s", want, out)
 		}
@@ -132,14 +139,26 @@ func TestHandleDirectSpecCommandSpecifyInitRequiresTitle(t *testing.T) {
 	}
 }
 
-func TestHandleDirectSpecCommandOpsxInitRequiresName(t *testing.T) {
+func TestHandleDirectSpecCommandOpenspecInitRequiresName(t *testing.T) {
+	var buf bytes.Buffer
+	handled, err := handleDirectSpecCommand(&buf, []string{"/openspec:init"})
+	if !handled || err != nil {
+		t.Fatalf("expected /openspec:init handled without error, got handled=%v err=%v", handled, err)
+	}
+	if !strings.Contains(buf.String(), "Usage: /openspec:init <change-name>") {
+		t.Fatalf("expected usage hint, got %q", buf.String())
+	}
+}
+
+func TestHandleDirectSpecCommandOpsxInitDeprecatedAliasStillWorks(t *testing.T) {
 	var buf bytes.Buffer
 	handled, err := handleDirectSpecCommand(&buf, []string{"/opsx:init"})
 	if !handled || err != nil {
-		t.Fatalf("expected /opsx:init handled without error, got handled=%v err=%v", handled, err)
+		t.Fatalf("expected /opsx:init alias handled without error, got handled=%v err=%v", handled, err)
 	}
-	if !strings.Contains(buf.String(), "Usage: /opsx:init <change-name>") {
-		t.Fatalf("expected usage hint, got %q", buf.String())
+	// Even via the alias, the canonical Usage line is shown.
+	if !strings.Contains(buf.String(), "Usage: /openspec:init <change-name>") {
+		t.Fatalf("expected canonical usage hint, got %q", buf.String())
 	}
 }
 
@@ -160,6 +179,57 @@ func TestHandleDirectSpecCommandUnknownPassesThrough(t *testing.T) {
 	handled, _ := handleDirectSpecCommand(&buf, []string{"/speckit.specify", "stuff"})
 	if handled {
 		t.Fatalf("/speckit.specify should fall through to agent routing, not be handled directly")
+	}
+}
+
+func TestHandleDirectSpecCommandSpeckitHelp(t *testing.T) {
+	var buf bytes.Buffer
+	handled, err := handleDirectSpecCommand(&buf, []string{"/speckit.help"})
+	if !handled || err != nil {
+		t.Fatalf("expected /speckit.help handled without error, got handled=%v err=%v", handled, err)
+	}
+	out := buf.String()
+	for _, want := range []string{"Spec Kit workflow", "Lifecycle", "/specify.init", "/speckit.status", "speckit_specify"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("/speckit.help output missing %q\n---\n%s", want, out)
+		}
+	}
+}
+
+func TestHandleDirectSpecCommandOpenspecHelp(t *testing.T) {
+	var buf bytes.Buffer
+	handled, err := handleDirectSpecCommand(&buf, []string{"/openspec:help"})
+	if !handled || err != nil {
+		t.Fatalf("expected /openspec:help handled without error, got handled=%v err=%v", handled, err)
+	}
+	out := buf.String()
+	for _, want := range []string{"OpenSpec workflow", "/openspec:init", "openspec_propose", "propose", "archive"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("/openspec:help output missing %q\n---\n%s", want, out)
+		}
+	}
+}
+
+func TestHandleDirectSpecCommandOpsxHelpDeprecatedAlias(t *testing.T) {
+	var buf bytes.Buffer
+	handled, err := handleDirectSpecCommand(&buf, []string{"/opsx:help"})
+	if !handled || err != nil {
+		t.Fatalf("expected /opsx:help alias handled without error, got handled=%v err=%v", handled, err)
+	}
+	if !strings.Contains(buf.String(), "OpenSpec workflow") {
+		t.Fatalf("/opsx:help did not render help text:\n%s", buf.String())
+	}
+}
+
+func TestHandleDirectSpecCommandOpenspecHelpAlias(t *testing.T) {
+	// Backwards-compat sanity: /openspec:help is now canonical, no longer an alias.
+	var buf bytes.Buffer
+	handled, err := handleDirectSpecCommand(&buf, []string{"/openspec:help"})
+	if !handled || err != nil {
+		t.Fatalf("expected /openspec:help handled without error, got handled=%v err=%v", handled, err)
+	}
+	if !strings.Contains(buf.String(), "OpenSpec workflow") {
+		t.Fatalf("/openspec:help did not render help text:\n%s", buf.String())
 	}
 }
 

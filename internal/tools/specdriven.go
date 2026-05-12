@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -206,6 +207,7 @@ type specKitPlanTool struct{}
 type specKitTasksTool struct{}
 type specKitAnalyzeTool struct{}
 type specKitImplementTool struct{}
+type specKitTasksToIssuesTool struct{}
 type specKitChecklistTool struct{}
 type specKitLifecycleStatusTool struct{}
 type specKitCompleteTool struct{}
@@ -218,6 +220,7 @@ func SpecKitPlan() Tool            { return &specKitPlanTool{} }
 func SpecKitTasks() Tool           { return &specKitTasksTool{} }
 func SpecKitAnalyze() Tool         { return &specKitAnalyzeTool{} }
 func SpecKitImplement() Tool       { return &specKitImplementTool{} }
+func SpecKitTasksToIssues() Tool   { return &specKitTasksToIssuesTool{} }
 func SpecKitChecklist() Tool       { return &specKitChecklistTool{} }
 func SpecKitLifecycleStatus() Tool { return &specKitLifecycleStatusTool{} }
 func SpecKitComplete() Tool        { return &specKitCompleteTool{} }
@@ -436,6 +439,173 @@ func (t *specKitImplementTool) Execute(_ context.Context, call Context, input js
 	}
 	pending := strings.Count(string(content), "- [ ]")
 	return Result{Title: "Implementation readiness", Output: fmt.Sprintf("%s contains %d pending tasks. Execute tasks in dependency order, updating checkboxes as work completes.", tasksFile, pending)}
+}
+
+// taskstoissuesTask is one parsed line from tasks.md.
+type taskstoissuesTask struct {
+	ID    string // e.g. "T001"
+	Body  string // task description after the ID
+	State string // " ", "~", "x"
+}
+
+// parseTasksMarkdown extracts task lines like "- [ ] **T001** description"
+// from a tasks.md file. The format is what RenderTasks() emits.
+func parseTasksMarkdown(content string) []taskstoissuesTask {
+	var out []taskstoissuesTask
+	for _, line := range strings.Split(content, "\n") {
+		s := strings.TrimSpace(line)
+		if !strings.HasPrefix(s, "- [") || len(s) < 6 {
+			continue
+		}
+		state := string(s[3])
+		rest := strings.TrimSpace(s[5:])
+		// Expect: **TXXX** description ...  OR  **TXXX** [P] description
+		id := ""
+		body := rest
+		if strings.HasPrefix(rest, "**") {
+			if end := strings.Index(rest[2:], "**"); end > 0 {
+				id = rest[2 : 2+end]
+				body = strings.TrimSpace(rest[2+end+2:])
+				body = strings.TrimPrefix(body, "[P]")
+				body = strings.TrimSpace(body)
+			}
+		}
+		if id == "" {
+			continue
+		}
+		out = append(out, taskstoissuesTask{ID: id, Body: body, State: state})
+	}
+	return out
+}
+
+// detectGitHubRepo reads `git remote get-url <remote>` and returns
+// "owner/repo" if the remote points at github.com, or an error otherwise.
+// It avoids any network call.
+func detectGitHubRepo(remote string) (string, error) {
+	if remote == "" {
+		remote = "origin"
+	}
+	cmd := exec.Command("git", "remote", "get-url", remote)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git remote get-url %s: %w", remote, err)
+	}
+	url := strings.TrimSpace(string(output))
+	// Accept https://github.com/owner/repo(.git) and git@github.com:owner/repo(.git)
+	url = strings.TrimSuffix(url, ".git")
+	switch {
+	case strings.HasPrefix(url, "https://github.com/"):
+		path := strings.TrimPrefix(url, "https://github.com/")
+		if parts := strings.SplitN(path, "/", 3); len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			return parts[0] + "/" + parts[1], nil
+		}
+	case strings.HasPrefix(url, "git@github.com:"):
+		path := strings.TrimPrefix(url, "git@github.com:")
+		if parts := strings.SplitN(path, "/", 3); len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			return parts[0] + "/" + parts[1], nil
+		}
+	}
+	return "", fmt.Errorf("remote %q is not a GitHub URL: %s", remote, url)
+}
+
+func (t *specKitTasksToIssuesTool) Name() string { return "speckit_taskstoissues" }
+func (t *specKitTasksToIssuesTool) Description() string {
+	return "Spec Kit-compatible /speckit.taskstoissues: convert tasks.md items into GitHub issues via the `gh` CLI. Validates the git remote points at github.com, then runs `gh issue create` per pending task. Use dry_run=true to preview without creating issues."
+}
+func (t *specKitTasksToIssuesTool) InputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"spec_dir":     map[string]any{"type": "string", "description": "Spec directory containing tasks.md. Defaults to the active spec dir."},
+			"remote":       map[string]any{"type": "string", "description": "Git remote to inspect (default: origin)."},
+			"labels":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Labels to apply to each issue."},
+			"assignees":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "GitHub usernames to assign to each issue."},
+			"milestone":    map[string]any{"type": "string", "description": "Milestone title to attach to each issue."},
+			"include_done": map[string]any{"type": "boolean", "description": "Also create issues for tasks already marked [x] (default: false)."},
+			"dry_run":      map[string]any{"type": "boolean", "description": "If true, log the issues that would be created but do not run `gh`."},
+		},
+	}
+}
+func (t *specKitTasksToIssuesTool) Execute(ctx context.Context, call Context, input json.RawMessage) Result {
+	var p struct {
+		SpecDir     string   `json:"spec_dir"`
+		Remote      string   `json:"remote"`
+		Labels      []string `json:"labels"`
+		Assignees   []string `json:"assignees"`
+		Milestone   string   `json:"milestone"`
+		IncludeDone bool     `json:"include_done"`
+		DryRun      bool     `json:"dry_run"`
+	}
+	_ = json.Unmarshal(input, &p)
+
+	specDir := resolveSpecDir(call, p.SpecDir)
+	if specDir == "" {
+		return missingSpecDirResult("speckit_specify")
+	}
+	tasksFile := filepath.Join(specDir, "tasks.md")
+	content, err := os.ReadFile(tasksFile)
+	if err != nil {
+		return Result{Output: "error reading tasks.md: " + err.Error() + "; run speckit_tasks first", IsError: true}
+	}
+
+	repo, err := detectGitHubRepo(p.Remote)
+	if err != nil {
+		return Result{Output: "error: " + err.Error() + "; /speckit.taskstoissues requires a GitHub remote", IsError: true}
+	}
+
+	tasks := parseTasksMarkdown(string(content))
+	if len(tasks) == 0 {
+		return Result{Output: "no tasks found in " + tasksFile + "; nothing to do", IsError: true}
+	}
+
+	var summary strings.Builder
+	fmt.Fprintf(&summary, "Repository: %s\nTasks file: %s\nDry run: %v\n\n", repo, tasksFile, p.DryRun)
+
+	created := 0
+	skipped := 0
+	for _, task := range tasks {
+		if !p.IncludeDone && task.State == "x" {
+			skipped++
+			continue
+		}
+		title := fmt.Sprintf("[%s] %s", task.ID, task.Body)
+		if len(title) > 200 {
+			title = title[:200]
+		}
+		body := fmt.Sprintf("From `%s`.\n\nTask `%s` — state: `%s`\n\n%s", tasksFile, task.ID, task.State, task.Body)
+
+		if p.DryRun {
+			fmt.Fprintf(&summary, "[dry-run] would create: %s\n", title)
+			created++
+			continue
+		}
+
+		args := []string{"issue", "create", "--repo", repo, "--title", title, "--body", body}
+		for _, lbl := range p.Labels {
+			args = append(args, "--label", lbl)
+		}
+		for _, a := range p.Assignees {
+			args = append(args, "--assignee", a)
+		}
+		if strings.TrimSpace(p.Milestone) != "" {
+			args = append(args, "--milestone", p.Milestone)
+		}
+		cmd := exec.CommandContext(ctx, "gh", args...)
+		out, runErr := cmd.CombinedOutput()
+		if runErr != nil {
+			fmt.Fprintf(&summary, "[error] %s: %v\n%s\n", task.ID, runErr, strings.TrimSpace(string(out)))
+			continue
+		}
+		fmt.Fprintf(&summary, "[ok] %s -> %s\n", task.ID, strings.TrimSpace(string(out)))
+		created++
+	}
+
+	fmt.Fprintf(&summary, "\nCreated: %d  Skipped (already done): %d  Total parsed: %d", created, skipped, len(tasks))
+	title := "Spec Kit tasks → GitHub issues"
+	if p.DryRun {
+		title = "Spec Kit tasks → GitHub issues (dry run)"
+	}
+	return Result{Title: title, Output: summary.String()}
 }
 
 func (t *specKitChecklistTool) Name() string { return "speckit_checklist" }
@@ -695,9 +865,11 @@ type openSpecSyncTool struct{}
 type openSpecArchiveTool struct{}
 type openSpecBulkArchiveTool struct{}
 type openSpecOnboardTool struct{}
-type openSpecLegacyProposalTool struct{}
-type openSpecLegacyApplyTool struct{}
-type openSpecLegacyArchiveTool struct{}
+
+// Legacy /openspec:proposal, /openspec:apply, /openspec:archive wrapper
+// tools have been removed. The modern openspec_propose / openspec_apply /
+// openspec_archive tools cover the same functionality and the slash
+// commands now share the /openspec: namespace.
 
 func OpenSpecPropose() Tool        { return &openSpecProposeTool{} }
 func OpenSpecExplore() Tool        { return &openSpecExploreTool{} }
@@ -710,9 +882,6 @@ func OpenSpecSync() Tool           { return &openSpecSyncTool{} }
 func OpenSpecArchive() Tool        { return &openSpecArchiveTool{} }
 func OpenSpecBulkArchive() Tool    { return &openSpecBulkArchiveTool{} }
 func OpenSpecOnboard() Tool        { return &openSpecOnboardTool{} }
-func OpenSpecLegacyProposal() Tool { return &openSpecLegacyProposalTool{} }
-func OpenSpecLegacyApply() Tool    { return &openSpecLegacyApplyTool{} }
-func OpenSpecLegacyArchive() Tool  { return &openSpecLegacyArchiveTool{} }
 
 func (t *openSpecProposeTool) Name() string { return "openspec_propose" }
 func (t *openSpecProposeTool) Description() string {
@@ -1054,35 +1223,6 @@ func (t *openSpecOnboardTool) Execute(_ context.Context, _ Context, input json.R
 		return Result{Output: "error writing onboarding: " + err.Error(), IsError: true}
 	}
 	return Result{Title: "OpenSpec onboarding", Output: fmt.Sprintf("Created %s", file)}
-}
-
-func (t *openSpecLegacyProposalTool) Name() string { return "openspec_legacy_proposal" }
-func (t *openSpecLegacyProposalTool) Description() string {
-	return "Legacy OpenSpec /openspec:proposal wrapper for openspec_propose."
-}
-func (t *openSpecLegacyProposalTool) InputSchema() map[string]any {
-	return OpenSpecPropose().InputSchema()
-}
-func (t *openSpecLegacyProposalTool) Execute(ctx context.Context, call Context, input json.RawMessage) Result {
-	return OpenSpecPropose().Execute(ctx, call, input)
-}
-func (t *openSpecLegacyApplyTool) Name() string { return "openspec_legacy_apply" }
-func (t *openSpecLegacyApplyTool) Description() string {
-	return "Legacy OpenSpec /openspec:apply wrapper for openspec_apply."
-}
-func (t *openSpecLegacyApplyTool) InputSchema() map[string]any { return OpenSpecApply().InputSchema() }
-func (t *openSpecLegacyApplyTool) Execute(ctx context.Context, call Context, input json.RawMessage) Result {
-	return OpenSpecApply().Execute(ctx, call, input)
-}
-func (t *openSpecLegacyArchiveTool) Name() string { return "openspec_legacy_archive" }
-func (t *openSpecLegacyArchiveTool) Description() string {
-	return "Legacy OpenSpec /openspec:archive wrapper for openspec_archive."
-}
-func (t *openSpecLegacyArchiveTool) InputSchema() map[string]any {
-	return OpenSpecArchive().InputSchema()
-}
-func (t *openSpecLegacyArchiveTool) Execute(ctx context.Context, call Context, input json.RawMessage) Result {
-	return OpenSpecArchive().Execute(ctx, call, input)
 }
 
 type openSpecChangeInput struct {

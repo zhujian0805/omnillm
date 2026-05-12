@@ -928,7 +928,7 @@ func TestRegisterCoreToolsCount(t *testing.T) {
 
 	tools := m.Registry().List()
 	// 65 tools as of groups.go, after removing legacy spec_* tools.
-	const wantCount = 65
+	const wantCount = 63
 	if len(tools) != wantCount {
 		names := make([]string, len(tools))
 		for i, t2 := range tools {

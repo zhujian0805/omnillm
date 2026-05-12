@@ -221,7 +221,7 @@ func TestTUIHandleSlashSpecKitAliasRoutesToAgent(t *testing.T) {
 
 func TestTUIHandleSlashOpenSpecAliasRoutesToAgent(t *testing.T) {
 	m := newTestTUIModel()
-	out, cmd := m.handleSlash("/opsx:explore auth ideas")
+	out, cmd := m.handleSlash("/openspec:explore auth ideas")
 	if cmd == nil {
 		t.Fatalf("expected agent stream command")
 	}
@@ -239,7 +239,7 @@ func TestTUIHandleSlashOpenSpecAliasRoutesToAgent(t *testing.T) {
 		t.Fatalf("expected routing entries")
 	}
 	got := xansi.Strip(renderEntriesForTest(mm.entries))
-	for _, want := range []string{"/opsx:explore", "openspec_explore", "Running agent workflow", "load the spec skill", "auth ideas"} {
+	for _, want := range []string{"/openspec:explore", "openspec_explore", "Running agent workflow", "load the spec skill", "auth ideas"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("TUI output missing %q\n---\n%s", want, got)
 		}

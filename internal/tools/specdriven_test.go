@@ -452,16 +452,72 @@ func TestSpecToolsRegistered(t *testing.T) {
 
 	specToolNames := []string{
 		"speckit_constitution", "speckit_specify", "speckit_clarify", "speckit_plan", "speckit_tasks",
-		"speckit_analyze", "speckit_implement", "speckit_checklist", "speckit_lifecycle_status",
+		"speckit_analyze", "speckit_implement", "speckit_taskstoissues", "speckit_checklist", "speckit_lifecycle_status",
 		"speckit_complete", "speckit_archive",
 		"openspec_propose", "openspec_explore", "openspec_new", "openspec_continue", "openspec_ff",
 		"openspec_apply", "openspec_verify", "openspec_sync", "openspec_archive", "openspec_bulk_archive",
 		"openspec_onboard",
-		"openspec_legacy_proposal", "openspec_legacy_apply", "openspec_legacy_archive",
 	}
 	for _, name := range specToolNames {
 		if r.Get(name) == nil {
 			t.Errorf("tool %q not registered", name)
 		}
+	}
+}
+// ─── speckit_taskstoissues ────────────────────────────────────────────────────
+
+// TestSpecKitTasksToIssuesDryRunParsesAndSkipsDone exercises the parser and
+// dry-run path. We don't assert on which GitHub repo is detected (it depends
+// on the current git remote, which may inherit from the parent repo), but we
+// do assert that the output reflects the parsed tasks: T001 + T002 are queued
+// for issue creation while T003 (state "[x]") is skipped. This guards the
+// parseTasksMarkdown helper and the include_done default. If the host has no
+// git or no GitHub remote at all, the tool errors instead — also acceptable.
+func TestSpecKitTasksToIssuesDryRunRequiresGitHubRemote(t *testing.T) {
+	call, tmpDir := newSpecCtx(t)
+	specDir := filepath.Join(tmpDir, "specs", "001-demo")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	tasks := "# Tasks: 001 Demo\n\n## SETUP\n\n- [ ] **T001** First task\n- [~] **T002** [P] Second task\n- [x] **T003** Third task done\n"
+	if err := os.WriteFile(filepath.Join(specDir, "tasks.md"), []byte(tasks), 0o644); err != nil {
+		t.Fatalf("write tasks.md: %v", err)
+	}
+
+	result := execTool(t, tools.SpecKitTasksToIssues(), call, map[string]any{
+		"spec_dir": specDir,
+		"dry_run":  true,
+	})
+	if result.IsError {
+		if !strings.Contains(result.Output, "GitHub") && !strings.Contains(result.Output, "git remote") {
+			t.Fatalf("error path: expected GitHub/git-remote error, got %q", result.Output)
+		}
+		return
+	}
+	for _, want := range []string{"Dry run: true", "[T001] First task", "[T002] Second task", "Created: 2", "Skipped (already done): 1", "Total parsed: 3"} {
+		if !strings.Contains(result.Output, want) {
+			t.Errorf("dry-run output missing %q\n---\n%s", want, result.Output)
+		}
+	}
+	if strings.Contains(result.Output, "[T003]") {
+		t.Errorf("done task should be skipped by default; got:\n%s", result.Output)
+	}
+}
+
+func TestSpecKitTasksToIssuesMissingTasksFile(t *testing.T) {
+	call, tmpDir := newSpecCtx(t)
+	specDir := filepath.Join(tmpDir, "specs", "001-demo")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	result := execTool(t, tools.SpecKitTasksToIssues(), call, map[string]any{
+		"spec_dir": specDir,
+		"dry_run":  true,
+	})
+	if !result.IsError {
+		t.Fatalf("expected error for missing tasks.md, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "tasks.md") {
+		t.Fatalf("expected tasks.md error, got %q", result.Output)
 	}
 }

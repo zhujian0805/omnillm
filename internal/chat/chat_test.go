@@ -69,7 +69,7 @@ func TestHandleSlashCommandUnknown(t *testing.T) {
 func TestHandleSlashCommandOpenSpecAliasRoutesToAgent(t *testing.T) {
 	cmd := newTestCommandContext()
 	session := &SessionState{ID: "session-1", Mode: "chat"}
-	result, err := handleSlashCommand(cmd, nil, session, "/opsx:explore auth ideas")
+	result, err := handleSlashCommand(cmd, nil, session, "/openspec:explore auth ideas")
 	if err != nil {
 		t.Fatalf("handleSlashCommand returned error: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestHandleSlashCommandOpenSpecAliasRoutesToAgent(t *testing.T) {
 		t.Fatalf("expected openspec agent mode, got mode=%q specMode=%q", session.Mode, session.SpecMode)
 	}
 	out := cmd.out.String()
-	for _, want := range []string{"/opsx:explore", "openspec_explore", "Running agent workflow"} {
+	for _, want := range []string{"/openspec:explore", "openspec_explore", "Running agent workflow"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
