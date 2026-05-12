@@ -17,7 +17,7 @@ import (
 // speckit_tasks steps.
 func specREPLInit(w io.Writer, title string) error {
 	specsRoot := "specs"
-	number, err := nextSpecNumber(specsRoot)
+	number, err := specdriven.NextSpecNumber(specsRoot)
 	if err != nil {
 		return err
 	}
@@ -78,13 +78,23 @@ func openSpecREPLInit(w io.Writer, changeName string) error {
 		if err := os.MkdirAll(filepath.Dir(artPath), 0o755); err != nil {
 			return fmt.Errorf("create dir for %s: %w", art.Filename, err)
 		}
-		if _, err := os.Stat(artPath); err == nil {
-			continue // do not overwrite existing artifacts
-		}
 		body := fmt.Sprintf("# %s — %s\n\nTODO: fill in this artifact.\n",
 			strings.ToTitle(art.ID), changeName)
-		if err := os.WriteFile(artPath, []byte(body), 0o644); err != nil {
+		// O_EXCL avoids the TOCTOU race of stat-then-write; if the file
+		// already exists we leave it untouched and continue.
+		f, err := os.OpenFile(artPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			if os.IsExist(err) {
+				continue
+			}
 			return fmt.Errorf("write %s: %w", art.Filename, err)
+		}
+		if _, err := f.WriteString(body); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("write %s: %w", art.Filename, err)
+		}
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("close %s: %w", art.Filename, err)
 		}
 		created = append(created, artPath)
 	}
@@ -96,7 +106,7 @@ func openSpecREPLInit(w io.Writer, changeName string) error {
 	_, _ = fmt.Fprintln(w, "")
 	_, _ = fmt.Fprintln(w, "Next steps:")
 	_, _ = fmt.Fprintln(w, "  1. Switch to agent mode:  /mode agent")
-	_, _ = fmt.Fprintf(w, "  2. Refine via the agent:  /opsx:propose %s\n", changeName)
+	_, _ = fmt.Fprintf(w, "  2. Refine via the agent:  /openspec:propose %s\n", changeName)
 	return nil
 }
 
@@ -136,31 +146,8 @@ func specREPLStatus(w io.Writer, specsRoot string) error {
 	return nil
 }
 
-// nextSpecNumber scans specsRoot for existing numbered directories and returns
-// the next zero-padded number string. Mirrors the same helper in specdriven.go.
-func nextSpecNumber(specsRoot string) (string, error) {
-	entries, err := os.ReadDir(specsRoot)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "001", nil
-		}
-		return "", err
-	}
-	max := 0
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if len(name) >= 3 {
-			var n int
-			if _, err := fmt.Sscanf(name[:3], "%d", &n); err == nil && n > max {
-				max = n
-			}
-		}
-	}
-	return fmt.Sprintf("%03d", max+1), nil
-}
+
+
 
 // specKitHelpMarkdown returns the help text for the Spec Kit workflow,
 // shown by /speckit.help. It documents the lifecycle, the offline scaffold
