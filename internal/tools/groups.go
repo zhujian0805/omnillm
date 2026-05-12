@@ -127,6 +127,9 @@ const SkillAgent = "agent"
 // SkillUtilityExtra groups less-common utility tools (calculator, sleep, lsp, etc).
 const SkillUtilityExtra = "utility_extra"
 
+// SkillConsoleOutputFormatter enables presentation-focused console rendering.
+const SkillConsoleOutputFormatter = "console_output_formatter"
+
 // SkillSpec groups spec-driven development tools.
 const SkillSpec = "spec"
 

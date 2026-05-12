@@ -122,43 +122,40 @@ func ArtifactPresence(specDir string) map[ArtifactKind]bool {
 func RenderLifecycleGuidance(state SpecLifecycleState) string {
 	switch state {
 	case LifecycleDraft:
-		return "Next step: refine spec.md, then create plan.md/tasks.md and mark work in progress when implementation begins."
+		return "Refine spec.md, then create plan.md and tasks.md when ready to start implementation."
 	case LifecycleInProgress:
-		return "Next step: finish implementation, validate acceptance criteria, then mark the spec completed."
+		return "Finish implementation, validate acceptance criteria, then mark the spec completed."
 	case LifecycleCompleted:
-		return "Next step: keep spec.md, plan.md, and tasks.md as history; optionally archive the whole folder under specs/archive/."
+		return "Keep spec.md, plan.md, and tasks.md as history; optionally archive the folder under specs/archive/."
 	case LifecycleArchived:
 		return "This spec is archived. Refer to it as historical record or restore/copy it for follow-up work."
 	default:
-		return "Next step: verify the lifecycle metadata and continue the standard spec workflow."
+		return "Verify the lifecycle metadata and continue the standard spec workflow."
 	}
 }
 
 func RenderLifecycleStatus(specDir string, present map[ArtifactKind]bool, record SpecLifecycleRecord) string {
-	var sb strings.Builder
-	sb.WriteString(RenderStatus(specDir, present))
-	sb.WriteString("\n")
-	sb.WriteString("Lifecycle:\n")
-	sb.WriteString(fmt.Sprintf("  Lifecycle state: %s\n", record.State))
-	if record.CreatedAt != "" {
-		sb.WriteString(fmt.Sprintf("  Created at: %s\n", record.CreatedAt))
-	}
-	if record.CompletedAt != "" {
-		sb.WriteString(fmt.Sprintf("  Completed at: %s\n", record.CompletedAt))
-	}
-	if record.ArchivedAt != "" {
-		sb.WriteString(fmt.Sprintf("  Archived at: %s\n", record.ArchivedAt))
+	lifecycleRows := [][]string{
+		{"State", string(record.State)},
+		{"Created at", record.CreatedAt},
+		{"Updated at", record.UpdatedAt},
+		{"Completed at", record.CompletedAt},
+		{"Archived at", record.ArchivedAt},
+		{"Guidance", RenderLifecycleGuidance(record.State)},
 	}
 	if strings.TrimSpace(record.Notes) != "" {
-		sb.WriteString(fmt.Sprintf("  Notes: %s\n", strings.TrimSpace(record.Notes)))
+		lifecycleRows = append(lifecycleRows, []string{"Notes", strings.TrimSpace(record.Notes)})
 	}
-	if len(record.FollowUps) > 0 {
-		sb.WriteString("  Follow-ups:\n")
-		for _, item := range record.FollowUps {
-			sb.WriteString(fmt.Sprintf("    - %s\n", item))
-		}
+	for i, item := range record.FollowUps {
+		lifecycleRows = append(lifecycleRows, []string{fmt.Sprintf("Follow-up %d", i+1), item})
 	}
-	sb.WriteString(fmt.Sprintf("  Guidance: %s\n", RenderLifecycleGuidance(record.State)))
+
+	var sb strings.Builder
+	sb.WriteString(RenderStatus(specDir, present))
+	sb.WriteString("\n### Lifecycle\n\n")
+	sb.WriteString(fmt.Sprintf("Lifecycle state: %s\n\n", record.State))
+	sb.WriteString(renderMarkdownTable([]string{"Field", "Value"}, lifecycleRows))
+	sb.WriteString(fmt.Sprintf("\nGuidance: %s\n", RenderLifecycleGuidance(record.State)))
 	return sb.String()
 }
 
