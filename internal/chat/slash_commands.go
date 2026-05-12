@@ -30,7 +30,7 @@ func slashCommands() []slashCommand {
 		{Name: "/agent", TakesArgs: true, Summary: "show or set the agent backend"},
 		{Name: "/max-turns", TakesArgs: true, Summary: "show or set max agent turns (1-100)"},
 		{Name: "/models", Summary: "open model picker"},
-		{Name: "/spec", TakesArgs: true, Summary: "spec-driven workflow commands"},
+		{Name: "/spec", TakesArgs: true, Summary: "spec-driven workflow help and commands"},
 		{Name: "/clear", Aliases: []string{"/cls"}, Summary: "clear the screen"},
 		{Name: "/quit", Aliases: []string{"/exit"}, Summary: "quit"},
 	}

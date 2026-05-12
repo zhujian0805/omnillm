@@ -24,6 +24,9 @@ func newSlashPickerState() *slashPickerState {
 }
 
 func (p *slashPickerState) setFilter(filter string) {
+	if p.filter == filter && p.filtered != nil {
+		return
+	}
 	p.filter = filter
 	p.filtered = fuzzySlashFilter(p.all, filter)
 	if p.selectedIdx >= len(p.filtered) {
