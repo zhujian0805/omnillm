@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -85,4 +86,24 @@ func fuzzySlashFilter(all []slashCommand, filter string) []slashCommand {
 		out[i] = m.cmd
 	}
 	return out
+}
+
+// renderSlashHelp produces the markdown body for the /help command.
+func renderSlashHelp(cmds []slashCommand) string {
+	var b strings.Builder
+	b.WriteString("**Commands:**\n\n")
+	for _, c := range cmds {
+		names := c.Name
+		if len(c.Aliases) > 0 {
+			names = fmt.Sprintf("%s (%s)", c.Name, strings.Join(c.Aliases, ", "))
+		}
+		b.WriteString(fmt.Sprintf("- `%s` — %s\n", names, c.Summary))
+	}
+	b.WriteString("\n**Keyboard shortcuts:**\n\n")
+	b.WriteString("- `/` — open the command picker; type to filter, ↑↓ to navigate, Enter to select, Esc to close\n")
+	b.WriteString("- `Shift+Tab` — toggle autopilot (auto-approve tool calls)\n")
+	b.WriteString("- `↑`/`↓` — focus expandable tool results (when input is empty)\n")
+	b.WriteString("- `Space` — expand/collapse the focused tool result\n")
+	b.WriteString("- `Esc` — cancel current running job\n")
+	return b.String()
 }

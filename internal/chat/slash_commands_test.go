@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -88,4 +89,16 @@ func slashNames(cs []slashCommand) []string {
 		out[i] = c.Name
 	}
 	return out
+}
+
+func TestRenderSlashHelp(t *testing.T) {
+	out := renderSlashHelp(slashCommands())
+	for _, want := range []string{"/help", "/models", "/quit", "show available commands"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("renderSlashHelp output missing %q\n---\n%s", want, out)
+		}
+	}
+	if !strings.HasPrefix(strings.TrimSpace(out), "**Commands:**") {
+		t.Errorf("renderSlashHelp output should start with **Commands:** header; got:\n%s", out)
+	}
 }
