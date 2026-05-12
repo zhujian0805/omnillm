@@ -783,11 +783,19 @@ func (m chatTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				sel, ok := m.slashPicker.selected()
 				if !ok {
-					return m, nil
+					m.slashPicker = nil
+					return m.submitTextareaInput()
 				}
 				m.slashPicker = nil
 				current := strings.TrimSpace(m.textarea.Value())
-				if sel.TakesArgs && !strings.EqualFold(current, sel.Name) {
+				if sel.TakesArgs {
+					if current == sel.Name {
+						m.applyTextareaValue(sel.Name + " ")
+						return m, nil
+					}
+					if strings.HasPrefix(current, sel.Name+" ") || strings.EqualFold(current, sel.Name) {
+						return m.submitTextareaInput()
+					}
 					m.applyTextareaValue(sel.Name + " ")
 					return m, nil
 				}

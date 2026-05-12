@@ -137,17 +137,20 @@ func TestSlashPickerEnterOnArglessSubmits(t *testing.T) {
 	}
 }
 
-func TestSlashPickerEnterOnArgTakingFillsInput(t *testing.T) {
+func TestSlashPickerEnterOnArgTakingWithArgsSubmits(t *testing.T) {
 	m := newTestTUIModel()
-	m = typeRune(t, m, '/')
-	m = moveSelectionTo(t, m, "/model")
+	m.applyTextareaValue("/speckit.specify XXXXXX")
+	m.updateSlashPicker()
+	if m.slashPicker == nil {
+		t.Fatal("picker should be open")
+	}
 	out, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = out.(chatTUIModel)
 	if m.slashPicker != nil {
-		t.Errorf("picker should close after Enter on arg-taking command")
+		t.Errorf("picker should close after Enter")
 	}
-	if got := m.textarea.Value(); got != "/model " {
-		t.Errorf("textarea should be %q, got %q", "/model ", got)
+	if got := m.textarea.Value(); got != "" {
+		t.Errorf("textarea should be empty after submit, got %q", got)
 	}
 }
 
