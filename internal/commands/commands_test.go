@@ -502,48 +502,6 @@ func TestLogsTailHasLevelFlag(t *testing.T) {
 	t.Error("logs tail: subcommand not found")
 }
 
-// ─── chat command ─────────────────────────────────────────────────────────────
-
-func TestChatCmdStructure(t *testing.T) {
-	subNames := make(map[string]bool)
-	for _, sub := range ChatCmd.Commands() {
-		subNames[sub.Name()] = true
-	}
-	if !subNames["sessions"] {
-		t.Error("chat: missing subcommand 'sessions'")
-	}
-	if !subNames["send"] {
-		t.Error("chat: missing subcommand 'send'")
-	}
-}
-
-func TestChatSessionsSubcommands(t *testing.T) {
-	for _, sub := range ChatCmd.Commands() {
-		if sub.Name() == "sessions" {
-			subNames := make(map[string]bool)
-			for _, s := range sub.Commands() {
-				subNames[s.Name()] = true
-			}
-			for _, expected := range []string{"list", "create", "get", "rename", "delete"} {
-				if !subNames[expected] {
-					t.Errorf("chat sessions: missing subcommand %q", expected)
-				}
-			}
-			return
-		}
-	}
-	t.Error("chat: 'sessions' subcommand not found")
-}
-
-func TestChatCmdFlags(t *testing.T) {
-	if ChatCmd.Flags().Lookup("model") == nil {
-		t.Error("chat: missing --model flag")
-	}
-	if ChatCmd.Flags().Lookup("session") == nil {
-		t.Error("chat: missing --session flag")
-	}
-}
-
 // ─── parseUpstreamArgs ────────────────────────────────────────────────────────
 
 func TestParseUpstreamArgsBasic(t *testing.T) {
@@ -672,10 +630,6 @@ func TestIsLevelAtOrAboveFiltering(t *testing.T) {
 // ─── NewClient defaults ───────────────────────────────────────────────────────
 
 func TestNewClientDefaultServer(t *testing.T) {
-	import_test_root := ChatCmd.Root()
-	if import_test_root == nil {
-		t.Skip("no root command in test context")
-	}
 	t.Setenv("OMNILLM_SERVER", "")
 	t.Setenv("OMNILLM_API_KEY", "")
 
