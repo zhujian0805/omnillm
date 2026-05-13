@@ -44,7 +44,6 @@ function Build-One {
 
 Build-One "$RootDir" 'omnillm'
 Build-One (Join-Path $RootDir 'cmd\omniproxy') 'omniproxy'
-Build-One (Join-Path $RootDir 'cmd\omnicode') 'omnicode'
 
 Write-Host "Results:"
 $results | Select-Object Name, Status, Path, Error | Format-Table -AutoSize
