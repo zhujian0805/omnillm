@@ -14,15 +14,14 @@ The practical result is simple: point your client at OmniLLM once, then switch p
 
 ## Binaries
 
-This repo currently ships three user-facing entrypoints:
+This repo currently ships two user-facing entrypoints:
 
 | Binary | Entry point | Role |
 |---|---|---|
 | `omnillm` | `main.go` | Main server and admin CLI. Starts the gateway, manages providers, models, virtual models, chat, settings, config files, and logs. |
 | `omniproxy` | `cmd/omniproxy/main.go` | Proxy-oriented entrypoint that mirrors the OmniLLM command surface for running the gateway. |
-| `omnicode` | `cmd/omnicode/main.go` | Coding-focused interactive chat and agent CLI built on OmniLLM sessions and APIs. |
 
-If you only need the gateway, start with `omnillm`. If your workflow expects the proxy-branded binary, use `omniproxy`. If you want an interactive coding assistant CLI against an OmniLLM server, use `omnicode`.
+If you only need the gateway, start with `omnillm`. If your workflow expects the proxy-branded binary, use `omniproxy`. The coding-focused `omnicode` CLI now lives in its own dedicated repository.
 
 ## Why This Exists
 
@@ -96,20 +95,6 @@ go run ./cmd/omniproxy start
 ```
 
 Use it when you want the proxy-specific binary name without changing the server behavior.
-
-### Run `omnicode`
-
-`omnicode` talks to a running OmniLLM server and uses the same sessions and admin APIs:
-
-```sh
-go run ./cmd/omnicode --server http://127.0.0.1:5000 --api-key my-secret-key --prompt "Explain this repo"
-```
-
-For an interactive session:
-
-```sh
-go run ./cmd/omnicode --server http://127.0.0.1:5000 --api-key my-secret-key
-```
 
 ### API key behavior
 
@@ -212,10 +197,6 @@ The admin API and UI cover:
 
 OmniLLM can manage configuration files for tools such as Claude Code, Codex, Droid, OpenCode, and AMP. Editing external config files is intentionally guarded behind `--enable-config-edit`.
 
-### OmniCode CLI
-
-`omnicode` is not just a thin alias. It is a coding-focused interactive chat and agent CLI that can run one-shot prompts or persist and reuse chat sessions against an OmniLLM server.
-
 ## Supported Providers
 
 The current codebase supports these provider families in user-facing flows:
@@ -295,14 +276,6 @@ The main `omnillm` binary includes:
 
 `omniproxy` mirrors the same server-oriented flow under a proxy-specific binary name.
 
-`omnicode` is focused on interactive coding sessions and supports flags such as:
-
-- `--server`
-- `--api-key`
-- `--model`
-- `--session`
-- `--prompt`
-
 Selected `start` flags for the server binaries:
 
 | Flag | Default | Purpose |
@@ -324,14 +297,12 @@ Selected `start` flags for the server binaries:
 |---|---|
 | `main.go` | main `omnillm` CLI entrypoint |
 | `cmd/omniproxy/` | proxy-oriented CLI entrypoint |
-| `cmd/omnicode/` | `omnicode` entrypoint |
 | `internal/server/` | server bootstrap, auth, admin UI registration |
 | `internal/routes/` | OpenAI, Anthropic, Responses, admin, metering, chat, config, and virtual model handlers |
 | `internal/providers/` | provider implementations and adapters |
 | `internal/cif/` | Canonical Intermediate Format types |
 | `internal/serialization/` | response serialization back to client formats |
 | `internal/database/` | SQLite-backed persistence |
-| `internal/omnicode/` | OmniCode config, root command, and session behavior |
 | `frontend/` | React 19 + Vite admin frontend source |
 | `pages/admin/` | built admin frontend served by the Go runtime |
 | `tests/` | Bun-driven tests for API, frontend, and browser-facing behavior |

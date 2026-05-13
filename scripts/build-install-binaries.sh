@@ -28,7 +28,6 @@ build_one() {
 results=()
 results+=("$(build_one "${ROOT_DIR}" "omnillm")")
 results+=("$(build_one "${ROOT_DIR}/cmd/omniproxy" "omniproxy")")
-results+=("$(build_one "${ROOT_DIR}/cmd/omnicode" "omnicode")")
 
 echo "Results:"
 for row in "${results[@]}"; do
