@@ -42,7 +42,6 @@ func main() {
 	rootCmd.AddCommand(commands.ConfigCmd)
 	rootCmd.AddCommand(commands.SettingsCmd)
 	rootCmd.AddCommand(commands.StatusCmd)
-	rootCmd.AddCommand(commands.ChatCmd)
 	rootCmd.AddCommand(commands.LogsCmd)
 
 	if err := rootCmd.Execute(); err != nil {
