@@ -24,6 +24,8 @@ func init() {
 	modelToggleCmd.MarkFlagsOneRequired("enable", "disable")
 	modelToggleCmd.MarkFlagsMutuallyExclusive("enable", "disable")
 	ModelCmd.AddCommand(modelToggleCmd)
+	ModelCmd.AddCommand(modelEnableCmd)
+	ModelCmd.AddCommand(modelDisableCmd)
 
 	modelVersionCmd := &cobra.Command{
 		Use:   "version",
@@ -230,6 +232,59 @@ var modelToggleCmd = &cobra.Command{
 			state = "disabled"
 		}
 		SuccessMsg(cmd, "Model '%s' %s.", args[1], state)
+		return nil
+	},
+}
+
+// ─── enable ───────────────────────────────────────────────────────────────────
+
+var modelEnableCmd = &cobra.Command{
+	Use:   "enable <provider-id> <model-id>",
+	Short: "Enable a model for a provider",
+	Example: `  omnillm model enable my-provider gpt-4o
+  omnillm model enable my-provider claude-3-5-sonnet`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		body := map[string]interface{}{
+			"modelId": args[1],
+			"enabled": true,
+		}
+		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		if err != nil {
+			return err
+		}
+		if c.IsJSON() {
+			c.PrintJSON(data)
+			return nil
+		}
+		SuccessMsg(cmd, "Model '%s' enabled.", args[1])
+		return nil
+	},
+}
+
+// ─── disable ──────────────────────────────────────────────────────────────────
+
+var modelDisableCmd = &cobra.Command{
+	Use:   "disable <provider-id> <model-id>",
+	Short: "Disable a model for a provider",
+	Example: `  omnillm model disable my-provider gpt-4o`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		body := map[string]interface{}{
+			"modelId": args[1],
+			"enabled": false,
+		}
+		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		if err != nil {
+			return err
+		}
+		if c.IsJSON() {
+			c.PrintJSON(data)
+			return nil
+		}
+		SuccessMsg(cmd, "Model '%s' disabled.", args[1])
 		return nil
 	},
 }

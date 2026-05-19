@@ -321,6 +321,31 @@ func TestModelVersionSubcommands(t *testing.T) {
 	t.Error("model: 'version' subcommand not found")
 }
 
+func TestModelEnableDisableSubcommands(t *testing.T) {
+	subNames := make(map[string]bool)
+	for _, sub := range ModelCmd.Commands() {
+		subNames[sub.Name()] = true
+	}
+	if !subNames["enable"] {
+		t.Error("model: missing subcommand 'enable'")
+	}
+	if !subNames["disable"] {
+		t.Error("model: missing subcommand 'disable'")
+	}
+}
+
+func TestModelEnableCmdArgs(t *testing.T) {
+	for _, sub := range ModelCmd.Commands() {
+		if sub.Name() == "enable" {
+			if sub.Use != "enable <provider-id> <model-id>" {
+				t.Errorf("model enable Use = %q, want %q", sub.Use, "enable <provider-id> <model-id>")
+			}
+			return
+		}
+	}
+	t.Error("model enable subcommand not found")
+}
+
 // ─── virtualmodel command ─────────────────────────────────────────────────────
 
 func TestVirtualModelCmdUse(t *testing.T) {
