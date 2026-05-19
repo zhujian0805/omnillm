@@ -724,7 +724,7 @@ func TestDoctorCmdWritesToCommandOutput(t *testing.T) {
 	}
 }
 
-func TestDoctorCmdWritesHealthyStatusWithSuccessMarker(t *testing.T) {
+func TestDoctorCmdWritesHealthyStatusWithBorderedTables(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -757,11 +757,13 @@ func TestDoctorCmdWritesHealthyStatusWithSuccessMarker(t *testing.T) {
 	}
 
 	output := out.String()
-	if !strings.Contains(output, "  ✓  Status:") {
-		t.Fatalf("expected healthy server status to use success marker, got output:\n%s", output)
+	for _, want := range []string{"Local configuration", "Server", "Server status", "Providers", "Status", "healthy", "┌", "│", "└"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected doctor output to contain %q, got output:\n%s", want, output)
+		}
 	}
-	if strings.Contains(output, "  ✗  Status:                healthy") {
-		t.Fatalf("expected healthy server status to avoid failure marker, got output:\n%s", output)
+	if strings.Contains(output, "  ✓  Status:") || strings.Contains(output, "  ✗  Status:") {
+		t.Fatalf("expected bordered table output instead of legacy success markers, got output:\n%s", output)
 	}
 }
 

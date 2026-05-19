@@ -88,8 +88,6 @@ var vmListCmd = &cobra.Command{
 		}
 
 		table := NewTable("ID", "NAME", "STRATEGY", "API SHAPE", "UPSTREAMS", "ENABLED")
-		table.SetMaxWidth(0, 32) // ID
-		table.SetMaxWidth(1, 32) // NAME
 		for _, item := range items {
 			vm, _ := item.(map[string]interface{})
 			id, _ := vm["virtual_model_id"].(string)
@@ -144,7 +142,6 @@ var vmGetCmd = &cobra.Command{
 			return err
 		}
 		detailTable := NewTable("Field", "Value")
-		detailTable.SetMaxWidth(1, 48)
 		detailTable.AddRow("Name", name)
 		detailTable.AddRow("Description", desc)
 		detailTable.AddRow("Strategy", strategy)
@@ -189,7 +186,7 @@ var vmCreateCmd = &cobra.Command{
 	Use:   "create <id>",
 	Short: "Create a new virtual model",
 	Args:  cobra.ExactArgs(1),
-		Example: `  # Round-robin across two upstreams
+	Example: `  # Round-robin across two upstreams
   omnillm virtualmodel create my-gpt --name "My GPT" --upstream provider1/gpt-4o --upstream provider2/gpt-4o
 
   # Weighted routing (provider1 gets 3x traffic)

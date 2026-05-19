@@ -195,7 +195,6 @@ func usageBreakdownTable(breakdown string) *Table {
 		"clients":   "CLIENT",
 	}[breakdown]
 	t := NewTable(labelHeader, "REQUESTS", "TOKENS", "AVG LATENCY MS")
-	t.SetMaxWidth(0, 40) // label column
 	return t
 }
 

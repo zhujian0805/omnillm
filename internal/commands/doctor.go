@@ -36,24 +36,30 @@ type checkRow struct {
 	value string
 }
 
-func printChecks(out io.Writer, rows []checkRow) error {
-	maxLabel := 0
-	for _, r := range rows {
-		if len([]rune(r.label)) > maxLabel {
-			maxLabel = len([]rune(r.label))
-		}
+func renderChecksTable(out io.Writer, title string, rows []checkRow) error {
+	if err := PrintSection(out, title); err != nil {
+		return err
 	}
+	table := NewTable("CHECK", "STATUS", "VALUE")
 	for _, r := range rows {
-		icon := "✓"
+		status := "ok"
 		if !r.ok {
-			icon = "✗"
+			status = "needs attention"
 		}
-		label := r.label + ":"
-		if _, err := fmt.Fprintf(out, "  %s  %s  %s\n", icon, padRightRunes(label, maxLabel+1), r.value); err != nil {
-			return err
-		}
+		table.AddRow(r.label, status, r.value)
 	}
-	return nil
+	return table.Render(out)
+}
+
+func renderKeyValueTable(out io.Writer, title string, pairs [][2]string) error {
+	if err := PrintSection(out, title); err != nil {
+		return err
+	}
+	table := NewTable("FIELD", "VALUE")
+	for _, p := range pairs {
+		table.AddRow(p[0], p[1])
+	}
+	return table.Render(out)
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
@@ -66,10 +72,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(out)
 
 	// ── Local config ──────────────────────────────────────────────────────────
-	if err := PrintSection(out, "Local configuration"); err != nil {
-		return err
-	}
-
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, ".config", "omnillm")
 	dbPath := filepath.Join(configDir, "database.sqlite")
@@ -99,7 +101,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		apiKeyValue = "not found (will be generated on start)"
 	}
 
-	if err := printChecks(out, []checkRow{
+	if err := renderChecksTable(out, "Local configuration", []checkRow{
 		{ok: configOK, label: "Config directory", value: configDir},
 		{ok: dbOK, label: "Database", value: dbValue},
 		{ok: apiKeyOK, label: "API key file", value: apiKeyValue},
@@ -110,10 +112,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(out)
 
 	// ── Server reachability ───────────────────────────────────────────────────
-	if err := PrintSection(out, "Server"); err != nil {
-		return err
-	}
-
 	c := NewClient(cmd)
 	apiKeyConfigured := c.APIKey != ""
 	apiKeyStatus := "configured"
@@ -142,33 +140,25 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		_ = json.Unmarshal(statusData, &statusResp)
 	}
 
-	if err := printChecks(out, serverChecks); err != nil {
+	if err := renderChecksTable(out, "Server", serverChecks); err != nil {
 		return err
 	}
 
 	if serverOK && statusResp != nil {
 		fmt.Fprintln(out)
-		if err := PrintSection(out, "Server status"); err != nil {
-			return err
-		}
 		status, _ := statusResp["status"].(string)
 		uptime, _ := statusResp["uptime"].(string)
 		modelCount, _ := statusResp["modelCount"].(float64)
 
 		statusOK := status == "ok" || status == "running" || status == "healthy"
-		if err := printChecks(out, []checkRow{
+		if err := renderChecksTable(out, "Server status", []checkRow{
 			{ok: statusOK, label: "Status", value: status},
-		}); err != nil {
-			return err
-		}
-		if err := PrintKeyValueSection(out, [][2]string{
-			{"Uptime", uptime},
-			{"Models", fmt.Sprintf("%.0f", modelCount)},
+			{ok: true, label: "Uptime", value: uptime},
+			{ok: true, label: "Models", value: fmt.Sprintf("%.0f", modelCount)},
 		}); err != nil {
 			return err
 		}
 
-		// ── Providers ──────────────────────────────────────────────────────────
 		fmt.Fprintln(out)
 		if err := PrintSection(out, "Providers"); err != nil {
 			return err
@@ -184,30 +174,33 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 				}
 			}
 			providerOK := len(providers) > 0
-			provChecks := []checkRow{
-				{ok: providerOK, label: "Providers configured", value: fmt.Sprintf("%d total, %d active", len(providers), activeCount)},
-			}
 			if !providerOK && nextStep == "" {
 				nextStep = "Run 'omnillm auth' to add and authenticate a provider."
 			} else if activeCount == 0 && len(providers) > 0 && nextStep == "" {
 				nextStep = "Run 'omnillm provider activate <id>' to activate a provider."
 			}
 
+			providerTable := NewTable("CHECK", "STATUS", "VALUE")
+			providerStatus := "ok"
+			if !providerOK {
+				providerStatus = "needs attention"
+			}
+			providerTable.AddRow("Providers configured", providerStatus, fmt.Sprintf("%d total, %d active", len(providers), activeCount))
+
 			vmData, vmErr := c.Get("/api/admin/virtualmodels")
 			if vmErr == nil {
 				var vmResp map[string]interface{}
 				if jsonErr := json.Unmarshal(vmData, &vmResp); jsonErr == nil {
 					items, _ := vmResp["data"].([]interface{})
-					provChecks = append(provChecks, checkRow{ok: true, label: "Virtual models", value: fmt.Sprintf("%d configured", len(items))})
+					providerTable.AddRow("Virtual models", "ok", fmt.Sprintf("%d configured", len(items)))
 				}
 			}
 
-			if err := printChecks(out, provChecks); err != nil {
+			if err := providerTable.Render(out); err != nil {
 				return err
 			}
 		}
 
-		// ── Auth flow ──────────────────────────────────────────────────────────
 		authData, authErr := c.Get("/api/admin/auth-status")
 		if authErr == nil {
 			var authResp map[string]interface{}
@@ -215,11 +208,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 				authStatus, _ := authResp["status"].(string)
 				if authStatus != "" && authStatus != "idle" {
 					fmt.Fprintln(out)
-					if err := PrintSection(out, "Active auth flow"); err != nil {
-						return err
-					}
 					providerID, _ := authResp["providerId"].(string)
-					if err := printChecks(out, []checkRow{
+					if err := renderChecksTable(out, "Active auth flow", []checkRow{
 						{ok: false, label: "Auth in progress", value: fmt.Sprintf("%s (%s)", providerID, authStatus)},
 					}); err != nil {
 						return err
@@ -232,7 +222,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 						kvPairs = append(kvPairs, [2]string{"Visit", url})
 					}
 					if len(kvPairs) > 0 {
-						if err := PrintKeyValueSection(out, kvPairs); err != nil {
+						if err := renderKeyValueTable(out, "Auth flow details", kvPairs); err != nil {
 							return err
 						}
 					}
@@ -241,7 +231,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// ── Next step ──────────────────────────────────────────────────────────────
 	fmt.Fprintln(out)
 	if nextStep != "" {
 		if _, err := fmt.Fprintf(out, "Next step: %s\n", nextStep); err != nil {

@@ -53,20 +53,18 @@ func runServerStatus(cmd *cobra.Command, args []string) error {
 	if err := PrintSection(out, "Server status"); err != nil {
 		return err
 	}
-	if err := PrintKeyValueSection(out, [][2]string{
-		{"Status", status},
-		{"Uptime", uptime},
-		{"Model count", fmt.Sprintf("%.0f", modelCount)},
-		{"Manual approve", manualApproveStr},
-		{"Rate limit", rateLimitStr},
-	}); err != nil {
+	summaryTable := NewTable("FIELD", "VALUE")
+	summaryTable.AddRow("Status", status)
+	summaryTable.AddRow("Uptime", uptime)
+	summaryTable.AddRow("Model count", fmt.Sprintf("%.0f", modelCount))
+	summaryTable.AddRow("Manual approve", manualApproveStr)
+	summaryTable.AddRow("Rate limit", rateLimitStr)
+	if err := summaryTable.Render(out); err != nil {
 		return err
 	}
 
 	providerCount := 0
 	providerTable := NewTable("Name", "ID")
-	providerTable.SetMaxWidth(0, 40)
-	providerTable.SetMaxWidth(1, 32)
 	if providers, ok := resp["activeProviders"].([]interface{}); ok {
 		for _, entry := range providers {
 			provider, _ := entry.(map[string]interface{})
@@ -129,7 +127,6 @@ func runServerStatus(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		authTable := NewTable("Field", "Value")
-		authTable.SetMaxWidth(1, 48)
 		authTable.AddRow("Status", flowStatus)
 		authTable.AddRow("Provider", providerID)
 		if uc, ok := authFlow["userCode"].(string); ok && uc != "" {
@@ -176,7 +173,6 @@ var statusAuthCmd = &cobra.Command{
 			return err
 		}
 		table := NewTable("Field", "Value")
-		table.SetMaxWidth(1, 48)
 		table.AddRow("Provider", providerID)
 		table.AddRow("Status", status)
 		if uc, ok := resp["userCode"].(string); ok && uc != "" {
