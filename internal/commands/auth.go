@@ -28,4 +28,5 @@ func resolveAuthProviderType(args []string) (string, error) {
 
 func init() {
 	addProviderAuthFlags(AuthCmd)
+	AuthCmd.ValidArgs = supportedAuthProviderTypes
 }

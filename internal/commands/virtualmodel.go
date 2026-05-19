@@ -10,10 +10,11 @@ import (
 )
 
 var VirtualModelCmd = &cobra.Command{
-	Use:   "virtualmodel",
-	Short: "Manage virtual models (model aliases with load-balancing)",
+	Use:     "virtualmodel",
+	Aliases: []string{"virtual-model"},
+	Short:   "Manage virtual models (model aliases with load-balancing)",
 	Long: `Virtual models are stable model aliases that route requests to one or
-more upstream provider/model pairs with configurable load-balancing strategies.`,
+	more upstream provider/model pairs with configurable load-balancing strategies.`,
 }
 
 func init() {
@@ -21,6 +22,7 @@ func init() {
 	VirtualModelCmd.AddCommand(vmGetCmd)
 
 	vmCreateCmd.Flags().String("name", "", "Display name (required)")
+	vmCreateCmd.MarkFlagRequired("name")
 	vmCreateCmd.Flags().String("description", "", "Optional description")
 	vmCreateCmd.Flags().StringP("strategy", "s", "round-robin", "Load-balancing strategy: round-robin|random|priority|weighted")
 	vmCreateCmd.Flags().String("api-shape", "openai", "API shape: openai|anthropic")
@@ -35,12 +37,29 @@ func init() {
 	vmUpdateCmd.Flags().StringArrayP("upstream", "u", nil, "Upstream (repeatable, replaces all existing)")
 	vmUpdateCmd.Flags().Bool("disabled", false, "Disable the virtual model")
 	vmUpdateCmd.Flags().Bool("enabled", false, "Enable the virtual model")
+	vmUpdateCmd.MarkFlagsMutuallyExclusive("enabled", "disabled")
 	VirtualModelCmd.AddCommand(vmUpdateCmd)
 
 	vmDeleteCmd.Flags().BoolP("yes", "y", false, "Skip confirmation")
 	VirtualModelCmd.AddCommand(vmDeleteCmd)
 
 	VirtualModelCmd.AddCommand(vmRenameCmd)
+
+	for _, sub := range []*cobra.Command{vmGetCmd, vmUpdateCmd, vmDeleteCmd} {
+		sub.ValidArgsFunction = virtualModelIDCompletionFunc
+	}
+	_ = vmCreateCmd.RegisterFlagCompletionFunc("strategy", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"round-robin", "random", "priority", "weighted"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = vmCreateCmd.RegisterFlagCompletionFunc("api-shape", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"openai", "anthropic"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = vmUpdateCmd.RegisterFlagCompletionFunc("strategy", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"round-robin", "random", "priority", "weighted"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = vmUpdateCmd.RegisterFlagCompletionFunc("api-shape", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"openai", "anthropic"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // ─── list ─────────────────────────────────────────────────────────────────────
@@ -91,10 +110,14 @@ var vmListCmd = &cobra.Command{
 var vmGetCmd = &cobra.Command{
 	Use:   "get <id>",
 	Short: "Get details of a virtual model",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Get("/api/admin/virtualmodels/" + args[0])
+		id, err := resolveVirtualModelID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Get("/api/admin/virtualmodels/" + id)
 		if err != nil {
 			return err
 		}
@@ -107,31 +130,50 @@ var vmGetCmd = &cobra.Command{
 		if err := json.Unmarshal(data, &vm); err != nil {
 			return err
 		}
-		id, _ := vm["virtual_model_id"].(string)
+		vmID, _ := vm["virtual_model_id"].(string)
 		name, _ := vm["name"].(string)
 		desc, _ := vm["description"].(string)
 		strategy, _ := vm["lb_strategy"].(string)
 		apiShape, _ := vm["api_shape"].(string)
 		enabled, _ := vm["enabled"].(bool)
 
-		fmt.Printf("Virtual Model: %s\n", id)
-		fmt.Println(strings.Repeat("─", 50))
-		fmt.Printf("  Name:        %s\n", name)
-		fmt.Printf("  Description: %s\n", desc)
-		fmt.Printf("  Strategy:    %s\n", strategy)
-		fmt.Printf("  API Shape:   %s\n", apiShape)
-		fmt.Printf("  Enabled:     %v\n", enabled)
+		out := cmd.OutOrStdout()
+		if err := PrintSection(out, "Virtual Model: "+vmID); err != nil {
+			return err
+		}
+		detailTable := NewTable("Field", "Value")
+		detailTable.AddRow("Name", name)
+		detailTable.AddRow("Description", desc)
+		detailTable.AddRow("Strategy", strategy)
+		detailTable.AddRow("API Shape", apiShape)
+		detailTable.AddRow("Enabled", fmt.Sprint(enabled))
+		if err := detailTable.Render(out); err != nil {
+			return err
+		}
 
 		if upstreams, ok := vm["upstreams"].([]interface{}); ok && len(upstreams) > 0 {
-			fmt.Printf("\nUpstreams (%d):\n", len(upstreams))
+			if _, err := fmt.Fprintln(out); err != nil {
+				return err
+			}
+			if err := PrintSection(out, "Upstreams"); err != nil {
+				return err
+			}
+			table := NewTable("N", "PROVIDER", "MODEL", "WEIGHT", "PRIORITY")
 			for i, u := range upstreams {
 				upstream, _ := u.(map[string]interface{})
 				provID, _ := upstream["provider_id"].(string)
 				modelID, _ := upstream["model_id"].(string)
 				weight, _ := upstream["weight"].(float64)
 				priority, _ := upstream["priority"].(float64)
-				fmt.Printf("  %d. %s / %s  (weight=%.0f priority=%.0f)\n",
-					i+1, provID, modelID, weight, priority)
+				table.AddRow(
+					fmt.Sprintf("%d", i+1),
+					provID, modelID,
+					fmt.Sprintf("%.0f", weight),
+					fmt.Sprintf("%.0f", priority),
+				)
+			}
+			if err := table.Render(out); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -144,11 +186,16 @@ var vmCreateCmd = &cobra.Command{
 	Use:   "create <id>",
 	Short: "Create a new virtual model",
 	Args:  cobra.ExactArgs(1),
+	Example: `  # Round-robin across two upstreams
+  omnillm virtualmodel create my-gpt --name "My GPT" --upstream provider1/gpt-4o --upstream provider2/gpt-4o
+
+  # Weighted routing (provider1 gets 3x traffic)
+  omnillm virtualmodel create smart-gpt --name "Smart GPT" --strategy weighted --upstream provider1/gpt-4o:3 --upstream provider2/gpt-4o:1
+
+  # With weight and priority
+  omnillm virtualmodel create ha-gpt --name "HA GPT" --strategy priority --upstream primary/gpt-4o:1:1 --upstream fallback/gpt-4o:1:2`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
-		if name == "" {
-			return fmt.Errorf("--name is required")
-		}
 		desc, _ := cmd.Flags().GetString("description")
 		strategy, _ := cmd.Flags().GetString("strategy")
 		apiShape, _ := cmd.Flags().GetString("api-shape")
@@ -181,7 +228,7 @@ var vmCreateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd,"Virtual model '%s' created.", args[0])
+		SuccessMsg(cmd, "Virtual model '%s' created.", args[0])
 		return nil
 	},
 }
@@ -191,12 +238,16 @@ var vmCreateCmd = &cobra.Command{
 var vmUpdateCmd = &cobra.Command{
 	Use:   "update <id>",
 	Short: "Update a virtual model",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
+		id, err := resolveVirtualModelID(cmd, c, args)
+		if err != nil {
+			return err
+		}
 
 		// Fetch current state first
-		existing, err := c.Get("/api/admin/virtualmodels/" + args[0])
+		existing, err := c.Get("/api/admin/virtualmodels/" + id)
 		if err != nil {
 			return err
 		}
@@ -231,9 +282,9 @@ var vmUpdateCmd = &cobra.Command{
 			vm["upstreams"] = upstreams
 		}
 		// Ensure virtual_model_id is set (required by server)
-		vm["virtual_model_id"] = args[0]
+		vm["virtual_model_id"] = id
 
-		data, err := c.Put("/api/admin/virtualmodels/"+args[0], vm)
+		data, err := c.Put("/api/admin/virtualmodels/"+id, vm)
 		if err != nil {
 			return err
 		}
@@ -241,7 +292,7 @@ var vmUpdateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd,"Virtual model '%s' updated.", args[0])
+		SuccessMsg(cmd, "Virtual model '%s' updated.", id)
 		return nil
 	},
 }
@@ -251,15 +302,19 @@ var vmUpdateCmd = &cobra.Command{
 var vmDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Delete a virtual model",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		id, err := resolveVirtualModelID(cmd, c, args)
+		if err != nil {
+			return err
+		}
 		yes, _ := cmd.Flags().GetBool("yes")
-		if !yes && !Confirm(cmd, fmt.Sprintf("Delete virtual model '%s'?", args[0])) {
+		if !yes && !Confirm(cmd, fmt.Sprintf("Delete virtual model '%s'?", id)) {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
-		c := NewClient(cmd)
-		data, err := c.Delete("/api/admin/virtualmodels/" + args[0])
+		data, err := c.Delete("/api/admin/virtualmodels/" + id)
 		if err != nil {
 			return err
 		}
@@ -267,7 +322,7 @@ var vmDeleteCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd,"Virtual model '%s' deleted.", args[0])
+		SuccessMsg(cmd, "Virtual model '%s' deleted.", id)
 		return nil
 	},
 }
@@ -298,6 +353,27 @@ var vmRenameCmd = &cobra.Command{
 }
 
 // ─── helper ───────────────────────────────────────────────────────────────────
+
+func virtualModelIDCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	c := NewClient(cmd)
+	data, err := c.Get("/api/admin/virtualmodels")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	items, _ := resp["data"].([]interface{})
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		vm, _ := item.(map[string]interface{})
+		if id, ok := vm["virtual_model_id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, cobra.ShellCompDirectiveNoFileComp
+}
 
 // parseUpstreamArgs parses strings of the form:
 //

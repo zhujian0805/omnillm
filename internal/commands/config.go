@@ -22,6 +22,8 @@ func init() {
 
 	configSetCmd.Flags().StringP("file", "f", "", "Path to file to read content from")
 	configSetCmd.Flags().Bool("stdin", false, "Read content from stdin")
+	configSetCmd.MarkFlagsOneRequired("file", "stdin")
+	configSetCmd.MarkFlagsMutuallyExclusive("file", "stdin")
 	ConfigCmd.AddCommand(configSetCmd)
 
 	configImportCmd.Flags().StringP("file", "f", "", "Path to file to import (required)")
@@ -88,18 +90,19 @@ var configGetCmd = &cobra.Command{
 			return nil
 		}
 
+		out := cmd.OutOrStdout()
 		var resp map[string]interface{}
 		if err := json.Unmarshal(data, &resp); err != nil {
-			fmt.Println(string(data))
+			fmt.Fprintln(out, string(data))
 			return nil
 		}
 		if exists, ok := resp["exists"].(bool); ok && !exists {
 			msg, _ := resp["message"].(string)
-			fmt.Printf("(file does not exist yet: %s)\n", msg)
+			fmt.Fprintf(out, "(file does not exist yet: %s)\n", msg)
 			return nil
 		}
 		content, _ := resp["content"].(string)
-		fmt.Print(content)
+		fmt.Fprint(out, content)
 		return nil
 	},
 }
@@ -110,6 +113,11 @@ var configSetCmd = &cobra.Command{
 	Use:   "set <name>",
 	Short: "Write content to a config file (from --file or --stdin)",
 	Args:  cobra.ExactArgs(1),
+	Example: `  # Write from a local file
+  omnillm config set claude-code --file ~/.claude/settings.json
+
+  # Pipe from stdin
+  cat my-config.json | omnillm config set claude-code --stdin`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath, _ := cmd.Flags().GetString("file")
 		fromStdin, _ := cmd.Flags().GetBool("stdin")
@@ -128,8 +136,6 @@ var configSetCmd = &cobra.Command{
 				return fmt.Errorf("read stdin: %w", err)
 			}
 			content = string(b)
-		default:
-			return fmt.Errorf("provide --file <path> or --stdin")
 		}
 
 		c := NewClient(cmd)
@@ -142,7 +148,7 @@ var configSetCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd,"Config '%s' saved.", args[0])
+		SuccessMsg(cmd, "Config '%s' saved.", args[0])
 		return nil
 	},
 }
@@ -182,7 +188,7 @@ var configImportCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd,"Config '%s' imported from %s.", args[0], filePath)
+		SuccessMsg(cmd, "Config '%s' imported from %s.", args[0], filePath)
 		return nil
 	},
 }
@@ -206,11 +212,11 @@ var configBackupCmd = &cobra.Command{
 		var resp map[string]interface{}
 		if err := json.Unmarshal(data, &resp); err == nil {
 			if backup, ok := resp["backup"].(string); ok {
-				SuccessMsg(cmd,"Backup saved to %s", backup)
+				SuccessMsg(cmd, "Backup saved to %s", backup)
 				return nil
 			}
 		}
-		SuccessMsg(cmd,"Config '%s' backed up.", args[0])
+		SuccessMsg(cmd, "Config '%s' backed up.", args[0])
 		return nil
 	},
 }

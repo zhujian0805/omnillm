@@ -26,6 +26,7 @@ restart required.
 
 Supported providers: github-copilot, antigravity`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		out := cmd.OutOrStdout()
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("failed to get home directory: %w", err)
@@ -49,14 +50,14 @@ Supported providers: github-copilot, antigravity`,
 		for _, inst := range instances {
 			rec, err := tokenStore.Get(inst.InstanceID)
 			if err != nil || rec == nil {
-				fmt.Printf("  %-40s  skipped (no token record)\n", inst.InstanceID)
+				fmt.Fprintf(out, "  %-40s  skipped (no token record)\n", inst.InstanceID)
 				skipped++
 				continue
 			}
 
 			var td map[string]interface{}
 			if err := json.Unmarshal([]byte(rec.TokenData), &td); err != nil {
-				fmt.Printf("  %-40s  skipped (token parse error: %v)\n", inst.InstanceID, err)
+				fmt.Fprintf(out, "  %-40s  skipped (token parse error: %v)\n", inst.InstanceID, err)
 				skipped++
 				continue
 			}
@@ -68,13 +69,13 @@ Supported providers: github-copilot, antigravity`,
 			case "github-copilot":
 				githubToken, _ := td["github_token"].(string)
 				if githubToken == "" {
-					fmt.Printf("  %-40s  skipped (no github_token)\n", inst.InstanceID)
+					fmt.Fprintf(out, "  %-40s  skipped (no github_token)\n", inst.InstanceID)
 					skipped++
 					continue
 				}
 				user, err := ghservice.GetUser(githubToken)
 				if err != nil {
-					fmt.Printf("  %-40s  FAILED  (%v)\n", inst.InstanceID, err)
+					fmt.Fprintf(out, "  %-40s  FAILED  (%v)\n", inst.InstanceID, err)
 					failed++
 					continue
 				}
@@ -108,7 +109,7 @@ Supported providers: github-copilot, antigravity`,
 					}
 				}
 				if email == "" {
-					fmt.Printf("  %-40s  skipped (could not determine email)\n", inst.InstanceID)
+					fmt.Fprintf(out, "  %-40s  skipped (could not determine email)\n", inst.InstanceID)
 					skipped++
 					continue
 				}
@@ -121,7 +122,7 @@ Supported providers: github-copilot, antigravity`,
 			}
 
 			if newName == "" || newName == inst.Name {
-				fmt.Printf("  %-40s  unchanged  %q\n", inst.InstanceID, inst.Name)
+				fmt.Fprintf(out, "  %-40s  unchanged  %q\n", inst.InstanceID, inst.Name)
 				skipped++
 				continue
 			}
@@ -129,17 +130,17 @@ Supported providers: github-copilot, antigravity`,
 			oldName := inst.Name
 			inst.Name = newName
 			if err := instanceStore.Save(&inst); err != nil {
-				fmt.Printf("  %-40s  FAILED  (db save: %v)\n", inst.InstanceID, err)
+				fmt.Fprintf(out, "  %-40s  FAILED  (db save: %v)\n", inst.InstanceID, err)
 				failed++
 				continue
 			}
 
-			fmt.Printf("  %-40s  %q  →  %q\n", inst.InstanceID, oldName, newName)
+			fmt.Fprintf(out, "  %-40s  %q  →  %q\n", inst.InstanceID, oldName, newName)
 			updated++
 		}
 
-		fmt.Println()
-		fmt.Printf("Done — %d updated, %d unchanged/skipped, %d failed.\n", updated, skipped, failed)
+		fmt.Fprintln(out)
+		fmt.Fprintf(out, "Done — %d updated, %d unchanged/skipped, %d failed.\n", updated, skipped, failed)
 		return nil
 	},
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -21,12 +20,23 @@ var LogsCmd = &cobra.Command{
 
 func init() {
 	logsTailCmd.Flags().String("level", "", "Filter: only show messages at this level or above (error|warn|info|debug|trace)")
+	_ = logsTailCmd.RegisterFlagCompletionFunc("level", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"fatal", "error", "warn", "info", "debug", "trace"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	LogsCmd.AddCommand(logsTailCmd)
 }
 
 var logsTailCmd = &cobra.Command{
 	Use:   "tail",
 	Short: "Stream live server logs (SSE)",
+	Example: `  # Stream all logs
+  omnillm logs tail
+
+  # Stream only errors and above
+  omnillm logs tail --level error
+
+  # Stream warnings and above
+  omnillm logs tail --level warn`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		levelFilter, _ := cmd.Flags().GetString("level")
 
@@ -42,8 +52,9 @@ var logsTailCmd = &cobra.Command{
 			return fmt.Errorf("server returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 		}
 
-		fmt.Fprintf(os.Stderr, "Connected to log stream (Ctrl+C to stop)\n\n")
+		fmt.Fprintf(cmd.ErrOrStderr(), "Connected to log stream (Ctrl+C to stop)\n\n")
 
+		out := cmd.OutOrStdout()
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -58,7 +69,7 @@ var logsTailCmd = &cobra.Command{
 			var entry map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &entry); err != nil {
 				// Not JSON — print raw
-				fmt.Println(payload)
+				fmt.Fprintln(out, payload)
 				continue
 			}
 
@@ -82,7 +93,7 @@ var logsTailCmd = &cobra.Command{
 			}
 
 			levelStr := padRight(strings.ToUpper(level), 5)
-			fmt.Printf("%s  %s  %s\n", ts, levelStr, message)
+			fmt.Fprintf(out, "%s  %s  %s\n", ts, levelStr, message)
 		}
 
 		if err := scanner.Err(); err != nil {

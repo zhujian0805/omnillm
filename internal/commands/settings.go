@@ -18,6 +18,7 @@ func init() {
 	SettingsCmd.AddCommand(settingsGetCmd)
 
 	settingsSetCmd.AddCommand(settingsSetLogLevelCmd)
+	settingsSetLogLevelCmd.ValidArgs = []string{"fatal", "error", "warn", "info", "debug", "trace"}
 	SettingsCmd.AddCommand(settingsSetCmd)
 }
 
@@ -51,8 +52,9 @@ var settingsGetLogLevelCmd = &cobra.Command{
 				strs = append(strs, s)
 			}
 		}
-		fmt.Printf("Current log level: %s\n", level)
-		fmt.Printf("Available levels:  %s\n", strings.Join(strs, ", "))
+		out := cmd.OutOrStdout()
+		fmt.Fprintf(out, "Current log level: %s\n", level)
+		fmt.Fprintf(out, "Available levels:  %s\n", strings.Join(strs, ", "))
 		return nil
 	},
 }

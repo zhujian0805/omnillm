@@ -21,7 +21,11 @@ func init() {
 
 	modelToggleCmd.Flags().Bool("enable", false, "Enable the model")
 	modelToggleCmd.Flags().Bool("disable", false, "Disable the model")
+	modelToggleCmd.MarkFlagsOneRequired("enable", "disable")
+	modelToggleCmd.MarkFlagsMutuallyExclusive("enable", "disable")
 	ModelCmd.AddCommand(modelToggleCmd)
+	ModelCmd.AddCommand(modelEnableCmd)
+	ModelCmd.AddCommand(modelDisableCmd)
 
 	modelVersionCmd := &cobra.Command{
 		Use:   "version",
@@ -133,10 +137,14 @@ var modelMetadataCmd = &cobra.Command{
 var modelListCmd = &cobra.Command{
 	Use:   "list <provider-id>",
 	Short: "List models for a provider",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Get("/api/admin/providers/" + args[0] + "/models")
+		providerID, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Get("/api/admin/providers/" + providerID + "/models")
 		if err != nil {
 			return err
 		}
@@ -180,10 +188,14 @@ var modelListCmd = &cobra.Command{
 var modelRefreshCmd = &cobra.Command{
 	Use:   "refresh <provider-id>",
 	Short: "Refresh the model list for a provider from the upstream API",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/refresh", nil)
+		providerID, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Post("/api/admin/providers/"+providerID+"/models/refresh", nil)
 		if err != nil {
 			return err
 		}
@@ -208,9 +220,6 @@ var modelToggleCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		enable, _ := cmd.Flags().GetBool("enable")
 		disable, _ := cmd.Flags().GetBool("disable")
-		if !enable && !disable {
-			return fmt.Errorf("specify --enable or --disable")
-		}
 		enabled := enable && !disable
 
 		c := NewClient(cmd)
@@ -231,6 +240,59 @@ var modelToggleCmd = &cobra.Command{
 			state = "disabled"
 		}
 		SuccessMsg(cmd, "Model '%s' %s.", args[1], state)
+		return nil
+	},
+}
+
+// ─── enable ───────────────────────────────────────────────────────────────────
+
+var modelEnableCmd = &cobra.Command{
+	Use:   "enable <provider-id> <model-id>",
+	Short: "Enable a model for a provider",
+	Example: `  omnillm model enable my-provider gpt-4o
+  omnillm model enable my-provider claude-3-5-sonnet`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		body := map[string]interface{}{
+			"modelId": args[1],
+			"enabled": true,
+		}
+		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		if err != nil {
+			return err
+		}
+		if c.IsJSON() {
+			c.PrintJSON(data)
+			return nil
+		}
+		SuccessMsg(cmd, "Model '%s' enabled.", args[1])
+		return nil
+	},
+}
+
+// ─── disable ──────────────────────────────────────────────────────────────────
+
+var modelDisableCmd = &cobra.Command{
+	Use:     "disable <provider-id> <model-id>",
+	Short:   "Disable a model for a provider",
+	Example: `  omnillm model disable my-provider gpt-4o`,
+	Args:    cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		body := map[string]interface{}{
+			"modelId": args[1],
+			"enabled": false,
+		}
+		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/toggle", body)
+		if err != nil {
+			return err
+		}
+		if c.IsJSON() {
+			c.PrintJSON(data)
+			return nil
+		}
+		SuccessMsg(cmd, "Model '%s' disabled.", args[1])
 		return nil
 	},
 }
@@ -256,11 +318,12 @@ var modelVersionGetCmd = &cobra.Command{
 		if err := json.Unmarshal(data, &resp); err != nil {
 			return err
 		}
+		out := cmd.OutOrStdout()
 		version, _ := resp["version"].(string)
 		if version == "" {
-			fmt.Println("No version pinned (using provider default).")
+			fmt.Fprintln(out, "No version pinned (using provider default).")
 		} else {
-			fmt.Printf("Version: %s\n", version)
+			fmt.Fprintf(out, "Version: %s\n", version)
 		}
 		return nil
 	},
