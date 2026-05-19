@@ -256,11 +256,12 @@ var modelVersionGetCmd = &cobra.Command{
 		if err := json.Unmarshal(data, &resp); err != nil {
 			return err
 		}
+		out := cmd.OutOrStdout()
 		version, _ := resp["version"].(string)
 		if version == "" {
-			fmt.Println("No version pinned (using provider default).")
+			fmt.Fprintln(out, "No version pinned (using provider default).")
 		} else {
-			fmt.Printf("Version: %s\n", version)
+			fmt.Fprintf(out, "Version: %s\n", version)
 		}
 		return nil
 	},
