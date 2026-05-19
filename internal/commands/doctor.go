@@ -30,6 +30,32 @@ Prints a recommended next action at the end.`,
 	RunE: runDoctor,
 }
 
+type checkRow struct {
+	ok    bool
+	label string
+	value string
+}
+
+func printChecks(out io.Writer, rows []checkRow) error {
+	maxLabel := 0
+	for _, r := range rows {
+		if len([]rune(r.label)) > maxLabel {
+			maxLabel = len([]rune(r.label))
+		}
+	}
+	for _, r := range rows {
+		icon := "✓"
+		if !r.ok {
+			icon = "✗"
+		}
+		label := r.label + ":"
+		if _, err := fmt.Fprintf(out, "  %s  %s  %s\n", icon, padRightRunes(label, maxLabel+1), r.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func runDoctor(cmd *cobra.Command, args []string) error {
 	out := cmd.OutOrStdout()
 	nextStep := ""
@@ -47,28 +73,38 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	homeDir, _ := os.UserHomeDir()
 	configDir := filepath.Join(homeDir, ".config", "omnillm")
 	dbPath := filepath.Join(configDir, "database.sqlite")
+	apiKeyFile := filepath.Join(configDir, "api-key")
 
+	configOK := true
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
-		printCheck(out, false, "Config directory", configDir+" (not found)")
+		configOK = false
 		if nextStep == "" {
 			nextStep = "Run 'omnillm start' to initialise the configuration directory."
 		}
-	} else {
-		printCheck(out, true, "Config directory", configDir)
 	}
 
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		printCheck(out, false, "Database", dbPath+" (not found — will be created on first start)")
-	} else {
-		info, _ := os.Stat(dbPath)
-		printCheck(out, true, "Database", fmt.Sprintf("%s (%d bytes)", dbPath, info.Size()))
+	dbValue := dbPath + " (not found — will be created on first start)"
+	dbOK := false
+	if info, err := os.Stat(dbPath); err == nil {
+		dbOK = true
+		dbValue = fmt.Sprintf("%s (%d bytes)", dbPath, info.Size())
 	}
 
-	apiKeyFile := filepath.Join(configDir, "api-key")
+	apiKeyOK := true
 	if _, err := os.Stat(apiKeyFile); os.IsNotExist(err) {
-		printCheck(out, false, "API key file", "not found (will be generated on start)")
-	} else {
-		printCheck(out, true, "API key file", apiKeyFile)
+		apiKeyOK = false
+	}
+	apiKeyValue := apiKeyFile
+	if !apiKeyOK {
+		apiKeyValue = "not found (will be generated on start)"
+	}
+
+	if err := printChecks(out, []checkRow{
+		{ok: configOK, label: "Config directory", value: configDir},
+		{ok: dbOK, label: "Database", value: dbValue},
+		{ok: apiKeyOK, label: "API key file", value: apiKeyValue},
+	}); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(out)
@@ -79,12 +115,15 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	c := NewClient(cmd)
-	printCheck(out, true, "Server address", c.BaseURL)
 	apiKeyConfigured := c.APIKey != ""
-	if apiKeyConfigured {
-		printCheck(out, true, "API key", "configured")
-	} else {
-		printCheck(out, false, "API key", "not set (use --api-key or OMNILLM_API_KEY)")
+	apiKeyStatus := "configured"
+	if !apiKeyConfigured {
+		apiKeyStatus = "not set (use --api-key or OMNILLM_API_KEY)"
+	}
+
+	serverChecks := []checkRow{
+		{ok: true, label: "Server address", value: c.BaseURL},
+		{ok: apiKeyConfigured, label: "API key", value: apiKeyStatus},
 	}
 
 	serverOK := false
@@ -93,14 +132,18 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	statusData, err := c.Get("/api/admin/status")
 	latency := time.Since(start)
 	if err != nil {
-		printCheck(out, false, "Server reachable", fmt.Sprintf("NO — %v", err))
+		serverChecks = append(serverChecks, checkRow{ok: false, label: "Server reachable", value: fmt.Sprintf("NO — %v", err)})
 		if nextStep == "" {
 			nextStep = "Run 'omnillm start' to start the server."
 		}
 	} else {
 		serverOK = true
-		printCheck(out, true, "Server reachable", fmt.Sprintf("yes (%dms)", latency.Milliseconds()))
+		serverChecks = append(serverChecks, checkRow{ok: true, label: "Server reachable", value: fmt.Sprintf("yes (%dms)", latency.Milliseconds())})
 		_ = json.Unmarshal(statusData, &statusResp)
+	}
+
+	if err := printChecks(out, serverChecks); err != nil {
+		return err
 	}
 
 	if serverOK && statusResp != nil {
@@ -111,11 +154,17 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		status, _ := statusResp["status"].(string)
 		uptime, _ := statusResp["uptime"].(string)
 		modelCount, _ := statusResp["modelCount"].(float64)
-		printCheck(out, status == "ok" || status == "running", "Status", status)
-		if err := PrintKeyValue(out, "Uptime", uptime); err != nil {
+
+		statusOK := status == "ok" || status == "running" || status == "healthy"
+		if err := printChecks(out, []checkRow{
+			{ok: statusOK, label: "Status", value: status},
+		}); err != nil {
 			return err
 		}
-		if err := PrintKeyValue(out, "Models", fmt.Sprintf("%.0f", modelCount)); err != nil {
+		if err := PrintKeyValueSection(out, [][2]string{
+			{"Uptime", uptime},
+			{"Models", fmt.Sprintf("%.0f", modelCount)},
+		}); err != nil {
 			return err
 		}
 
@@ -135,22 +184,26 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 				}
 			}
 			providerOK := len(providers) > 0
-			printCheck(out, providerOK, "Providers configured",
-				fmt.Sprintf("%d total, %d active", len(providers), activeCount))
+			provChecks := []checkRow{
+				{ok: providerOK, label: "Providers configured", value: fmt.Sprintf("%d total, %d active", len(providers), activeCount)},
+			}
 			if !providerOK && nextStep == "" {
 				nextStep = "Run 'omnillm auth' to add and authenticate a provider."
 			} else if activeCount == 0 && len(providers) > 0 && nextStep == "" {
 				nextStep = "Run 'omnillm provider activate <id>' to activate a provider."
 			}
-		}
 
-		// ── Virtual models ─────────────────────────────────────────────────────
-		vmData, vmErr := c.Get("/api/admin/virtualmodels")
-		if vmErr == nil {
-			var vmResp map[string]interface{}
-			if jsonErr := json.Unmarshal(vmData, &vmResp); jsonErr == nil {
-				items, _ := vmResp["data"].([]interface{})
-				printCheck(out, true, "Virtual models", fmt.Sprintf("%d configured", len(items)))
+			vmData, vmErr := c.Get("/api/admin/virtualmodels")
+			if vmErr == nil {
+				var vmResp map[string]interface{}
+				if jsonErr := json.Unmarshal(vmData, &vmResp); jsonErr == nil {
+					items, _ := vmResp["data"].([]interface{})
+					provChecks = append(provChecks, checkRow{ok: true, label: "Virtual models", value: fmt.Sprintf("%d configured", len(items))})
+				}
+			}
+
+			if err := printChecks(out, provChecks); err != nil {
+				return err
 			}
 		}
 
@@ -166,15 +219,20 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 						return err
 					}
 					providerID, _ := authResp["providerId"].(string)
-					printCheck(out, false, "Auth in progress",
-						fmt.Sprintf("%s (%s)", providerID, authStatus))
+					if err := printChecks(out, []checkRow{
+						{ok: false, label: "Auth in progress", value: fmt.Sprintf("%s (%s)", providerID, authStatus)},
+					}); err != nil {
+						return err
+					}
+					kvPairs := [][2]string{}
 					if userCode, ok := authResp["userCode"].(string); ok && userCode != "" {
-						if err := PrintKeyValue(out, "User code", userCode); err != nil {
-							return err
-						}
+						kvPairs = append(kvPairs, [2]string{"User code", userCode})
 					}
 					if url, ok := authResp["instructionURL"].(string); ok && url != "" {
-						if err := PrintKeyValue(out, "Visit", url); err != nil {
+						kvPairs = append(kvPairs, [2]string{"Visit", url})
+					}
+					if len(kvPairs) > 0 {
+						if err := PrintKeyValueSection(out, kvPairs); err != nil {
 							return err
 						}
 					}
@@ -186,19 +244,14 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	// ── Next step ──────────────────────────────────────────────────────────────
 	fmt.Fprintln(out)
 	if nextStep != "" {
-		fmt.Fprintf(out, "Next step: %s\n", nextStep)
+		if _, err := fmt.Fprintf(out, "Next step: %s\n", nextStep); err != nil {
+			return err
+		}
 	} else {
-		fmt.Fprintln(out, "Everything looks good. ✓")
+		if _, err := fmt.Fprintln(out, "Everything looks good. ✓"); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
-
-func printCheck(out io.Writer, ok bool, label, value string) {
-	icon := "✓"
-	if !ok {
-		icon = "✗"
-	}
-	fmt.Fprintf(out, "  %s  %-22s %s\n", icon, label+":", value)
-}
-
