@@ -20,6 +20,9 @@ var LogsCmd = &cobra.Command{
 
 func init() {
 	logsTailCmd.Flags().String("level", "", "Filter: only show messages at this level or above (error|warn|info|debug|trace)")
+	_ = logsTailCmd.RegisterFlagCompletionFunc("level", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"fatal", "error", "warn", "info", "debug", "trace"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	LogsCmd.AddCommand(logsTailCmd)
 }
 

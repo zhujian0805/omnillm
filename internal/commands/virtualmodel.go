@@ -43,6 +43,22 @@ func init() {
 	VirtualModelCmd.AddCommand(vmDeleteCmd)
 
 	VirtualModelCmd.AddCommand(vmRenameCmd)
+
+	for _, sub := range []*cobra.Command{vmGetCmd, vmUpdateCmd, vmDeleteCmd} {
+		sub.ValidArgsFunction = virtualModelIDCompletionFunc
+	}
+	_ = vmCreateCmd.RegisterFlagCompletionFunc("strategy", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"round-robin", "random", "priority", "weighted"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = vmCreateCmd.RegisterFlagCompletionFunc("api-shape", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"openai", "anthropic"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = vmUpdateCmd.RegisterFlagCompletionFunc("strategy", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"round-robin", "random", "priority", "weighted"}, cobra.ShellCompDirectiveNoFileComp
+	})
+	_ = vmUpdateCmd.RegisterFlagCompletionFunc("api-shape", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"openai", "anthropic"}, cobra.ShellCompDirectiveNoFileComp
+	})
 }
 
 // ─── list ─────────────────────────────────────────────────────────────────────
@@ -329,6 +345,27 @@ var vmRenameCmd = &cobra.Command{
 }
 
 // ─── helper ───────────────────────────────────────────────────────────────────
+
+func virtualModelIDCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	c := NewClient(cmd)
+	data, err := c.Get("/api/admin/virtualmodels")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	items, _ := resp["data"].([]interface{})
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		vm, _ := item.(map[string]interface{})
+		if id, ok := vm["virtual_model_id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, cobra.ShellCompDirectiveNoFileComp
+}
 
 // parseUpstreamArgs parses strings of the form:
 //
