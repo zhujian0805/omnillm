@@ -29,6 +29,14 @@ func init() {
 var logsTailCmd = &cobra.Command{
 	Use:   "tail",
 	Short: "Stream live server logs (SSE)",
+	Example: `  # Stream all logs
+  omnillm logs tail
+
+  # Stream only errors and above
+  omnillm logs tail --level error
+
+  # Stream warnings and above
+  omnillm logs tail --level warn`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		levelFilter, _ := cmd.Flags().GetString("level")
 

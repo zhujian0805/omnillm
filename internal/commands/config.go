@@ -113,6 +113,11 @@ var configSetCmd = &cobra.Command{
 	Use:   "set <name>",
 	Short: "Write content to a config file (from --file or --stdin)",
 	Args:  cobra.ExactArgs(1),
+	Example: `  # Write from a local file
+  omnillm config set claude-code --file ~/.claude/settings.json
+
+  # Pipe from stdin
+  cat my-config.json | omnillm config set claude-code --stdin`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		filePath, _ := cmd.Flags().GetString("file")
 		fromStdin, _ := cmd.Flags().GetBool("stdin")
