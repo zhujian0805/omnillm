@@ -194,7 +194,8 @@ func usageBreakdownTable(breakdown string) *Table {
 		"client":    "CLIENT",
 		"clients":   "CLIENT",
 	}[breakdown]
-	return NewTable(labelHeader, "REQUESTS", "TOKENS", "AVG LATENCY MS")
+	t := NewTable(labelHeader, "REQUESTS", "TOKENS", "AVG LATENCY MS")
+	return t
 }
 
 func addUsageBreakdownRow(table *Table, breakdown string, row map[string]any) {

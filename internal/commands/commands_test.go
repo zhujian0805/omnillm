@@ -1,11 +1,23 @@
 package commands
 
 import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+func TestCompletionCmdExists(t *testing.T) {
+	if CompletionCmd == nil {
+		t.Fatal("CompletionCmd is nil")
+	}
+	if CompletionCmd.Use != "completion [bash|zsh|fish|powershell]" {
+		t.Errorf("CompletionCmd.Use = %q, unexpected", CompletionCmd.Use)
+	}
+}
 
 // ─── auth and usage commands ──────────────────────────────────────────────────
 
@@ -320,6 +332,31 @@ func TestModelVersionSubcommands(t *testing.T) {
 	t.Error("model: 'version' subcommand not found")
 }
 
+func TestModelEnableDisableSubcommands(t *testing.T) {
+	subNames := make(map[string]bool)
+	for _, sub := range ModelCmd.Commands() {
+		subNames[sub.Name()] = true
+	}
+	if !subNames["enable"] {
+		t.Error("model: missing subcommand 'enable'")
+	}
+	if !subNames["disable"] {
+		t.Error("model: missing subcommand 'disable'")
+	}
+}
+
+func TestModelEnableCmdArgs(t *testing.T) {
+	for _, sub := range ModelCmd.Commands() {
+		if sub.Name() == "enable" {
+			if sub.Use != "enable <provider-id> <model-id>" {
+				t.Errorf("model enable Use = %q, want %q", sub.Use, "enable <provider-id> <model-id>")
+			}
+			return
+		}
+	}
+	t.Error("model enable subcommand not found")
+}
+
 // ─── virtualmodel command ─────────────────────────────────────────────────────
 
 func TestVirtualModelCmdUse(t *testing.T) {
@@ -375,6 +412,16 @@ func TestVirtualModelDeleteHasYesFlag(t *testing.T) {
 		}
 	}
 	t.Error("virtualmodel delete: subcommand not found")
+}
+
+func TestVirtualModelCmdHasAlias(t *testing.T) {
+	aliases := VirtualModelCmd.Aliases
+	for _, a := range aliases {
+		if a == "virtual-model" {
+			return
+		}
+	}
+	t.Errorf("VirtualModelCmd missing 'virtual-model' alias; got %v", aliases)
 }
 
 // ─── config command ───────────────────────────────────────────────────────────
@@ -627,7 +674,107 @@ func TestIsLevelAtOrAboveFiltering(t *testing.T) {
 	}
 }
 
+// ─── resolveIDFromList ────────────────────────────────────────────────────────
+
+func TestResolveIDFromListPicksFirstWhenOnlyOne(t *testing.T) {
+	id, err := resolveIDFromList("Pick provider:", []string{"provider-one"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "provider-one" {
+		t.Errorf("expected 'provider-one', got %q", id)
+	}
+}
+
+func TestResolveIDFromListReturnsErrorOnEmpty(t *testing.T) {
+	_, err := resolveIDFromList("Pick provider:", []string{})
+	if err == nil {
+		t.Fatal("expected error for empty list")
+	}
+}
+
 // ─── NewClient defaults ───────────────────────────────────────────────────────
+
+func TestClientPrintJSONUsesCommandWriter(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	c := NewClient(cmd)
+	c.PrintJSON([]byte(`{"ok":true}`))
+
+	if !strings.Contains(out.String(), `"ok"`) {
+		t.Fatalf("PrintJSON did not write to command output writer; got: %q", out.String())
+	}
+}
+
+func TestDoctorCmdExists(t *testing.T) {
+	if DoctorCmd == nil {
+		t.Fatal("DoctorCmd is nil")
+	}
+	if DoctorCmd.Use != "doctor" {
+		t.Errorf("DoctorCmd.Use = %q, want 'doctor'", DoctorCmd.Use)
+	}
+}
+
+func TestDoctorCmdWritesToCommandOutput(t *testing.T) {
+	cmd := DoctorCmd
+	if cmd.OutOrStdout() == nil {
+		t.Fatal("DoctorCmd OutOrStdout() is nil")
+	}
+}
+
+func TestDoctorCmdWritesHealthyStatusWithBorderedTables(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/api/admin/status":
+			_, _ = w.Write([]byte(`{"status":"healthy","uptime":"39s","modelCount":273}`))
+		case "/api/admin/providers":
+			_, _ = w.Write([]byte(`[]`))
+		case "/api/admin/virtualmodels":
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/api/admin/auth-status":
+			_, _ = w.Write([]byte(`{"status":"idle"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	t.Setenv("OMNILLM_SERVER", ts.URL)
+	t.Setenv("OMNILLM_API_KEY", "test-key")
+
+	cmd := &cobra.Command{}
+	cmd.SetErr(&bytes.Buffer{})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := runDoctor(cmd, nil); err != nil {
+		t.Fatalf("runDoctor returned error: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{"Local configuration", "Server", "Server status", "Providers", "Status", "healthy", "┌", "│", "└"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected doctor output to contain %q, got output:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "  ✓  Status:") || strings.Contains(output, "  ✗  Status:") {
+		t.Fatalf("expected bordered table output instead of legacy success markers, got output:\n%s", output)
+	}
+}
+
+func TestDebugCmdWritesToCommandOutput(t *testing.T) {
+	cmd := DebugCmd
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if cmd.OutOrStdout() == nil {
+		t.Fatal("DebugCmd OutOrStdout() is nil")
+	}
+}
 
 func TestNewClientDefaultServer(t *testing.T) {
 	t.Setenv("OMNILLM_SERVER", "")
@@ -635,4 +782,50 @@ func TestNewClientDefaultServer(t *testing.T) {
 
 	const expectedDefault = "http://127.0.0.1:5000"
 	_ = expectedDefault // guard against renaming without updating
+}
+
+// ─── Cobra-level flag validation ─────────────────────────────────────────────
+
+func TestModelToggleRequiresEnableOrDisable(t *testing.T) {
+	for _, sub := range ModelCmd.Commands() {
+		if sub.Name() == "toggle" {
+			ModelCmd.SetArgs([]string{"toggle", "some-provider", "some-model"})
+			var errBuf bytes.Buffer
+			ModelCmd.SetErr(&errBuf)
+			err := ModelCmd.Execute()
+			if err == nil {
+				t.Fatal("expected error when neither --enable nor --disable is set")
+			}
+			return
+		}
+	}
+	t.Error("model toggle subcommand not found")
+}
+
+func TestConfigSetRequiresFileOrStdin(t *testing.T) {
+	for _, sub := range ConfigCmd.Commands() {
+		if sub.Name() == "set" {
+			ConfigCmd.SetArgs([]string{"set", "myconfig"})
+			var errBuf bytes.Buffer
+			ConfigCmd.SetErr(&errBuf)
+			err := ConfigCmd.Execute()
+			if err == nil {
+				t.Fatal("expected error when neither --file nor --stdin is set")
+			}
+			return
+		}
+	}
+	t.Error("config set subcommand not found")
+}
+
+func TestVirtualModelUpdateEnabledDisabledMutuallyExclusive(t *testing.T) {
+	for _, sub := range VirtualModelCmd.Commands() {
+		if sub.Name() == "update" {
+			if sub.Flags().Lookup("enabled") == nil || sub.Flags().Lookup("disabled") == nil {
+				t.Error("virtualmodel update: missing --enabled or --disabled flag")
+			}
+			return
+		}
+	}
+	t.Error("virtualmodel update subcommand not found")
 }
