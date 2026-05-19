@@ -164,8 +164,6 @@ var providerListCmd = &cobra.Command{
 		}
 
 		table := NewTable("ID", "TYPE", "NAME", "AUTH", "ACTIVE", "MODELS")
-		table.SetMaxWidth(0, 32) // ID
-		table.SetMaxWidth(2, 36) // NAME
 		for _, p := range providers {
 			id, _ := p["id"].(string)
 			pType, _ := p["type"].(string)
@@ -198,7 +196,7 @@ var providerAddCmd = &cobra.Command{
   kimi              Kimi AI (requires --api-key)
   codex             OpenAI Codex (requires --api-key)`,
 	Args: cobra.ExactArgs(1),
-		Example: `  # Interactive (prompts for missing fields)
+	Example: `  # Interactive (prompts for missing fields)
   omnillm provider add github-copilot
 
   # OpenAI-compatible with all flags

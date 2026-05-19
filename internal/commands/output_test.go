@@ -65,6 +65,25 @@ func TestTableTruncation(t *testing.T) {
 	}
 }
 
+func TestTableWithoutMaxWidthShowsFullValue(t *testing.T) {
+	table := NewTable("ID")
+	longValue := "this-is-a-very-long-identifier-that-should-remain-visible"
+	table.AddRow(longValue)
+
+	var out bytes.Buffer
+	if err := table.Render(&out); err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+
+	rendered := out.String()
+	if !strings.Contains(rendered, longValue) {
+		t.Fatalf("expected full long value in rendered table, got:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "…") {
+		t.Fatalf("did not expect truncation ellipsis when no max width is set, got:\n%s", rendered)
+	}
+}
+
 func TestTruncateHelper(t *testing.T) {
 	cases := []struct {
 		in   string
