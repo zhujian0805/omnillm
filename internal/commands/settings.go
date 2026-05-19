@@ -18,6 +18,7 @@ func init() {
 	SettingsCmd.AddCommand(settingsGetCmd)
 
 	settingsSetCmd.AddCommand(settingsSetLogLevelCmd)
+	settingsSetLogLevelCmd.ValidArgs = []string{"fatal", "error", "warn", "info", "debug", "trace"}
 	SettingsCmd.AddCommand(settingsSetCmd)
 }
 

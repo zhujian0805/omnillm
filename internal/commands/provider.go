@@ -80,6 +80,14 @@ func init() {
 
 	// provider usage
 	ProviderCmd.AddCommand(providerUsageCmd)
+
+	for _, sub := range []*cobra.Command{
+		providerDeleteCmd, providerActivateCmd, providerDeactivateCmd,
+		providerSwitchCmd, providerRenameCmd, providerUsageCmd,
+	} {
+		sub.ValidArgsFunction = providerIDCompletionFunc
+	}
+	providerAddCmd.ValidArgs = supportedAuthProviderTypes
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -109,6 +117,25 @@ func getStringSliceFlag(cmd *cobra.Command, name string) []string {
 func getBoolFlag(cmd *cobra.Command, name string) bool {
 	v, _ := cmd.Flags().GetBool(name)
 	return v
+}
+
+func providerIDCompletionFunc(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	c := NewClient(cmd)
+	data, err := c.Get("/api/admin/providers")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	providers, err := parseProviders(data)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	ids := make([]string, 0, len(providers))
+	for _, p := range providers {
+		if id, ok := p["id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	return ids, cobra.ShellCompDirectiveNoFileComp
 }
 
 // ─── list ─────────────────────────────────────────────────────────────────────

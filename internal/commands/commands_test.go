@@ -8,6 +8,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestCompletionCmdExists(t *testing.T) {
+	if CompletionCmd == nil {
+		t.Fatal("CompletionCmd is nil")
+	}
+	if CompletionCmd.Use != "completion [bash|zsh|fish|powershell]" {
+		t.Errorf("CompletionCmd.Use = %q, unexpected", CompletionCmd.Use)
+	}
+}
+
 // ─── auth and usage commands ──────────────────────────────────────────────────
 
 func TestAuthCmdIsGenericProviderAuth(t *testing.T) {
