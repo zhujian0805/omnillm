@@ -28,13 +28,14 @@ func NewTable(headers ...string) *Table {
 }
 
 // SetMaxWidth limits column col to max visible characters; longer values are
-// truncated with a trailing "…".
+// truncated with a trailing "…". Negative max values are ignored.
 func (t *Table) SetMaxWidth(col, max int) {
-	if col >= 0 && col < len(t.headers) {
-		t.maxWidths[col] = max
-		if max < t.widths[col] {
-			t.widths[col] = max
-		}
+	if max < 0 || col < 0 || col >= len(t.headers) {
+		return
+	}
+	t.maxWidths[col] = max
+	if max < t.widths[col] {
+		t.widths[col] = max
 	}
 }
 
@@ -132,7 +133,6 @@ func truncate(s string, max int) string {
 	return string(runes[:max-1]) + "…"
 }
 
-
 // PrintSection writes a titled underlined section header to w.
 func PrintSection(w io.Writer, title string) error {
 	if _, err := fmt.Fprintln(w, title); err != nil {
@@ -143,16 +143,17 @@ func PrintSection(w io.Writer, title string) error {
 }
 
 // PrintKeyValueSection writes a batch of key/value pairs with uniform left-column
-// padding determined by the longest key in the batch.
+// padding determined by the longest key in the batch (rune-aware).
 func PrintKeyValueSection(w io.Writer, pairs [][2]string) error {
 	maxLen := 0
 	for _, p := range pairs {
-		if len(p[0]) > maxLen {
-			maxLen = len(p[0])
+		if n := len([]rune(p[0])); n > maxLen {
+			maxLen = n
 		}
 	}
 	for _, p := range pairs {
-		if _, err := fmt.Fprintf(w, "  %-*s  %s\n", maxLen, p[0], p[1]); err != nil {
+		padded := padRightRunes(p[0], maxLen)
+		if _, err := fmt.Fprintf(w, "  %s  %s\n", padded, p[1]); err != nil {
 			return err
 		}
 	}
