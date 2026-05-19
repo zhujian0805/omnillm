@@ -18,7 +18,7 @@ type Table struct {
 func NewTable(headers ...string) *Table {
 	widths := make([]int, len(headers))
 	for i, h := range headers {
-		widths[i] = len(h)
+		widths[i] = len([]rune(h))
 	}
 	return &Table{
 		headers:   headers,
@@ -46,8 +46,8 @@ func (t *Table) AddRow(columns ...string) {
 		if max, ok := t.maxWidths[i]; ok {
 			row[i] = truncate(row[i], max)
 		}
-		if len(row[i]) > t.widths[i] {
-			t.widths[i] = len(row[i])
+		if len([]rune(row[i])) > t.widths[i] {
+			t.widths[i] = len([]rune(row[i]))
 		}
 	}
 	t.rows = append(t.rows, row)
@@ -109,6 +109,15 @@ func (t *Table) buildRow(cols []string) string {
 		sb.WriteString(" │")
 	}
 	return sb.String()
+}
+
+// padRight pads s with spaces on the right so the visible rune count reaches w.
+func padRight(s string, w int) string {
+	r := []rune(s)
+	if len(r) >= w {
+		return s
+	}
+	return s + strings.Repeat(" ", w-len(r))
 }
 
 // truncate shortens s to max runes, appending "…" when truncated.
