@@ -54,6 +54,9 @@ func NewClient(cmd *cobra.Command) *Client {
 		OutputMode: output,
 		UserAgent:  clientUserAgent(cmd),
 		http:       &http.Client{},
+		stdout:     cmd.OutOrStdout(),
+		stderr:     cmd.ErrOrStderr(),
+		stdin:      cmd.InOrStdin(),
 	}
 }
 
@@ -213,7 +216,11 @@ func (c *Client) parseJSON(data []byte, v interface{}) error {
 
 // PrintJSON pretty-prints raw JSON to stdout, or prints as-is on parse error.
 func (c *Client) PrintJSON(data []byte) {
-	PrintJSON(os.Stdout, data)
+	w := c.stdout
+	if w == nil {
+		w = os.Stdout
+	}
+	PrintJSON(w, data)
 }
 
 func PrintJSON(w io.Writer, data []byte) {
