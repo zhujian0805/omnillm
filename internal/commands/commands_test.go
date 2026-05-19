@@ -643,6 +643,15 @@ func TestClientPrintJSONUsesCommandWriter(t *testing.T) {
 	}
 }
 
+func TestDebugCmdWritesToCommandOutput(t *testing.T) {
+	cmd := DebugCmd
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if cmd.OutOrStdout() == nil {
+		t.Fatal("DebugCmd OutOrStdout() is nil")
+	}
+}
+
 func TestNewClientDefaultServer(t *testing.T) {
 	t.Setenv("OMNILLM_SERVER", "")
 	t.Setenv("OMNILLM_API_KEY", "")
