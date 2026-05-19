@@ -10,8 +10,9 @@ import (
 )
 
 var VirtualModelCmd = &cobra.Command{
-	Use:   "virtualmodel",
-	Short: "Manage virtual models (model aliases with load-balancing)",
+	Use:     "virtualmodel",
+	Aliases: []string{"virtual-model"},
+	Short:   "Manage virtual models (model aliases with load-balancing)",
 	Long: `Virtual models are stable model aliases that route requests to one or
 more upstream provider/model pairs with configurable load-balancing strategies.`,
 }

@@ -412,6 +412,16 @@ func TestVirtualModelDeleteHasYesFlag(t *testing.T) {
 	t.Error("virtualmodel delete: subcommand not found")
 }
 
+func TestVirtualModelCmdHasAlias(t *testing.T) {
+	aliases := VirtualModelCmd.Aliases
+	for _, a := range aliases {
+		if a == "virtual-model" {
+			return
+		}
+	}
+	t.Errorf("VirtualModelCmd missing 'virtual-model' alias; got %v", aliases)
+}
+
 // ─── config command ───────────────────────────────────────────────────────────
 
 func TestConfigCmdStructure(t *testing.T) {
