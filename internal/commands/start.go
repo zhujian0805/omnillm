@@ -10,7 +10,33 @@ import (
 var StartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the LLM proxy server",
-	Long:  "Start the LLM proxy server",
+	Long: `Start the OmniLLM proxy server.
+
+The server listens on --host:--port and exposes:
+  - OpenAI-compatible API at /v1/chat/completions, /v1/models, /v1/embeddings
+  - Anthropic-compatible API at /v1/messages
+  - Admin API and UI at /admin/
+
+Configuration precedence (highest to lowest):
+  1. CLI flags
+  2. Environment variables (OMNILLM_SERVER, OMNILLM_API_KEY, etc.)
+  3. Files in ~/.config/omnillm/
+
+The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/api-key.`,
+	Example: `  # Start with defaults (port 5000, github-copilot provider)
+  omnillm start
+
+  # Start on a different port with a specific provider
+  omnillm start --port 8080 --provider openai-compatible
+
+  # Start with an explicit API key and verbose logging
+  omnillm start --api-key my-secret --verbose
+
+  # Start with rate limiting (1 request per 3 seconds, wait instead of error)
+  omnillm start --rate-limit 3 --wait
+
+  # Print the Claude Code launch command after starting
+  omnillm start --claude-code`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		port, err := cmd.Flags().GetInt("port")
 		if err != nil {

@@ -186,6 +186,14 @@ var vmCreateCmd = &cobra.Command{
 	Use:   "create <id>",
 	Short: "Create a new virtual model",
 	Args:  cobra.ExactArgs(1),
+		Example: `  # Round-robin across two upstreams
+  omnillm virtualmodel create my-gpt --name "My GPT" --upstream provider1/gpt-4o --upstream provider2/gpt-4o
+
+  # Weighted routing (provider1 gets 3x traffic)
+  omnillm virtualmodel create smart-gpt --name "Smart GPT" --strategy weighted --upstream provider1/gpt-4o:3 --upstream provider2/gpt-4o:1
+
+  # With weight and priority
+  omnillm virtualmodel create ha-gpt --name "HA GPT" --strategy priority --upstream primary/gpt-4o:1:1 --upstream fallback/gpt-4o:1:2`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		desc, _ := cmd.Flags().GetString("description")

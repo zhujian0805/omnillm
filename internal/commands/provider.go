@@ -196,6 +196,14 @@ var providerAddCmd = &cobra.Command{
   kimi              Kimi AI (requires --api-key)
   codex             OpenAI Codex (requires --api-key)`,
 	Args: cobra.ExactArgs(1),
+		Example: `  # Interactive (prompts for missing fields)
+  omnillm provider add github-copilot
+
+  # OpenAI-compatible with all flags
+  omnillm provider add openai-compatible --endpoint https://api.openai.com/v1 --api-key sk-...
+
+  # Alibaba DashScope
+  omnillm provider add alibaba --api-key my-key --region global --plan standard`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return authAndCreateProvider(cmd, args[0])
 	},
