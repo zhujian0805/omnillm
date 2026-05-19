@@ -696,6 +696,22 @@ func TestClientPrintJSONUsesCommandWriter(t *testing.T) {
 	}
 }
 
+func TestDoctorCmdExists(t *testing.T) {
+	if DoctorCmd == nil {
+		t.Fatal("DoctorCmd is nil")
+	}
+	if DoctorCmd.Use != "doctor" {
+		t.Errorf("DoctorCmd.Use = %q, want 'doctor'", DoctorCmd.Use)
+	}
+}
+
+func TestDoctorCmdWritesToCommandOutput(t *testing.T) {
+	cmd := DoctorCmd
+	if cmd.OutOrStdout() == nil {
+		t.Fatal("DoctorCmd OutOrStdout() is nil")
+	}
+}
+
 func TestDebugCmdWritesToCommandOutput(t *testing.T) {
 	cmd := DebugCmd
 	var out bytes.Buffer
