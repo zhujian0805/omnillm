@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -628,6 +629,19 @@ func TestIsLevelAtOrAboveFiltering(t *testing.T) {
 }
 
 // ─── NewClient defaults ───────────────────────────────────────────────────────
+
+func TestClientPrintJSONUsesCommandWriter(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	c := NewClient(cmd)
+	c.PrintJSON([]byte(`{"ok":true}`))
+
+	if !strings.Contains(out.String(), `"ok"`) {
+		t.Fatalf("PrintJSON did not write to command output writer; got: %q", out.String())
+	}
+}
 
 func TestNewClientDefaultServer(t *testing.T) {
 	t.Setenv("OMNILLM_SERVER", "")
