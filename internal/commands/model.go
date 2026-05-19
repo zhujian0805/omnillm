@@ -137,10 +137,14 @@ var modelMetadataCmd = &cobra.Command{
 var modelListCmd = &cobra.Command{
 	Use:   "list <provider-id>",
 	Short: "List models for a provider",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Get("/api/admin/providers/" + args[0] + "/models")
+		providerID, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Get("/api/admin/providers/" + providerID + "/models")
 		if err != nil {
 			return err
 		}
@@ -184,10 +188,14 @@ var modelListCmd = &cobra.Command{
 var modelRefreshCmd = &cobra.Command{
 	Use:   "refresh <provider-id>",
 	Short: "Refresh the model list for a provider from the upstream API",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/models/refresh", nil)
+		providerID, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Post("/api/admin/providers/"+providerID+"/models/refresh", nil)
 		if err != nil {
 			return err
 		}

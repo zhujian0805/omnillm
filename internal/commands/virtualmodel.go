@@ -93,10 +93,14 @@ var vmListCmd = &cobra.Command{
 var vmGetCmd = &cobra.Command{
 	Use:   "get <id>",
 	Short: "Get details of a virtual model",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Get("/api/admin/virtualmodels/" + args[0])
+		id, err := resolveVirtualModelID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Get("/api/admin/virtualmodels/" + id)
 		if err != nil {
 			return err
 		}
@@ -109,7 +113,7 @@ var vmGetCmd = &cobra.Command{
 		if err := json.Unmarshal(data, &vm); err != nil {
 			return err
 		}
-		id, _ := vm["virtual_model_id"].(string)
+		vmID, _ := vm["virtual_model_id"].(string)
 		name, _ := vm["name"].(string)
 		desc, _ := vm["description"].(string)
 		strategy, _ := vm["lb_strategy"].(string)
@@ -117,7 +121,7 @@ var vmGetCmd = &cobra.Command{
 		enabled, _ := vm["enabled"].(bool)
 
 		out := cmd.OutOrStdout()
-		if err := PrintSection(out, "Virtual Model: "+id); err != nil {
+		if err := PrintSection(out, "Virtual Model: "+vmID); err != nil {
 			return err
 		}
 		if err := PrintKeyValue(out, "Name", name); err != nil {
@@ -210,12 +214,16 @@ var vmCreateCmd = &cobra.Command{
 var vmUpdateCmd = &cobra.Command{
 	Use:   "update <id>",
 	Short: "Update a virtual model",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
+		id, err := resolveVirtualModelID(cmd, c, args)
+		if err != nil {
+			return err
+		}
 
 		// Fetch current state first
-		existing, err := c.Get("/api/admin/virtualmodels/" + args[0])
+		existing, err := c.Get("/api/admin/virtualmodels/" + id)
 		if err != nil {
 			return err
 		}
@@ -250,9 +258,9 @@ var vmUpdateCmd = &cobra.Command{
 			vm["upstreams"] = upstreams
 		}
 		// Ensure virtual_model_id is set (required by server)
-		vm["virtual_model_id"] = args[0]
+		vm["virtual_model_id"] = id
 
-		data, err := c.Put("/api/admin/virtualmodels/"+args[0], vm)
+		data, err := c.Put("/api/admin/virtualmodels/"+id, vm)
 		if err != nil {
 			return err
 		}
@@ -260,7 +268,7 @@ var vmUpdateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Virtual model '%s' updated.", args[0])
+		SuccessMsg(cmd, "Virtual model '%s' updated.", id)
 		return nil
 	},
 }
@@ -270,15 +278,19 @@ var vmUpdateCmd = &cobra.Command{
 var vmDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Delete a virtual model",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		id, err := resolveVirtualModelID(cmd, c, args)
+		if err != nil {
+			return err
+		}
 		yes, _ := cmd.Flags().GetBool("yes")
-		if !yes && !Confirm(cmd, fmt.Sprintf("Delete virtual model '%s'?", args[0])) {
+		if !yes && !Confirm(cmd, fmt.Sprintf("Delete virtual model '%s'?", id)) {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
-		c := NewClient(cmd)
-		data, err := c.Delete("/api/admin/virtualmodels/" + args[0])
+		data, err := c.Delete("/api/admin/virtualmodels/" + id)
 		if err != nil {
 			return err
 		}
@@ -286,7 +298,7 @@ var vmDeleteCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Virtual model '%s' deleted.", args[0])
+		SuccessMsg(cmd, "Virtual model '%s' deleted.", id)
 		return nil
 	},
 }
