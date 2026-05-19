@@ -398,14 +398,17 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 var providerDeleteCmd = &cobra.Command{
 	Use:   "delete <id>",
 	Short: "Delete a provider instance",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		id := args[0]
+		c := NewClient(cmd)
+		id, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
 		if !getBoolFlag(cmd, "yes") && !Confirm(cmd, fmt.Sprintf("Delete provider '%s'?", id)) {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Cancelled.")
 			return nil
 		}
-		c := NewClient(cmd)
 		data, err := c.Delete("/api/admin/providers/" + id)
 		if err != nil {
 			return err
@@ -424,10 +427,14 @@ var providerDeleteCmd = &cobra.Command{
 var providerActivateCmd = &cobra.Command{
 	Use:   "activate <id>",
 	Short: "Activate a provider (add to active set)",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/activate", nil)
+		id, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Post("/api/admin/providers/"+id+"/activate", nil)
 		if err != nil {
 			return err
 		}
@@ -435,7 +442,7 @@ var providerActivateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Provider '%s' activated.", args[0])
+		SuccessMsg(cmd, "Provider '%s' activated.", id)
 		return nil
 	},
 }
@@ -445,10 +452,14 @@ var providerActivateCmd = &cobra.Command{
 var providerDeactivateCmd = &cobra.Command{
 	Use:   "deactivate <id>",
 	Short: "Deactivate a provider",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Post("/api/admin/providers/"+args[0]+"/deactivate", nil)
+		id, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Post("/api/admin/providers/"+id+"/deactivate", nil)
 		if err != nil {
 			return err
 		}
@@ -456,7 +467,7 @@ var providerDeactivateCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Provider '%s' deactivated.", args[0])
+		SuccessMsg(cmd, "Provider '%s' deactivated.", id)
 		return nil
 	},
 }
@@ -466,10 +477,14 @@ var providerDeactivateCmd = &cobra.Command{
 var providerSwitchCmd = &cobra.Command{
 	Use:   "switch <id>",
 	Short: "Switch the primary active provider",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		body := map[string]string{"providerId": args[0]}
+		id, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		body := map[string]string{"providerId": id}
 		data, err := c.Post("/api/admin/providers/switch", body)
 		if err != nil {
 			return err
@@ -478,7 +493,7 @@ var providerSwitchCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Switched active provider to '%s'.", args[0])
+		SuccessMsg(cmd, "Switched active provider to '%s'.", id)
 		return nil
 	},
 }
@@ -488,8 +503,13 @@ var providerSwitchCmd = &cobra.Command{
 var providerRenameCmd = &cobra.Command{
 	Use:   "rename <id>",
 	Short: "Rename a provider or update its subtitle",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		c := NewClient(cmd)
+		id, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
 		name := getStringFlag(cmd, "name")
 		subtitle := getStringFlag(cmd, "subtitle")
 		if name == "" && subtitle == "" {
@@ -502,8 +522,7 @@ var providerRenameCmd = &cobra.Command{
 		if subtitle != "" {
 			body["subtitle"] = subtitle
 		}
-		c := NewClient(cmd)
-		data, err := c.Patch("/api/admin/providers/"+args[0]+"/name", body)
+		data, err := c.Patch("/api/admin/providers/"+id+"/name", body)
 		if err != nil {
 			return err
 		}
@@ -511,7 +530,7 @@ var providerRenameCmd = &cobra.Command{
 			c.PrintJSON(data)
 			return nil
 		}
-		SuccessMsg(cmd, "Provider '%s' renamed.", args[0])
+		SuccessMsg(cmd, "Provider '%s' renamed.", id)
 		return nil
 	},
 }
@@ -579,10 +598,14 @@ var providerPrioritiesCmd = &cobra.Command{
 var providerUsageCmd = &cobra.Command{
 	Use:   "usage <id>",
 	Short: "Show usage/quota for a provider",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c := NewClient(cmd)
-		data, err := c.Get("/api/admin/providers/" + args[0] + "/usage")
+		id, err := resolveProviderID(cmd, c, args)
+		if err != nil {
+			return err
+		}
+		data, err := c.Get("/api/admin/providers/" + id + "/usage")
 		if err != nil {
 			return err
 		}
@@ -596,7 +619,7 @@ var providerUsageCmd = &cobra.Command{
 			return nil
 		}
 		out := cmd.OutOrStdout()
-		if err := PrintSection(out, "Usage for "+args[0]); err != nil {
+		if err := PrintSection(out, "Usage for "+id); err != nil {
 			return err
 		}
 		table := NewTable("METRIC", "VALUE")
