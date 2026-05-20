@@ -123,9 +123,7 @@ func (s *AccessTokenStore) ValidateByHash(tokenHash string) (*AccessTokenRecord,
 		rec.LastUsedAt = &t
 	}
 
-	go func() {
-		_, _ = s.db.db.Exec(`UPDATE access_tokens SET last_used_at = datetime('now') WHERE id = ?`, rec.ID)
-	}()
+	EnqueueLastUsedAt(rec.ID)
 
 	return &rec, nil
 }

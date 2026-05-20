@@ -1,6 +1,7 @@
 package google
 
 import (
+	"context"
 	"io"
 	"omnillm/internal/cif"
 	"strings"
@@ -13,7 +14,7 @@ func sseBody(s string) io.ReadCloser {
 
 func collectGemini(body io.ReadCloser) []cif.CIFStreamEvent {
 	ch := make(chan cif.CIFStreamEvent, 64)
-	go ParseGeminiSSE(body, ch)
+	go ParseGeminiSSE(context.Background(), body, ch)
 	var events []cif.CIFStreamEvent
 	for evt := range ch {
 		events = append(events, evt)

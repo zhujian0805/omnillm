@@ -23,8 +23,8 @@ const BaseURL = "https://api.moonshot.cn/v1"
 
 // Shared HTTP clients.
 var (
-	kimiHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	kimiStreamClient = &http.Client{}
+	kimiHTTPClient   = shared.DefaultHTTPClient(120 * time.Second)
+	kimiStreamClient = shared.DefaultStreamClient()
 )
 
 // Model catalog for Kimi.

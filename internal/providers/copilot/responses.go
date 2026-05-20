@@ -440,7 +440,7 @@ func (a *CopilotAdapter) executeResponsesStreamWithRetry(ctx context.Context, re
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go parseResponsesSSE(resp.Body, eventCh)
+	go parseResponsesSSE(ctx, resp.Body, eventCh)
 	return eventCh, nil
 }
 
@@ -470,9 +470,11 @@ type responsesSSEState struct {
 	toolCallHasDelta  map[int]bool
 }
 
-func parseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
+func parseResponsesSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer body.Close()
 	defer close(eventCh)
+	stop := context.AfterFunc(ctx, func() { body.Close() })
+	defer stop()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)

@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"strings"
-
 	"omnillm/internal/database"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/virtualmodelrouting"
@@ -50,27 +48,19 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 
 	normalizedModel := modelrouting.NormalizeModelName(requestedModel)
 
-	virtualmodelStore := database.NewVirtualModelStore()
-	vm, err := virtualmodelStore.Get(requestedModel)
-	if err != nil {
-		log.Warn().Err(err).Str("request_id", requestID).Str("model", requestedModel).Str("normalized_model", normalizedModel).Msg("Failed to load virtual model")
-		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
-	}
+	cache := database.GetModelResolutionCache()
+
+	vm := cache.GetVirtualModel(requestedModel)
 	if vm == nil && normalizedModel != requestedModel {
-		vm, err = virtualmodelStore.Get(normalizedModel)
-		if err != nil {
-			log.Warn().Err(err).Str("request_id", requestID).Str("model", requestedModel).Str("normalized_model", normalizedModel).Msg("Failed to load normalized virtual model")
-			return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
-		}
+		vm = cache.GetVirtualModel(normalizedModel)
 	}
 	if vm == nil || !vm.Enabled {
 		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
 	}
 
-	upstreamStore := database.NewVirtualModelUpstreamStore()
-	upstreams, err := upstreamStore.GetForVModel(vm.VirtualModelID)
-	if err != nil {
-		log.Warn().Err(err).Str("request_id", requestID).Str("virtual_model", vm.VirtualModelID).Msg("Failed to load virtual model upstreams")
+	upstreams := cache.GetUpstreams(vm.VirtualModelID)
+	if len(upstreams) == 0 {
+		log.Warn().Str("request_id", requestID).Str("virtual_model", vm.VirtualModelID).Msg("Virtual model has no routable upstream")
 		return []resolvedModelAttempt{{RequestedModel: requestedModel, NormalizedModel: normalizedModel}}
 	}
 
@@ -120,28 +110,5 @@ func resolveRequestedModels(requestID, requestedModel string) []resolvedModelAtt
 // If neither matches, the original prefix is returned unchanged so the caller
 // can produce a meaningful "provider not found" error downstream.
 func resolveProviderPrefix(prefix string) string {
-	instanceStore := database.NewProviderInstanceStore()
-	instances, err := instanceStore.GetAll()
-	if err != nil {
-		return prefix
-	}
-
-	lowerPrefix := strings.ToLower(prefix)
-
-	var subtitleMatch string
-	for _, inst := range instances {
-		// 1. Exact instance ID match — highest priority.
-		if inst.InstanceID == prefix {
-			return prefix
-		}
-		// 2. Case-insensitive subtitle match — collect first hit.
-		if subtitleMatch == "" && strings.ToLower(inst.Subtitle) == lowerPrefix {
-			subtitleMatch = inst.InstanceID
-		}
-	}
-
-	if subtitleMatch != "" {
-		return subtitleMatch
-	}
-	return prefix
+	return database.GetModelResolutionCache().ResolveProviderPrefix(prefix)
 }

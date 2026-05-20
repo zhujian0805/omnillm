@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"context"
 	"io"
 	"omnillm/internal/cif"
 	"strings"
@@ -16,7 +17,7 @@ func sseBody(s string) io.ReadCloser {
 // all events as a slice.
 func collectSSE(body io.ReadCloser) []cif.CIFStreamEvent {
 	ch := make(chan cif.CIFStreamEvent, 64)
-	go ParseOpenAISSE(body, ch)
+	go ParseOpenAISSE(context.Background(), body, ch)
 	var events []cif.CIFStreamEvent
 	for evt := range ch {
 		events = append(events, evt)

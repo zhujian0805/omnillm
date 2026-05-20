@@ -5,8 +5,6 @@ import (
 	"omnillm/internal/database"
 	"strings"
 	"time"
-
-	"github.com/rs/zerolog/log"
 )
 
 // recordUsage writes a metering row asynchronously after a completed request.
@@ -61,12 +59,5 @@ func recordUsage(
 		CreatedAt:    time.Now().UTC(),
 	}
 
-	go func() {
-		db := database.GetDatabase()
-		if err := db.InsertMeteringRecord(rec); err != nil {
-			log.Error().Err(err).
-				Str("request_id", requestID).
-				Msg("Failed to record metering data")
-		}
-	}()
+	database.EnqueueMeteringRecord(rec)
 }

@@ -170,7 +170,7 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go ParseAntigravitySSE(resp.Body, eventCh)
+	go ParseAntigravitySSE(ctx, resp.Body, eventCh)
 	return eventCh, nil
 }
 
