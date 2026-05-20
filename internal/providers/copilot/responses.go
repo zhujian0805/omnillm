@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"omnillm/internal/cif"
 	"omnillm/internal/providers/shared"
@@ -34,14 +35,14 @@ type copilotResponsesResponse struct {
 }
 
 type copilotResponsesOutputItem struct {
-	Type      string                        `json:"type"`
-	ID        string                        `json:"id"`
-	CallID    string                        `json:"call_id,omitempty"`
-	Role      string                        `json:"role,omitempty"`
-	Name      string                        `json:"name,omitempty"`
-	Arguments string                        `json:"arguments,omitempty"`
+	Type      string                         `json:"type"`
+	ID        string                         `json:"id"`
+	CallID    string                         `json:"call_id,omitempty"`
+	Role      string                         `json:"role,omitempty"`
+	Name      string                         `json:"name,omitempty"`
+	Arguments string                         `json:"arguments,omitempty"`
 	Content   []copilotResponsesContentBlock `json:"content,omitempty"`
-	Status    string                        `json:"status,omitempty"`
+	Status    string                         `json:"status,omitempty"`
 }
 
 type copilotResponsesContentBlock struct {
@@ -367,7 +368,14 @@ func (a *CopilotAdapter) executeResponsesWithRetry(ctx context.Context, request 
 		req.Header.Set(k, v)
 	}
 
+	var started time.Time
+	if debugEnabled() {
+		started = time.Now()
+	}
 	resp, err := copilotHTTPClient.Do(req)
+	if debugEnabled() {
+		logCopilotElapsed(a.provider.GetInstanceID(), "responses", request.Model, started, "Copilot upstream request completed")
+	}
 	if err != nil {
 		// One retry on timeout.
 		if shouldRetryCopilotResponsesTimeout(err) {
