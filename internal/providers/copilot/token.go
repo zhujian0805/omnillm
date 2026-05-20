@@ -20,8 +20,19 @@ func (p *GitHubCopilotProvider) GetToken() string {
 	if p.githubToken != "" {
 		needsRefresh := p.token == "" || p.expiresAt == 0 || time.Now().Unix() > p.expiresAt-300
 		if needsRefresh {
+			var refreshStart time.Time
+			if debugEnabled() {
+				refreshStart = time.Now()
+			}
 			if err := p.RefreshToken(); err != nil {
 				log.Warn().Err(err).Msg("Failed to auto-refresh Copilot token")
+			}
+			if debugEnabled() {
+				log.Debug().
+					Str("provider", p.instanceID).
+					Bool("needs_refresh", needsRefresh).
+					Int64("elapsed_ms", time.Since(refreshStart).Milliseconds()).
+					Msg("Copilot GetToken refresh path")
 			}
 		}
 	}

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
@@ -28,6 +30,17 @@ type alibabaModeProvider interface {
 }
 
 var upstreamAPIForProvider = providerdispatch.DefaultUpstreamAPI
+
+func logLatencyProbe(requestID, stage string, started time.Time) {
+	if log.Logger.GetLevel() > zerolog.DebugLevel {
+		return
+	}
+	log.Debug().
+		Str("request_id", requestID).
+		Str("stage", stage).
+		Int64("elapsed_ms", time.Since(started).Milliseconds()).
+		Msg("Latency probe")
+}
 
 func handleMessages(c *gin.Context) {
 	// Type assertion is zero-allocation vs fmt.Sprintf("%v", requestID)
@@ -63,6 +76,7 @@ func handleMessages(c *gin.Context) {
 		})
 		return
 	}
+	logLatencyProbe(requestIDStr, "anthropic_parse", startTime)
 
 	// Parse into map for tool loop logging (lazy: only if logger is active)
 	var payloadMap map[string]interface{}
@@ -72,8 +86,12 @@ func handleMessages(c *gin.Context) {
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
 
-	// Resolve providers
+	var resolveStart time.Time
+	if log.Logger.GetLevel() <= zerolog.DebugLevel {
+		resolveStart = time.Now()
+	}
 	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
+	logLatencyProbe(requestIDStr, "anthropic_resolve_requested_models", resolveStart)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
 	resolveFailed := false
 	lastErr := executor.TryAttempts(
@@ -87,6 +105,10 @@ func handleMessages(c *gin.Context) {
 			log.Error().Err(err).Str("request_id", requestIDStr).Str("model", attempt.RequestedModel).Msg("Failed to resolve providers")
 		},
 		func(candidate *providerdispatch.Candidate, providerID string) error {
+			var candidateStart time.Time
+			if log.Logger.GetLevel() <= zerolog.DebugLevel {
+				candidateStart = time.Now()
+			}
 			log.Debug().
 				Str("request_id", requestIDStr).
 				Str("model", candidate.CanonicalModel).
@@ -115,8 +137,10 @@ func handleMessages(c *gin.Context) {
 					Str("provider", providerID).
 					Str("upstream_model", candidate.UpstreamModel).
 					Msg("Provider failed for Anthropic request, trying next")
+				return err
 			}
-			return err
+			logLatencyProbe(requestIDStr, "anthropic_candidate_complete", candidateStart)
+			return nil
 		},
 	)
 	if lastErr == nil {
