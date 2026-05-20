@@ -23,7 +23,7 @@ const UserAgent = "OmniLLM/1.0"
 // Default ModelScope inference endpoint.
 const BaseURL = "https://api-inference.modelscope.cn/v1"
 
-var httpClient = &http.Client{Timeout: 120 * time.Second}
+var httpClient = shared.DefaultHTTPClient(120 * time.Second)
 
 // TokenData is the persisted credential record for a ModelScope instance.
 type TokenData struct {

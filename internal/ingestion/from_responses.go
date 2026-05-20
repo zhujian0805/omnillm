@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"omnillm/internal/cif"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -141,14 +142,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 			if !ok {
 				return nil, fmt.Errorf("invalid input item type: %T", item)
 			}
-			itemBytes, err := json.Marshal(itemMap)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal input item: %w", err)
-			}
-			var inputItem InputItem
-			if err := json.Unmarshal(itemBytes, &inputItem); err != nil {
-				return nil, fmt.Errorf("failed to decode input item: %w", err)
-			}
+			inputItem := inputItemFromMap(itemMap)
 
 			switch inputItemType(inputItem) {
 			case "message":
@@ -246,14 +240,7 @@ func translateInputContent(content interface{}) ([]cif.CIFContentPart, error) {
 			if !ok {
 				return nil, fmt.Errorf("invalid input content block type: %T", block)
 			}
-			blockBytes, err := json.Marshal(blockMap)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal input content block: %w", err)
-			}
-			var cb InputContentBlock
-			if err := json.Unmarshal(blockBytes, &cb); err != nil {
-				return nil, fmt.Errorf("failed to decode input content block: %w", err)
-			}
+			cb := inputContentBlockFromMap(blockMap)
 			switch cb.Type {
 			case "input_text", "output_text", "text":
 				parts = append(parts, cif.CIFTextPart{Type: "text", Text: cb.Text})
@@ -278,15 +265,15 @@ func extractInputText(content interface{}) string {
 	case string:
 		return v
 	case []interface{}:
-		text := ""
+		var sb strings.Builder
 		for _, block := range v {
 			if blockMap, ok := block.(map[string]interface{}); ok {
 				if t, ok := blockMap["text"].(string); ok {
-					text += t
+					sb.WriteString(t)
 				}
 			}
 		}
-		return text
+		return sb.String()
 	default:
 		return ""
 	}
@@ -383,5 +370,40 @@ func translateResponsesTextFormat(f *ResponsesTextFormat) map[string]interface{}
 		return map[string]interface{}{"type": "text"}
 	default:
 		return map[string]interface{}{"type": f.Type}
+	}
+}
+
+// inputItemFromMap extracts an InputItem directly from a map[string]interface{}
+// without a marshal+unmarshal roundtrip.
+func inputItemFromMap(m map[string]interface{}) InputItem {
+	getString := func(key string) string {
+		v, _ := m[key].(string)
+		return v
+	}
+	return InputItem{
+		Type:      getString("type"),
+		Role:      getString("role"),
+		Content:   m["content"],
+		ID:        getString("id"),
+		CallID:    getString("call_id"),
+		Name:      getString("name"),
+		Arguments: getString("arguments"),
+		Output:    getString("output"),
+	}
+}
+
+// inputContentBlockFromMap extracts an InputContentBlock directly from a
+// map[string]interface{} without a marshal+unmarshal roundtrip.
+func inputContentBlockFromMap(m map[string]interface{}) InputContentBlock {
+	getString := func(key string) string {
+		v, _ := m[key].(string)
+		return v
+	}
+	return InputContentBlock{
+		Type:     getString("type"),
+		Text:     getString("text"),
+		ImageURL: getString("image_url"),
+		FileID:   getString("file_id"),
+		Detail:   getString("detail"),
 	}
 }

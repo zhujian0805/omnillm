@@ -447,7 +447,7 @@ func (a *CodexAdapter) ExecuteStream(ctx context.Context, request *cif.Canonical
 	}
 
 	ch := make(chan cif.CIFStreamEvent, 64)
-	go shared.ParseOpenAISSE(resp.Body, ch)
+	go shared.ParseOpenAISSE(ctx, resp.Body, ch)
 	return ch, nil
 }
 

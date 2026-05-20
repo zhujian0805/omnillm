@@ -2,13 +2,13 @@
 package alibaba
 
 import (
-	"net/http"
+	"omnillm/internal/providers/shared"
 	"time"
 )
 
 var (
-	alibabaHTTPClient   = &http.Client{Timeout: 120 * time.Second}
-	alibabaStreamClient = &http.Client{}
+	alibabaHTTPClient   = shared.DefaultHTTPClient(120 * time.Second)
+	alibabaStreamClient = shared.DefaultStreamClient()
 )
 
 // ─── Base URL constants ───────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ package openaicompat
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -301,9 +302,13 @@ func StopReason(reason string) cif.CIFStopReason {
 //   - reasoning_content deltas → CIFThinkingPart / ThinkingDelta (Qwen3 / o1)
 //   - finish_reason "stop" when tool calls were observed → upgraded to ToolUse
 //   - tool_call.index continuations mapped across chunks
-func ParseSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
+func ParseSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer body.Close()
 	defer close(eventCh)
+	// When the request context is cancelled (client disconnect), close the body
+	// so the scanner's Read call unblocks and the goroutine exits cleanly.
+	stop := context.AfterFunc(ctx, func() { body.Close() })
+	defer stop()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)

@@ -31,9 +31,12 @@ func InitializeDatabase(configDir string) error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// SQLite file database works best with a single writer connection
+	// WAL mode (already set in DSN) allows concurrent readers + serialized writes.
+	// Keep a single connection to prevent write-write lock contention on SQLite.
+	// The async worker pools (metering, last-used-at) write through the same pool
+	// and the busy_timeout in the DSN handles transient contention.
 	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(4)
+	db.SetMaxIdleConns(1)
 
 	globalDB = &Database{db: db}
 
@@ -42,6 +45,13 @@ func InitializeDatabase(configDir string) error {
 	}
 
 	log.Debug().Msg("SQLite database initialized successfully")
+
+	// Start bounded background worker pools for async DB writes.
+	// Also reset the in-memory resolution caches for this DB instance.
+	globalModelResCache = &ModelResolutionCache{}
+	globalModelStateCache = &ModelStateCache{}
+	StartAsyncWorkers()
+
 	return nil
 }
 
