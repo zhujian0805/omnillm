@@ -33,7 +33,7 @@ func TestAuthCmdIsGenericProviderAuth(t *testing.T) {
 }
 
 func TestSupportedAuthProviderTypes(t *testing.T) {
-	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "kimi", "codex"}
+	expected := []string{"github-copilot", "openai-compatible", "alibaba", "azure-openai", "google", "antigravity", "kimi", "codex"}
 	if len(supportedAuthProviderTypes) != len(expected) {
 		t.Fatalf("supportedAuthProviderTypes length = %d, want %d", len(supportedAuthProviderTypes), len(expected))
 	}
@@ -268,6 +268,80 @@ func TestProviderAddFlagDefaults(t *testing.T) {
 		if !found {
 			t.Errorf("provider add: subcommand not found while checking flag %s", flagName)
 		}
+	}
+}
+
+func TestAuthAndCreateProviderPostsToMatchingProviderRoute(t *testing.T) {
+	for _, providerType := range supportedAuthProviderTypes {
+		t.Run(providerType, func(t *testing.T) {
+			var gotPath string
+			statusPolls := 0
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				w.Header().Set("Content-Type", "application/json")
+				if providerType == "antigravity" {
+					switch r.URL.Path {
+					case "/api/admin/providers/antigravity/start-oauth":
+						_, _ = w.Write([]byte(`{"auth_url":"https://example.test/auth","provider_id":"antigravity-1"}`))
+					case "/api/admin/providers/antigravity/oauth-status":
+						statusPolls += 1
+						if statusPolls == 1 {
+							_, _ = w.Write([]byte(`{"done":false}`))
+						} else {
+							_, _ = w.Write([]byte(`{"done":true,"provider_id":"antigravity-1","is_new":true}`))
+						}
+					default:
+						http.NotFound(w, r)
+					}
+					return
+				}
+				_, _ = w.Write([]byte(`{"success":true,"provider":{"id":"` + providerType + `","name":"test","type":"` + providerType + `"}}`))
+			}))
+			defer ts.Close()
+
+			t.Setenv("OMNILLM_SERVER", ts.URL)
+			t.Setenv("OMNILLM_API_KEY", "test-key")
+
+			cmd := &cobra.Command{}
+			addProviderAuthFlags(cmd)
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			if err := cmd.Flags().Set("yes", "true"); err != nil {
+				t.Fatalf("set yes flag: %v", err)
+			}
+			if err := cmd.Flags().Set("api-key", "provider-secret"); err != nil {
+				t.Fatalf("set api-key flag: %v", err)
+			}
+			if err := cmd.Flags().Set("token", "provider-token"); err != nil {
+				t.Fatalf("set token flag: %v", err)
+			}
+			if err := cmd.Flags().Set("endpoint", "https://example.test/v1"); err != nil {
+				t.Fatalf("set endpoint flag: %v", err)
+			}
+			if providerType == "antigravity" {
+				if err := cmd.Flags().Set("client-id", "test-client"); err != nil {
+					t.Fatalf("set client-id flag: %v", err)
+				}
+				if err := cmd.Flags().Set("client-secret", "test-secret"); err != nil {
+					t.Fatalf("set client-secret flag: %v", err)
+				}
+				if err := cmd.Flags().Set("device", "true"); err != nil {
+					t.Fatalf("set device flag: %v", err)
+				}
+			}
+
+			if err := authAndCreateProvider(cmd, providerType); err != nil {
+				t.Fatalf("authAndCreateProvider returned error: %v", err)
+			}
+
+			wantPath := "/api/admin/providers/auth-and-create/" + providerType
+			if providerType == "antigravity" {
+				wantPath = "/api/admin/providers/antigravity/oauth-status"
+			}
+			if gotPath != wantPath {
+				t.Fatalf("posted to %q, want %q", gotPath, wantPath)
+			}
+		})
 	}
 }
 

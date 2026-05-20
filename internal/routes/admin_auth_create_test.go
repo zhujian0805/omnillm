@@ -297,6 +297,161 @@ func TestHandleAuthAndCreateProviderAlibabaOAuthReturnsError(t *testing.T) {
 	}
 }
 
+func TestHandleAuthAndCreateProviderGoogleAPIKeyRegistersGoogleProvider(t *testing.T) {
+	resetAdminTestState(t)
+	t.Cleanup(func() { resetAdminTestState(t) })
+
+	router := newAdminTestRouter()
+
+	recorder := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/admin/providers/auth-and-create/google",
+		`{"apiKey":"google-secret"}`,
+	)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	payload := decodeJSONBody[struct {
+		Success  bool `json:"success"`
+		Provider struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			Type       string `json:"type"`
+			AuthStatus string `json:"authStatus"`
+		} `json:"provider"`
+	}](t, recorder)
+
+	if !payload.Success {
+		t.Fatal("expected success=true")
+	}
+	if payload.Provider.ID != "google" {
+		t.Fatalf("expected canonical instance id google, got %q", payload.Provider.ID)
+	}
+	if payload.Provider.Type != "google" {
+		t.Fatalf("expected provider type google, got %q", payload.Provider.Type)
+	}
+	if !strings.HasPrefix(payload.Provider.Name, "Google Gemini") {
+		t.Fatalf("expected Google Gemini provider name, got %q", payload.Provider.Name)
+	}
+	if payload.Provider.AuthStatus != "authenticated" {
+		t.Fatalf("expected authenticated status, got %q", payload.Provider.AuthStatus)
+	}
+
+	reg := registry.GetProviderRegistry()
+	provider, err := reg.GetProvider("google")
+	if err != nil {
+		t.Fatalf("expected google provider to be registered: %v", err)
+	}
+	if provider.GetID() != "google" {
+		t.Fatalf("expected registered provider type google, got %q", provider.GetID())
+	}
+
+	tokenRecord, err := database.NewTokenStore().Get("google")
+	if err != nil {
+		t.Fatalf("failed to read token record: %v", err)
+	}
+	if tokenRecord == nil || !strings.Contains(tokenRecord.TokenData, "google-secret") {
+		t.Fatalf("expected saved google token, got %#v", tokenRecord)
+	}
+}
+
+func TestHandleAuthAndCreateProviderKimiAPIKeyRegistersKimiProvider(t *testing.T) {
+	resetAdminTestState(t)
+	t.Cleanup(func() { resetAdminTestState(t) })
+
+	router := newAdminTestRouter()
+
+	recorder := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/admin/providers/auth-and-create/kimi",
+		`{"apiKey":"kimi-secret","region":"global"}`,
+	)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	payload := decodeJSONBody[struct {
+		Success  bool `json:"success"`
+		Provider struct {
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			Type       string `json:"type"`
+			AuthStatus string `json:"authStatus"`
+		} `json:"provider"`
+	}](t, recorder)
+
+	if !payload.Success {
+		t.Fatal("expected success=true")
+	}
+	if payload.Provider.ID != "kimi" {
+		t.Fatalf("expected canonical instance id kimi, got %q", payload.Provider.ID)
+	}
+	if payload.Provider.Type != "kimi" {
+		t.Fatalf("expected provider type kimi, got %q", payload.Provider.Type)
+	}
+	if !strings.Contains(payload.Provider.Name, "Kimi") {
+		t.Fatalf("expected Kimi provider name, got %q", payload.Provider.Name)
+	}
+	if payload.Provider.AuthStatus != "authenticated" {
+		t.Fatalf("expected authenticated status, got %q", payload.Provider.AuthStatus)
+	}
+
+	reg := registry.GetProviderRegistry()
+	provider, err := reg.GetProvider("kimi")
+	if err != nil {
+		t.Fatalf("expected kimi provider to be registered: %v", err)
+	}
+	if provider.GetID() != "kimi" {
+		t.Fatalf("expected registered provider type kimi, got %q", provider.GetID())
+	}
+
+	tokenRecord, err := database.NewTokenStore().Get("kimi")
+	if err != nil {
+		t.Fatalf("failed to read token record: %v", err)
+	}
+	if tokenRecord == nil || !strings.Contains(tokenRecord.TokenData, "kimi-secret") {
+		t.Fatalf("expected saved kimi token, got %#v", tokenRecord)
+	}
+}
+
+func TestHandleAuthAndCreateProviderAntigravityReturnsStartOAuthGuidance(t *testing.T) {
+	resetAdminTestState(t)
+	t.Cleanup(func() { resetAdminTestState(t) })
+
+	router := newAdminTestRouter()
+
+	recorder := performJSONRequest(
+		t,
+		router,
+		http.MethodPost,
+		"/api/admin/providers/auth-and-create/antigravity",
+		`{"client_id":"test-client","client_secret":"test-secret"}`,
+	)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	payload := decodeJSONBody[struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}](t, recorder)
+
+	if payload.Success {
+		t.Fatal("expected success=false")
+	}
+	if !strings.Contains(payload.Message, "start-oauth") {
+		t.Fatalf("expected start-oauth guidance, got %q", payload.Message)
+	}
+}
+
 func TestHandleAuthAndCreateProviderGitHubCopilotTokenUsesCanonicalID(t *testing.T) {
 	resetAdminTestState(t)
 	t.Cleanup(func() { resetAdminTestState(t) })
