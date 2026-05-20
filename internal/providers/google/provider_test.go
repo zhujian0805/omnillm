@@ -292,7 +292,7 @@ func TestParseGeminiSSETextStream(t *testing.T) {
 data: {"candidates":[{"content":{"parts":[{"text":" world"}],"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3}}
 `
 	eventCh := make(chan cif.CIFStreamEvent, 16)
-	go ParseGeminiSSE(newReadCloser(sseData), eventCh)
+	go ParseGeminiSSE(context.Background(), newReadCloser(sseData), eventCh)
 
 	var events []cif.CIFStreamEvent
 	for event := range eventCh {
@@ -337,7 +337,7 @@ func TestParseGeminiSSEToolCall(t *testing.T) {
 	sseData := `data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args":{"q":"test"}}}],"role":"model"},"finishReason":"FUNCTION_CALL"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5}}
 `
 	eventCh := make(chan cif.CIFStreamEvent, 16)
-	go ParseGeminiSSE(newReadCloser(sseData), eventCh)
+	go ParseGeminiSSE(context.Background(), newReadCloser(sseData), eventCh)
 
 	var events []cif.CIFStreamEvent
 	for event := range eventCh {
@@ -378,7 +378,7 @@ func TestParseGeminiSSESafetyFilter(t *testing.T) {
 	sseData := `data: {"candidates":[{"content":{"parts":[],"role":"model"},"finishReason":"SAFETY"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":0}}
 `
 	eventCh := make(chan cif.CIFStreamEvent, 16)
-	go ParseGeminiSSE(newReadCloser(sseData), eventCh)
+	go ParseGeminiSSE(context.Background(), newReadCloser(sseData), eventCh)
 
 	var events []cif.CIFStreamEvent
 	for event := range eventCh {

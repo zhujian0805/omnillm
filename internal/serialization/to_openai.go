@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"omnillm/internal/cif"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -67,13 +68,13 @@ type OpenAIUsage struct {
 
 // SerializeToOpenAI converts a CIF response to OpenAI format
 func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error) {
-	var contentText string
+	var contentBuf strings.Builder
 	var toolCalls []OpenAIToolCall
 
 	for _, part := range response.Content {
 		switch p := part.(type) {
 		case cif.CIFTextPart:
-			contentText += p.Text
+			contentBuf.WriteString(p.Text)
 		case cif.CIFToolCallPart:
 			args, err := json.Marshal(p.ToolArguments)
 			if err != nil {
@@ -105,7 +106,8 @@ func SerializeToOpenAI(response *cif.CanonicalResponse) (*OpenAIResponse, error)
 		FinishReason: finishReason,
 	}
 
-	if contentText != "" {
+	if contentBuf.Len() > 0 {
+		contentText := contentBuf.String()
 		choice.Message.Content = &contentText
 	}
 
@@ -315,7 +317,14 @@ func formatSSEData(data interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("data: %s\n\n", string(jsonBytes)), nil
+	// Use strings.Builder to avoid the extra string(jsonBytes) copy and the
+	// additional allocation from fmt.Sprintf.
+	var b strings.Builder
+	b.Grow(len("data: ") + len(jsonBytes) + len("\n\n"))
+	b.WriteString("data: ")
+	b.Write(jsonBytes)
+	b.WriteString("\n\n")
+	return b.String(), nil
 }
 
 func convertStopReasonToOpenAI(reason cif.CIFStopReason) *string {

@@ -108,7 +108,7 @@ func StreamOpenAIWithPayload(ctx context.Context, url string, headers map[string
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go ParseOpenAISSE(resp.Body, eventCh)
+	go ParseOpenAISSE(ctx, resp.Body, eventCh)
 	return eventCh, nil
 }
 

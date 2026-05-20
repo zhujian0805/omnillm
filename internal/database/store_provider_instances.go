@@ -77,11 +77,17 @@ func (pis *ProviderInstanceStore) Save(record *ProviderInstanceRecord) error {
 			activated = excluded.activated,
 			updated_at = datetime('now')
 	`, record.InstanceID, record.ProviderID, record.Name, record.Subtitle, record.Priority, activated)
+	if err == nil {
+		GetModelResolutionCache().InvalidateInstances()
+	}
 	return err
 }
 
 func (pis *ProviderInstanceStore) Delete(instanceID string) error {
 	_, err := pis.db.db.Exec("DELETE FROM provider_instances WHERE instance_id = ?", instanceID)
+	if err == nil {
+		GetModelResolutionCache().InvalidateInstances()
+	}
 	return err
 }
 
@@ -96,6 +102,9 @@ func (pis *ProviderInstanceStore) SetActivation(instanceID string, activated boo
 		SET activated = ?, updated_at = datetime('now')
 		WHERE instance_id = ?
 	`, activatedInt, instanceID)
+	if err == nil {
+		GetModelResolutionCache().InvalidateInstances()
+	}
 	return err
 }
 
@@ -104,28 +113,28 @@ func (pis *ProviderInstanceStore) UpdateMetadata(instanceID string, name *string
 		return nil
 	}
 
+	var err error
 	if name != nil && subtitle != nil {
-		_, err := pis.db.db.Exec(`
+		_, err = pis.db.db.Exec(`
 			UPDATE provider_instances
 			SET name = ?, subtitle = ?, updated_at = datetime('now')
 			WHERE instance_id = ?
 		`, *name, *subtitle, instanceID)
-		return err
-	}
-
-	if name != nil {
-		_, err := pis.db.db.Exec(`
+	} else if name != nil {
+		_, err = pis.db.db.Exec(`
 			UPDATE provider_instances
 			SET name = ?, updated_at = datetime('now')
 			WHERE instance_id = ?
 		`, *name, instanceID)
-		return err
+	} else {
+		_, err = pis.db.db.Exec(`
+			UPDATE provider_instances
+			SET subtitle = ?, updated_at = datetime('now')
+			WHERE instance_id = ?
+		`, *subtitle, instanceID)
 	}
-
-	_, err := pis.db.db.Exec(`
-		UPDATE provider_instances
-		SET subtitle = ?, updated_at = datetime('now')
-		WHERE instance_id = ?
-	`, *subtitle, instanceID)
+	if err == nil {
+		GetModelResolutionCache().InvalidateInstances()
+	}
 	return err
 }

@@ -2,6 +2,7 @@ package shared
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"omnillm/internal/cif"
@@ -11,6 +12,9 @@ import (
 )
 
 // ParseOpenAISSE parses an OpenAI-compatible SSE stream into CIF events.
+// ctx is the request context; when it is cancelled (e.g. client disconnect)
+// the response body is closed which causes the scanner to exit, so the
+// goroutine terminates rather than blocking forever on a send.
 //
 // Qwen3/Alibaba quirks handled here:
 //   - finish_reason may be "stop" even when tool calls were made; the stop
@@ -18,9 +22,13 @@ import (
 //     were observed during the stream.
 //   - reasoning_content in delta chunks (Qwen3 thinking) is forwarded as
 //     ThinkingDelta events so the thinking is not silently dropped.
-func ParseOpenAISSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
+func ParseOpenAISSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer body.Close()
 	defer close(eventCh)
+	// When the request context is cancelled (client disconnect), close the body
+	// so the scanner's Read call unblocks and the goroutine exits cleanly.
+	stop := context.AfterFunc(ctx, func() { body.Close() })
+	defer stop()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)

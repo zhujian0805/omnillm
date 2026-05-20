@@ -317,7 +317,7 @@ func Stream(ctx context.Context, token, baseURL string, request *cif.CanonicalRe
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go ParseGeminiSSE(resp.Body, eventCh)
+	go ParseGeminiSSE(ctx, resp.Body, eventCh)
 	return eventCh, nil
 }
 

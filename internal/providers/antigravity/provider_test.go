@@ -1,6 +1,7 @@
 package antigravity
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -173,7 +174,7 @@ func TestParseAntigravitySSETextStream(t *testing.T) {
 	})
 
 	eventCh := make(chan cif.CIFStreamEvent, 16)
-	go ParseAntigravitySSE(newReadCloser(sseData), eventCh)
+	go ParseAntigravitySSE(context.Background(), newReadCloser(sseData), eventCh)
 
 	var events []cif.CIFStreamEvent
 	for event := range eventCh {
@@ -241,7 +242,7 @@ func TestParseAntigravitySSEToolCall(t *testing.T) {
 	})
 
 	eventCh := make(chan cif.CIFStreamEvent, 16)
-	go ParseAntigravitySSE(newReadCloser(sseData), eventCh)
+	go ParseAntigravitySSE(context.Background(), newReadCloser(sseData), eventCh)
 
 	var events []cif.CIFStreamEvent
 	for event := range eventCh {
@@ -300,7 +301,7 @@ func TestCollectStreamFromSSE(t *testing.T) {
 	})
 
 	eventCh := make(chan cif.CIFStreamEvent, 16)
-	go ParseAntigravitySSE(newReadCloser(sseData), eventCh)
+	go ParseAntigravitySSE(context.Background(), newReadCloser(sseData), eventCh)
 
 	// Manually collect
 	var textBuf strings.Builder

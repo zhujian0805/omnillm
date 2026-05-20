@@ -26,17 +26,8 @@ func cappedBody(b []byte) []byte {
 }
 
 var (
-	httpClient = &http.Client{
-		Timeout: 120 * time.Second,
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		},
-	}
-	streamClient = &http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-		},
-	}
+	httpClient = shared.DefaultHTTPClient(120 * time.Second)
+	streamClient = shared.DefaultStreamClient()
 )
 
 // APIError preserves upstream HTTP failures so adapters can decide whether to
@@ -109,9 +100,9 @@ func shouldRetryPOSTTimeout(_ *http.Request, _ error) bool {
 	return false
 }
 
-func startSSEStream(body io.ReadCloser, parser func(io.ReadCloser, chan cif.CIFStreamEvent)) <-chan cif.CIFStreamEvent {
+func startSSEStream(ctx context.Context, body io.ReadCloser, parser func(context.Context, io.ReadCloser, chan cif.CIFStreamEvent)) <-chan cif.CIFStreamEvent {
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go parser(body, eventCh)
+	go parser(ctx, body, eventCh)
 	return eventCh
 }
 
@@ -167,7 +158,7 @@ func Stream(ctx context.Context, url string, headers map[string]string, cr *Chat
 		return nil, fmt.Errorf("openaicompat: stream request failed: %w", err)
 	}
 
-	return startSSEStream(resp.Body, ParseSSE), nil
+	return startSSEStream(ctx, resp.Body, ParseSSE), nil
 }
 
 // CollectStream is a convenience wrapper: runs Stream and assembles CIF response.
