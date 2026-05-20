@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ var supportedAuthProviders = []authProviderOption{
 	{Type: "alibaba", Label: "Alibaba DashScope"},
 	{Type: "azure-openai", Label: "Azure OpenAI"},
 	{Type: "google", Label: "Google AI"},
+	{Type: "antigravity", Label: "Antigravity (Google OAuth)"},
 	{Type: "kimi", Label: "Kimi"},
 	{Type: "codex", Label: "OpenAI Codex"},
 }
@@ -40,11 +42,12 @@ var supportedAuthProviderTypes = []string{
 	"alibaba",
 	"azure-openai",
 	"google",
+	"antigravity",
 	"kimi",
 	"codex",
 }
 
-const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, kimi, and codex"
+const supportedAuthProviderTypesSummary = "github-copilot, openai-compatible, alibaba, azure-openai, google, antigravity, kimi, and codex"
 
 var ProviderCmd = &cobra.Command{
 	Use:   "provider",
@@ -193,6 +196,7 @@ var providerAddCmd = &cobra.Command{
   alibaba           Alibaba DashScope (requires --api-key; optional --region, --plan)
   azure-openai      Azure OpenAI (requires --api-key)
   google            Google AI (requires --api-key)
+  antigravity       Antigravity via Google OAuth (requires --client-id and --client-secret)
   kimi              Kimi AI (requires --api-key)
   codex             OpenAI Codex (requires --api-key)`,
 	Args: cobra.ExactArgs(1),
@@ -236,6 +240,11 @@ func promptForProviderAuth(cmd *cobra.Command, providerType string) error {
 	case "azure-openai":
 		return promptForMissingFields(cmd,
 			providerPromptField{FlagName: "api-key", Label: "API key", Secret: true, Required: true},
+		)
+	case "antigravity":
+		return promptForMissingFields(cmd,
+			providerPromptField{FlagName: "client-id", Label: "Google OAuth Client ID", Required: true},
+			providerPromptField{FlagName: "client-secret", Label: "Google OAuth Client Secret", Secret: true, Required: true},
 		)
 	case "google", "kimi", "codex":
 		return promptForMissingFields(cmd,
@@ -327,6 +336,8 @@ func promptForMissingFields(cmd *cobra.Command, fields ...providerPromptField) e
 
 func addProviderAuthFlags(cmd *cobra.Command) {
 	cmd.Flags().String("api-key", "", "API key for the provider")
+	cmd.Flags().String("client-id", "", "OAuth client ID for the provider")
+	cmd.Flags().String("client-secret", "", "OAuth client secret for the provider")
 	cmd.Flags().String("token", "", "Provider token (for providers that support token auth)")
 	cmd.Flags().String("method", "", "Authentication method (for providers that support multiple methods)")
 	cmd.Flags().String("endpoint", "", "Base URL endpoint (openai-compatible)")
@@ -340,20 +351,99 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 	c := NewClient(cmd)
 
 	apiKey, _ := cmd.Flags().GetString("api-key")
+	clientID, _ := cmd.Flags().GetString("client-id")
+	clientSecret, _ := cmd.Flags().GetString("client-secret")
 	token, _ := cmd.Flags().GetString("token")
 	method, _ := cmd.Flags().GetString("method")
 	endpoint, _ := cmd.Flags().GetString("endpoint")
 	region, _ := cmd.Flags().GetString("region")
 	plan, _ := cmd.Flags().GetString("plan")
 
+	if providerType == "antigravity" {
+		startBody := map[string]interface{}{
+			"client_id":     clientID,
+			"client_secret": clientSecret,
+		}
+		data, err := c.Post("/api/admin/providers/antigravity/start-oauth", startBody)
+		if err != nil {
+			return err
+		}
+
+		var startResp map[string]interface{}
+		if err := json.Unmarshal(data, &startResp); err != nil {
+			return fmt.Errorf("parse response: %w", err)
+		}
+
+		authURL, _ := startResp["auth_url"].(string)
+		providerID, _ := startResp["provider_id"].(string)
+		if authURL == "" || providerID == "" {
+			return fmt.Errorf("unexpected response: missing auth_url or provider_id")
+		}
+
+		deviceOnly := getBoolFlag(cmd, "device")
+		if !deviceOnly {
+			opened := tryOpenBrowser(authURL)
+			if opened {
+				fmt.Fprint(cmd.OutOrStdout(), "\n  Browser opened for Google authorization.\n\nWaiting for authorization")
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "\n  Could not open browser automatically.\n  Visit: %s\n\nWaiting for authorization", authURL)
+			}
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "\n  Visit: %s\n\nWaiting for authorization", authURL)
+		}
+
+		for attempts := 0; attempts < 40; attempts++ {
+			time.Sleep(3 * time.Second)
+			fmt.Fprint(cmd.OutOrStdout(), ".")
+
+			statusPath := "/api/admin/providers/antigravity/oauth-status?provider_id=" + url.QueryEscape(providerID)
+			statusData, err := c.Get(statusPath)
+			if err != nil {
+				if attempts == 39 {
+					fmt.Fprintln(cmd.OutOrStdout())
+					return fmt.Errorf("authentication status check failed: %w", err)
+				}
+				continue
+			}
+			var statusResp map[string]interface{}
+			if err := json.Unmarshal(statusData, &statusResp); err != nil {
+				if attempts == 39 {
+					fmt.Fprintln(cmd.OutOrStdout())
+					return fmt.Errorf("parse auth status response: %w", err)
+				}
+				continue
+			}
+			done, _ := statusResp["done"].(bool)
+			if !done {
+				continue
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout())
+			if errMsg, ok := statusResp["error"].(string); ok && errMsg != "" {
+				return fmt.Errorf("authentication failed: %s", errMsg)
+			}
+			resolvedID, _ := statusResp["provider_id"].(string)
+			if resolvedID == "" {
+				resolvedID = providerID
+			}
+			SuccessMsg(cmd, "Provider '%s' (Antigravity) added successfully.", resolvedID)
+			return nil
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout())
+		return fmt.Errorf("authentication timed out waiting for antigravity oauth completion")
+	}
+
 	body := map[string]interface{}{
-		"api_key":  apiKey,
-		"apiKey":   apiKey,
-		"token":    token,
-		"method":   method,
-		"endpoint": endpoint,
-		"region":   region,
-		"plan":     plan,
+		"api_key":       apiKey,
+		"apiKey":        apiKey,
+		"token":         token,
+		"method":        method,
+		"endpoint":      endpoint,
+		"region":        region,
+		"plan":          plan,
+		"client_id":     clientID,
+		"client_secret": clientSecret,
 	}
 
 	data, err := c.Post("/api/admin/providers/auth-and-create/"+providerType, body)
@@ -423,6 +513,10 @@ func authAndCreateProvider(cmd *cobra.Command, providerType string) error {
 	if prov, ok := resp["provider"].(map[string]interface{}); ok {
 		id, _ := prov["id"].(string)
 		name, _ := prov["name"].(string)
+		respType, _ := prov["type"].(string)
+		if respType != "" && respType != providerType {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: requested provider type %q but backend returned %q\n", providerType, respType)
+		}
 		SuccessMsg(cmd, "Provider '%s' (%s) added successfully.", id, name)
 	}
 	return nil

@@ -10,6 +10,7 @@ package-lock.json
 
 # claude
 .claude/
+.serena/
 
 # eslint cache
 .eslintcache

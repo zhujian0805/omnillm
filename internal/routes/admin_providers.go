@@ -15,6 +15,7 @@ import (
 	azurepkg "omnillm/internal/providers/azure"
 	codexpkg "omnillm/internal/providers/codex"
 	copilot "omnillm/internal/providers/copilot"
+	googlepkg "omnillm/internal/providers/google"
 	kimipkg "omnillm/internal/providers/kimi"
 	modelscopepkg "omnillm/internal/providers/modelscope"
 	openaicompatprovider "omnillm/internal/providers/openaicompatprovider"
@@ -196,6 +197,8 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			return
 		}
 
+		log.Info().Str("type", providerType).Str("instance_id", prov.GetInstanceID()).Str("name", prov.GetName()).Msg("Auth-and-create: provider registered")
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"provider": gin.H{
@@ -239,6 +242,8 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			})
 			return
 		}
+
+		log.Info().Str("type", providerType).Str("instance_id", prov.GetInstanceID()).Str("name", prov.GetName()).Msg("Auth-and-create: provider registered")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -515,6 +520,40 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 	// ——————————————————————————————————————————————————————————————
 	case "google":
 		instanceID := providerRegistry.NextInstanceID(providerType)
+		prov := googlepkg.NewProvider(instanceID, "")
+
+		if err := prov.SetupAuth(&req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Authentication failed: %v", err),
+			})
+			return
+		}
+
+		if err := providerRegistry.Register(prov, true); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": fmt.Sprintf("Failed to register provider: %v", err),
+			})
+			return
+		}
+
+		log.Info().Str("type", providerType).Str("instance_id", prov.GetInstanceID()).Str("name", prov.GetName()).Msg("Auth-and-create: provider registered")
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"provider": gin.H{
+				"id":         prov.GetInstanceID(),
+				"type":       prov.GetID(),
+				"name":       prov.GetName(),
+				"isActive":   false,
+				"authStatus": "authenticated",
+			},
+		})
+
+	// ——————————————————————————————————————————————————————————————
+	case "kimi":
+		instanceID := providerRegistry.NextInstanceID(providerType)
 		prov := kimipkg.NewProvider(instanceID, "")
 
 		if err := prov.SetupAuth(&req); err != nil {
@@ -532,6 +571,8 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			})
 			return
 		}
+
+		log.Info().Str("type", providerType).Str("instance_id", prov.GetInstanceID()).Str("name", prov.GetName()).Msg("Auth-and-create: provider registered")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -564,6 +605,8 @@ func handleAuthAndCreateProvider(c *gin.Context) {
 			})
 			return
 		}
+
+		log.Info().Str("type", providerType).Str("instance_id", prov.GetInstanceID()).Str("name", prov.GetName()).Msg("Auth-and-create: provider registered")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
