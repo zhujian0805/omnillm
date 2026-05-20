@@ -34,7 +34,7 @@ func (p *stubProvider) GetID() string { return p.id }
 
 func (p *stubProvider) GetInstanceID() string { return p.instanceID }
 
-func (p *stubProvider) GetName() string { return p.name }
+func (p *stubProvider) GetName() string     { return p.name }
 func (p *stubProvider) SetName(name string) { p.name = name }
 
 func (p *stubProvider) SetupAuth(_ *providertypes.AuthOptions) error { return nil }
@@ -810,46 +810,46 @@ func TestAnthropicMessagesRouteRoutesVirtualModelsBeforeProviderExecution(t *tes
 	var capturedModel string
 
 	registerStubProvider(
-	t,
-	upstreamModel,
-	func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
-		capturedModel = req.Model
-		return &cif.CanonicalResponse{
-			ID:    "resp_virtual_model",
-			Model: req.Model,
-			Content: []cif.CIFContentPart{
-				cif.CIFTextPart{Type: "text", Text: "pong"},
-			},
-			StopReason: cif.StopReasonEndTurn,
-		}, nil
-	},
-	nil,
+		t,
+		upstreamModel,
+		func(_ context.Context, req *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
+			capturedModel = req.Model
+			return &cif.CanonicalResponse{
+				ID:    "resp_virtual_model",
+				Model: req.Model,
+				Content: []cif.CIFContentPart{
+					cif.CIFTextPart{Type: "text", Text: "pong"},
+				},
+				StopReason: cif.StopReasonEndTurn,
+			}, nil
+		},
+		nil,
 	)
 
 	virtualmodelStore := database.NewVirtualModelStore()
 	if err := virtualmodelStore.Create(&database.VirtualModelRecord{
-	VirtualModelID: virtualModel,
-	Name:           "Claude Mythos 5.0",
-	Description:    "Anthropic virtual model alias",
-	APIShape:       "anthropic",
-	LbStrategy:     database.LbStrategyRoundRobin,
-	Enabled:        true,
+		VirtualModelID: virtualModel,
+		Name:           "Claude Mythos 5.0",
+		Description:    "Anthropic virtual model alias",
+		APIShape:       "anthropic",
+		LbStrategy:     database.LbStrategyRoundRobin,
+		Enabled:        true,
 	}); err != nil {
-	t.Fatalf("failed to create virtual model: %v", err)
+		t.Fatalf("failed to create virtual model: %v", err)
 	}
 	t.Cleanup(func() {
-	_ = virtualmodelStore.Delete(virtualModel)
+		_ = virtualmodelStore.Delete(virtualModel)
 	})
 
 	upstreamStore := database.NewVirtualModelUpstreamStore()
 	if err := upstreamStore.SetForVModel(virtualModel, []database.VirtualModelUpstreamRecord{{
-	VirtualModelID: virtualModel,
-	ModelID:        upstreamModel,
-	Weight:         1,
-	Priority:       0,
+		VirtualModelID: virtualModel,
+		ModelID:        upstreamModel,
+		Weight:         1,
+		Priority:       0,
 	}}); err != nil {
-	t.Fatalf("failed to set virtual model upstreams: %v", err)
-}
+		t.Fatalf("failed to set virtual model upstreams: %v", err)
+	}
 
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -925,6 +925,9 @@ func TestRenameProviderEndpointValidatesAndPersistsMetadata(t *testing.T) {
 	reg := registry.GetProviderRegistry()
 	if err := reg.Register(provider, false); err != nil {
 		t.Fatalf("failed to register provider: %v", err)
+	}
+	if _, err := reg.AddActive(instanceID); err != nil {
+		t.Fatalf("failed to activate provider: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = reg.Remove(instanceID)
@@ -1036,7 +1039,6 @@ func TestRenameProviderEndpointValidatesAndPersistsMetadata(t *testing.T) {
 		t.Fatalf("provider %q not found in providers list", instanceID)
 	})
 }
-
 
 func TestRenameProviderEndpointPreservesCustomNameAfterReload(t *testing.T) {
 	instanceID := fmt.Sprintf("alibaba-reload-%d", time.Now().UnixNano())

@@ -1,20 +1,20 @@
 package copilot
 
 import (
+	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"time"
-	"bytes"
-	"context"
 	"strings"
+	"time"
 
 	"omnillm/internal/ingestion"
-	"omnillm/internal/serialization"
 	"omnillm/internal/providers/types"
+	"omnillm/internal/serialization"
 	ghservice "omnillm/internal/services/github"
 
 	"github.com/rs/zerolog/log"
@@ -53,6 +53,10 @@ func generateCopilotRequestID() string {
 }
 
 func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
+	var started time.Time
+	if debugEnabled() {
+		started = time.Now()
+	}
 	token := p.GetToken()
 	if token == "" {
 		return nil, fmt.Errorf("provider not authenticated")
@@ -72,9 +76,9 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 			if resp.StatusCode == http.StatusOK {
 				var payload struct {
 					Data []struct {
-						ID                 string   `json:"id"`
-						Name               string   `json:"name"`
-						Capabilities       struct {
+						ID           string `json:"id"`
+						Name         string `json:"name"`
+						Capabilities struct {
 							Tokenizer string `json:"tokenizer"`
 							Limits    struct {
 								MaxContextWindowTokens int `json:"max_context_window_tokens"`
@@ -130,7 +134,13 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 							Capabilities: capabilities,
 						})
 					}
-
+					if debugEnabled() {
+						log.Debug().
+							Str("provider", p.instanceID).
+							Int("model_count", len(payload.Data)).
+							Int64("elapsed_ms", time.Since(started).Milliseconds()).
+							Msg("Copilot GetModels live fetch")
+					}
 					return &types.ModelsResponse{
 						Data:   models,
 						Object: firstNonEmpty(payload.Object, "list"),
@@ -149,6 +159,13 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 		} else {
 			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to fetch Copilot models, falling back to built-in model list")
 		}
+	}
+
+	if debugEnabled() {
+		log.Debug().
+			Str("provider", p.instanceID).
+			Int64("elapsed_ms", time.Since(started).Milliseconds()).
+			Msg("Copilot GetModels fallback list")
 	}
 
 	models := []types.Model{

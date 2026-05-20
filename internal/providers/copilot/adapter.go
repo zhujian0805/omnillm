@@ -8,14 +8,29 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"omnillm/internal/cif"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
+
+func debugEnabled() bool {
+	return log.Logger.GetLevel() <= zerolog.DebugLevel
+}
+
+func logCopilotElapsed(providerID, endpoint, model string, started time.Time, message string) {
+	log.Debug().
+		Str("provider", providerID).
+		Str("endpoint", endpoint).
+		Str("model", model).
+		Int64("elapsed_ms", time.Since(started).Milliseconds()).
+		Msg(message)
+}
 
 func (p *GitHubCopilotProvider) GetAdapter() types.ProviderAdapter {
 	return &CopilotAdapter{provider: p}
@@ -41,9 +56,16 @@ func (a *CopilotAdapter) Execute(ctx context.Context, request *cif.CanonicalRequ
 
 func (a *CopilotAdapter) ExecuteStream(ctx context.Context, request *cif.CanonicalRequest) (<-chan cif.CIFStreamEvent, error) {
 	if a.shouldBufferAnthropicStreaming(request) {
+		var started time.Time
+		if debugEnabled() {
+			started = time.Now()
+		}
 		response, err := a.Execute(ctx, request)
 		if err != nil {
 			return nil, err
+		}
+		if debugEnabled() {
+			logCopilotElapsed(a.provider.GetInstanceID(), "buffered-anthropic-stream", request.Model, started, "Copilot buffered Anthropic streaming")
 		}
 		return shared.StreamResponse(response), nil
 	}
@@ -130,7 +152,14 @@ func (a *CopilotAdapter) executeOpenAIWithRetry(ctx context.Context, request *ci
 		req.Header.Set(k, v)
 	}
 
+	var started time.Time
+	if debugEnabled() {
+		started = time.Now()
+	}
 	resp, err := copilotHTTPClient.Do(req)
+	if debugEnabled() {
+		logCopilotElapsed(a.provider.GetInstanceID(), "chat.completions", request.Model, started, "Copilot upstream request completed")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -186,8 +215,15 @@ func (a *CopilotAdapter) executeOpenAIStreamWithRetry(ctx context.Context, reque
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
+	var started time.Time
+	if debugEnabled() {
+		started = time.Now()
+	}
 	// Streaming requests must not use a fixed client timeout; stream length is model dependent.
 	resp, err := copilotStreamClient.Do(req)
+	if debugEnabled() {
+		logCopilotElapsed(a.provider.GetInstanceID(), "chat.completions-stream", request.Model, started, "Copilot upstream request completed")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("streaming request failed: %w", err)
 	}
