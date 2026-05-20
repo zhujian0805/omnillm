@@ -187,6 +187,6 @@ func StreamOpenAI(ctx context.Context, url string, headers map[string]string, re
 	}
 
 	eventCh := make(chan cif.CIFStreamEvent, 64)
-	go shared.ParseOpenAISSE(resp.Body, eventCh)
+	go shared.ParseOpenAISSE(ctx, resp.Body, eventCh)
 	return eventCh, nil
 }

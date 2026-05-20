@@ -73,6 +73,9 @@ func (s *VirtualModelStore) Create(r *VirtualModelRecord) error {
 		INSERT INTO virtual_models (virtual_model_id, name, description, api_shape, lb_strategy, enabled)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, r.VirtualModelID, r.Name, r.Description, r.APIShape, string(r.LbStrategy), enabledInt)
+	if err == nil {
+		GetModelResolutionCache().InvalidateVMs()
+	}
 	return err
 }
 
@@ -86,11 +89,17 @@ func (s *VirtualModelStore) Update(r *VirtualModelRecord) error {
 		SET name = ?, description = ?, api_shape = ?, lb_strategy = ?, enabled = ?, updated_at = datetime('now')
 		WHERE virtual_model_id = ?
 	`, r.Name, r.Description, r.APIShape, string(r.LbStrategy), enabledInt, r.VirtualModelID)
+	if err == nil {
+		GetModelResolutionCache().InvalidateVMs()
+	}
 	return err
 }
 
 func (s *VirtualModelStore) Delete(virtualModelID string) error {
 	_, err := s.db.db.Exec("DELETE FROM virtual_models WHERE virtual_model_id = ?", virtualModelID)
+	if err == nil {
+		GetModelResolutionCache().InvalidateVMs()
+	}
 	return err
 }
 
@@ -125,7 +134,11 @@ func (s *VirtualModelStore) Rename(oldID string, newID string) error {
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	GetModelResolutionCache().InvalidateVMs()
+	return nil
 }
 
 // ─── Virtual model upstream operations ───────────────────────────────────────
@@ -183,5 +196,9 @@ func (s *VirtualModelUpstreamStore) SetForVModel(virtualModelID string, upstream
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	GetModelResolutionCache().InvalidateVMs()
+	return nil
 }

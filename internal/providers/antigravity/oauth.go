@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"omnillm/internal/providers/shared"
 	"time"
 )
 
@@ -35,7 +36,7 @@ type OAuthTokenResponse struct {
 	ErrorDesc    string `json:"error_description,omitempty"`
 }
 
-var oauthHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var oauthHTTPClient = shared.DefaultHTTPClient(30 * time.Second)
 
 // BuildAuthURL returns the Google OAuth2 authorization URL that the user
 // should visit to grant access.

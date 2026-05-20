@@ -66,7 +66,7 @@ func GetCachedOrFetchModels(provider types.Provider, cache *ModelCache) (*types.
 
 func GetEnabledModelsByProvider(providers []types.Provider, cache *ModelCache) (map[string][]types.Model, error) {
 	modelsByProvider := make(map[string][]types.Model)
-	modelStateStore := database.NewModelStateStore()
+	stateCache := database.GetModelStateCache()
 
 	for _, provider := range providers {
 		providerModels, err := GetCachedOrFetchModels(provider, cache)
@@ -75,16 +75,7 @@ func GetEnabledModelsByProvider(providers []types.Provider, cache *ModelCache) (
 		}
 
 		instanceID := provider.GetInstanceID()
-
-		// Build set of disabled model IDs from DB
-		disabledModels := make(map[string]bool)
-		if states, err := modelStateStore.GetAllByInstance(instanceID); err == nil {
-			for _, state := range states {
-				if !state.Enabled {
-					disabledModels[state.ModelID] = true
-				}
-			}
-		}
+		disabledModels := stateCache.GetDisabledModels(instanceID)
 
 		enabledModels := make([]types.Model, 0, len(providerModels.Data))
 		for _, m := range providerModels.Data {
@@ -102,15 +93,11 @@ func SortProvidersByPriority(providers []types.Provider) []types.Provider {
 	sorted := make([]types.Provider, len(providers))
 	copy(sorted, providers)
 
-	// Load priorities from database
-	instanceStore := database.NewProviderInstanceStore()
-	priorityMap := make(map[string]int)
-
-	instances, err := instanceStore.GetAll()
-	if err == nil {
-		for _, inst := range instances {
-			priorityMap[inst.InstanceID] = inst.Priority
-		}
+	// Load priorities from the in-memory cache (zero DB queries on hot path).
+	instances := database.GetModelResolutionCache().GetAllProviderInstances()
+	priorityMap := make(map[string]int, len(instances))
+	for _, inst := range instances {
+		priorityMap[inst.InstanceID] = inst.Priority
 	}
 
 	sort.Slice(sorted, func(i, j int) bool {

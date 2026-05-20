@@ -3,6 +3,7 @@ package google
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,9 +15,11 @@ import (
 )
 
 // ParseGeminiSSE parses a Google Gemini SSE stream into CIF events.
-func ParseGeminiSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
+func ParseGeminiSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer body.Close()
 	defer close(eventCh)
+	stop := context.AfterFunc(ctx, func() { body.Close() })
+	defer stop()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 4*1024), 4*1024*1024)

@@ -72,6 +72,9 @@ func (ms *ModelStateStore) SetEnabled(instanceID, modelID string, enabled bool) 
 			enabled = excluded.enabled,
 			updated_at = datetime('now')
 	`, instanceID, modelID, enabledInt)
+	if err == nil {
+		GetModelStateCache().Invalidate()
+	}
 	return err
 }
 
@@ -80,5 +83,8 @@ func (ms *ModelStateStore) Delete(instanceID, modelID string) error {
 		"DELETE FROM provider_model_states WHERE instance_id = ? AND model_id = ?",
 		instanceID, modelID,
 	)
+	if err == nil {
+		GetModelStateCache().Invalidate()
+	}
 	return err
 }

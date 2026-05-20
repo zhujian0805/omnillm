@@ -2,7 +2,6 @@ package serialization
 
 import (
 	"encoding/json"
-	"fmt"
 	"omnillm/internal/cif"
 	"strings"
 
@@ -366,7 +365,16 @@ func FormatAnthropicSSEData(eventType string, data interface{}) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, string(jsonBytes)), nil
+	// Use strings.Builder to avoid the extra string(jsonBytes) copy and the
+	// additional allocation from fmt.Sprintf.
+	var b strings.Builder
+	b.Grow(len("event: ") + len(eventType) + len("\ndata: ") + len(jsonBytes) + len("\n\n"))
+	b.WriteString("event: ")
+	b.WriteString(eventType)
+	b.WriteString("\ndata: ")
+	b.Write(jsonBytes)
+	b.WriteString("\n\n")
+	return b.String(), nil
 }
 
 func convertStopReasonToAnthropic(reason cif.CIFStopReason) *string {

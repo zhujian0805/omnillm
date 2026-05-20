@@ -387,12 +387,14 @@ func StreamResponses(ctx context.Context, url string, headers map[string]string,
 		return nil, fmt.Errorf("openaicompat: responses stream request failed: %w", err)
 	}
 
-	return startSSEStream(resp.Body, ParseResponsesSSE), nil
+	return startSSEStream(ctx, resp.Body, ParseResponsesSSE), nil
 }
 
-func ParseResponsesSSE(body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
+func ParseResponsesSSE(ctx context.Context, body io.ReadCloser, eventCh chan cif.CIFStreamEvent) {
 	defer body.Close()
 	defer close(eventCh)
+	stop := context.AfterFunc(ctx, func() { body.Close() })
+	defer stop()
 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 4*1024), 1024*1024)
