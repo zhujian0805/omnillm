@@ -11,6 +11,7 @@ import (
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
 	"omnillm/internal/providers/shared"
+	"omnillm/internal/providers/shared/gemini"
 	"omnillm/internal/providers/types"
 	"strings"
 	"time"
@@ -179,7 +180,7 @@ func StreamURL(baseURL, model string) string {
 
 // BuildPayload builds the request body for the Gemini API.
 func BuildPayload(model string, request *cif.CanonicalRequest) map[string]interface{} {
-	contents := shared.CIFMessagesToGemini(request.Messages)
+	contents := gemini.CIFMessagesToGemini(request.Messages)
 
 	payload := map[string]interface{}{
 		"model":    model,
@@ -199,7 +200,7 @@ func BuildPayload(model string, request *cif.CanonicalRequest) map[string]interf
 		for _, tool := range request.Tools {
 			decl := map[string]interface{}{
 				"name":       tool.Name,
-				"parameters": shared.SanitizeGeminiSchema(tool.ParametersSchema),
+				"parameters": gemini.SanitizeGeminiSchema(tool.ParametersSchema),
 			}
 			if tool.Description != nil {
 				decl["description"] = *tool.Description
@@ -240,7 +241,7 @@ func Stream(ctx context.Context, token, baseURL string, request *cif.CanonicalRe
 	}
 
 	model := request.Model
-	contents := shared.CIFMessagesToGemini(request.Messages)
+	contents := gemini.CIFMessagesToGemini(request.Messages)
 
 	geminiReq := map[string]interface{}{
 		"contents": contents,
@@ -259,7 +260,7 @@ func Stream(ctx context.Context, token, baseURL string, request *cif.CanonicalRe
 		for _, tool := range request.Tools {
 			decl := map[string]interface{}{
 				"name":       tool.Name,
-				"parameters": shared.SanitizeGeminiSchema(tool.ParametersSchema),
+				"parameters": gemini.SanitizeGeminiSchema(tool.ParametersSchema),
 			}
 			if tool.Description != nil {
 				decl["description"] = *tool.Description

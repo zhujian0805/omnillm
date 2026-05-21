@@ -258,6 +258,60 @@ func TestBuildPayloadSystemInstruction(t *testing.T) {
 	}
 }
 
+func TestBuildPayloadAddsSkipThoughtSignatureToHistoricalToolCalls(t *testing.T) {
+	request := &cif.CanonicalRequest{
+		Model: "gemini-3.1-flash-lite",
+		Messages: []cif.CIFMessage{
+			cif.CIFAssistantMessage{Role: "assistant", Content: []cif.CIFContentPart{
+				cif.CIFToolCallPart{
+					Type:          "tool_call",
+					ToolCallID:    "call_123",
+					ToolName:      "Read",
+					ToolArguments: map[string]interface{}{"file_path": "README.md"},
+				},
+			}},
+		},
+	}
+
+	payload := BuildPayload("gemini-3.1-flash-lite", request)
+	contents := payload["contents"].([]map[string]interface{})
+	parts := contents[0]["parts"].([]map[string]interface{})
+	if got := parts[0]["thoughtSignature"]; got != "skip_thought_signature_validator" {
+		t.Fatalf("thoughtSignature = %v, want skip_thought_signature_validator", got)
+	}
+}
+
+func TestBuildPayloadAddsToolResultNameFromPriorToolCall(t *testing.T) {
+	request := &cif.CanonicalRequest{
+		Model: "gemini-3.1-flash-lite",
+		Messages: []cif.CIFMessage{
+			cif.CIFAssistantMessage{Role: "assistant", Content: []cif.CIFContentPart{
+				cif.CIFToolCallPart{
+					Type:          "tool_call",
+					ToolCallID:    "call_123",
+					ToolName:      "Read",
+					ToolArguments: map[string]interface{}{"file_path": "README.md"},
+				},
+			}},
+			cif.CIFUserMessage{Role: "user", Content: []cif.CIFContentPart{
+				cif.CIFToolResultPart{
+					Type:       "tool_result",
+					ToolCallID: "call_123",
+					Content:    "contents",
+				},
+			}},
+		},
+	}
+
+	payload := BuildPayload("gemini-3.1-flash-lite", request)
+	contents := payload["contents"].([]map[string]interface{})
+	parts := contents[1]["parts"].([]map[string]interface{})
+	functionResponse := parts[0]["functionResponse"].(map[string]interface{})
+	if got := functionResponse["name"]; got != "Read" {
+		t.Fatalf("functionResponse name = %v, want Read", got)
+	}
+}
+
 func TestBuildPayloadWithTools(t *testing.T) {
 	desc := "Search the web"
 	request := &cif.CanonicalRequest{
