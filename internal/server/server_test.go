@@ -33,6 +33,7 @@ func TestMain(m *testing.M) {
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	configureAllowedOrigins(nil)
 	chatOptions := routes.ChatCompletionOptions{
 		RateLimiter:    ratelimit.NewRateLimiter(0, false),
 		ManualApproval: false,
@@ -256,6 +257,41 @@ func TestProtectedRoutesRequireAuth(t *testing.T) {
 	if resp.StatusCode != http.StatusUnauthorized {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected 401, got %d: %s", resp.StatusCode, string(body))
+	}
+}
+
+func TestIsAllowedOrigin_AllowsLocalhost(t *testing.T) {
+	configureAllowedOrigins(nil)
+
+	origins := []string{
+		"http://localhost:3000",
+		"http://127.0.0.1:8080",
+		"http://[::1]:5000",
+	}
+
+	for _, origin := range origins {
+		if !isAllowedOrigin(origin) {
+			t.Fatalf("expected origin %q to be allowed", origin)
+		}
+	}
+}
+
+func TestIsAllowedOrigin_AllowsChromeExtensionByDefault(t *testing.T) {
+	configureAllowedOrigins(nil)
+
+	if !isAllowedOrigin("chrome-extension://abcdefghijklmnopabcdefghijklmnop") {
+		t.Fatal("expected chrome-extension origin to be allowed when no allowlist is configured")
+	}
+}
+
+func TestIsAllowedOrigin_RestrictsChromeExtensionToAllowlist(t *testing.T) {
+	configureAllowedOrigins([]string{"allowedextensionid", "anotherextensionid"})
+
+	if !isAllowedOrigin("chrome-extension://allowedextensionid") {
+		t.Fatal("expected listed chrome-extension origin to be allowed")
+	}
+	if isAllowedOrigin("chrome-extension://blockedextensionid") {
+		t.Fatal("expected unlisted chrome-extension origin to be blocked")
 	}
 }
 
