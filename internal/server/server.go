@@ -36,22 +36,23 @@ import (
 )
 
 type StartOptions struct {
-	Port                int
-	Host                string
-	Verbose             bool
-	AccountType         string
-	Manual              bool
-	RateLimit           *int
-	RateLimitWait       bool
-	GithubToken         string
-	ClaudeCode          bool
-	Console             bool
-	ShowToken           bool
-	ProxyEnv            bool
-	Provider            string
-	APIKey              string
-	AllowLocalEndpoints bool
-	EnableConfigEdit    bool
+	Port                         int
+	Host                         string
+	Verbose                      bool
+	AccountType                  string
+	Manual                       bool
+	RateLimit                    *int
+	RateLimitWait                bool
+	GithubToken                  string
+	ClaudeCode                   bool
+	Console                      bool
+	ShowToken                    bool
+	ProxyEnv                     bool
+	Provider                     string
+	APIKey                       string
+	AllowLocalEndpoints          bool
+	EnableConfigEdit             bool
+	AllowedChromeExtensionIDs    []string
 }
 
 func RunServer(options StartOptions) error {
@@ -78,6 +79,7 @@ func RunServer(options StartOptions) error {
 		ShowToken:        options.ShowToken,
 		EnableConfigEdit: options.EnableConfigEdit,
 	})
+	configureAllowedOrigins(options.AllowedChromeExtensionIDs)
 
 	// Initialize provider registry
 	providerRegistry := registry.GetProviderRegistry()

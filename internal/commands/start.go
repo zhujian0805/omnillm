@@ -103,6 +103,10 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 		if err != nil {
 			return fmt.Errorf("get enable-config-edit flag: %w", err)
 		}
+		allowedChromeExtensions, err := cmd.Flags().GetStringSlice("allow-chrome-extension")
+		if err != nil {
+			return fmt.Errorf("get allow-chrome-extension flag: %w", err)
+		}
 
 		var rateLimit *int
 		if cmd.Flags().Changed("rate-limit") {
@@ -110,22 +114,23 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 		}
 
 		options := server.StartOptions{
-			Port:                port,
-			Host:                host,
-			Verbose:             verbose,
-			AccountType:         accountType,
-			Manual:              manual,
-			RateLimit:           rateLimit,
-			RateLimitWait:       wait,
-			GithubToken:         githubToken,
-			ClaudeCode:          claudeCode,
-			Console:             console,
-			ShowToken:           showToken,
-			ProxyEnv:            proxyEnv,
-			Provider:            provider,
-			APIKey:              apiKey,
-			AllowLocalEndpoints: allowLocalEndpoints,
-			EnableConfigEdit:    enableConfigEdit,
+			Port:                     port,
+			Host:                     host,
+			Verbose:                  verbose,
+			AccountType:              accountType,
+			Manual:                   manual,
+			RateLimit:                rateLimit,
+			RateLimitWait:            wait,
+			GithubToken:              githubToken,
+			ClaudeCode:               claudeCode,
+			Console:                  console,
+			ShowToken:                showToken,
+			ProxyEnv:                 proxyEnv,
+			Provider:                 provider,
+			APIKey:                   apiKey,
+			AllowLocalEndpoints:      allowLocalEndpoints,
+			EnableConfigEdit:         enableConfigEdit,
+			AllowedChromeExtensionIDs: allowedChromeExtensions,
 		}
 
 		return server.RunServer(options)
@@ -149,4 +154,5 @@ func init() {
 	StartCmd.Flags().String("api-key", "", "Inbound API key for protecting server routes")
 	StartCmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
 	StartCmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
+	StartCmd.Flags().StringSlice("allow-chrome-extension", nil, "Allow specific Chrome extension IDs for CORS (repeat flag or pass comma-separated IDs)")
 }
