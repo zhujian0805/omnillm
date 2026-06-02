@@ -73,19 +73,38 @@ func ParseAnthropicMessages(raw json.RawMessage) (*cif.CanonicalRequest, error) 
 		Stream:      req.Stream != nil && *req.Stream,
 	}
 
+	systemParts := make([]string, 0, 2)
 	if systemPrompt := normalizeAnthropicSystem(req.System); systemPrompt != nil {
-		canonical.SystemPrompt = systemPrompt
+		systemParts = append(systemParts, *systemPrompt)
 	}
 	if req.Metadata != nil && req.Metadata.UserID != "" {
 		canonical.UserID = &req.Metadata.UserID
 	}
 
 	for _, msg := range req.Messages {
+		// Workaround for Claude Code v2.1.154+ ("Lean System Prompt") regression:
+		// it emits role:"system" entries inside the messages[] array, which the
+		// Anthropic Messages spec disallows (messages may only be user/assistant;
+		// system must be a top-level field). Hoist any such entries into the
+		// top-level system prompt instead of failing the request.
+		// See https://github.com/anthropics/claude-code/issues/63457
+		if msg.Role == "system" {
+			if text := extractAnthropicSystemText(msg.Content); text != "" {
+				systemParts = append(systemParts, text)
+			}
+			continue
+		}
+
 		cifMsg, err := convertAnthropicMessage(msg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert message: %w", err)
 		}
 		canonical.Messages = append(canonical.Messages, cifMsg)
+	}
+
+	if len(systemParts) > 0 {
+		merged := strings.Join(systemParts, "\n\n")
+		canonical.SystemPrompt = &merged
 	}
 
 	for _, tool := range req.Tools {
@@ -291,6 +310,33 @@ func normalizeAnthropicSystem(system interface{}) *string {
 		return &result
 	default:
 		return nil
+	}
+}
+
+// extractAnthropicSystemText pulls the text out of a message whose role is
+// "system". The content may be a plain string or an array of content blocks
+// (Claude Code emits text blocks). Non-text blocks are ignored.
+func extractAnthropicSystemText(content interface{}) string {
+	switch value := content.(type) {
+	case string:
+		return value
+	case []interface{}:
+		parts := make([]string, 0, len(value))
+		for _, rawPart := range value {
+			partMap, ok := rawPart.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if partType, _ := partMap["type"].(string); partType != "text" {
+				continue
+			}
+			if text, ok := partMap["text"].(string); ok && text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	default:
+		return ""
 	}
 }
 
