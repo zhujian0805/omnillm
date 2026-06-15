@@ -129,7 +129,6 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 			Provider:                 provider,
 			APIKey:                   apiKey,
 			AllowLocalEndpoints:      allowLocalEndpoints,
-			EnableConfigEdit:         enableConfigEdit,
 			AllowedChromeExtensionIDs: allowedChromeExtensions,
 		}
 
@@ -153,6 +152,5 @@ func init() {
 	StartCmd.Flags().String("provider", "github-copilot", "Provider to use (github-copilot, antigravity, alibaba, etc.)")
 	StartCmd.Flags().String("api-key", "", "Inbound API key for protecting server routes")
 	StartCmd.Flags().Bool("allow-local-endpoints", false, "Allow localhost/private OpenAI-compatible endpoints")
-	StartCmd.Flags().Bool("enable-config-edit", false, "Allow editing external config files via admin API")
 	StartCmd.Flags().StringSlice("allow-chrome-extension", nil, "Allow specific Chrome extension IDs for CORS (repeat flag or pass comma-separated IDs)")
 }
