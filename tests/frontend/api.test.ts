@@ -6,7 +6,6 @@ import {
   getChatSession,
   getLogLevel,
   listChatSessions,
-  listConfigFiles,
   listProviders,
   subscribeToLogs,
   updateLogLevel,
@@ -229,33 +228,6 @@ describe("frontend api helpers", () => {
     expect(session.messages[0]?.content).toBe("Hello")
   })
 
-  test("listConfigFiles returns config metadata", async () => {
-    mockFetch = setupFetchMocks(globalThis, {
-      "/api/admin/info": {
-        GET: { response: { version: "test", port: 4141 } },
-      },
-      "/api/admin/config": {
-        GET: {
-          response: {
-            configs: [
-              {
-                name: "config.toml",
-                label: "Config",
-                description: "Main config",
-                language: "toml",
-                exists: true,
-              },
-            ],
-          },
-        },
-      },
-    })
-
-    const result = await listConfigFiles()
-
-    expect(result.configs).toHaveLength(1)
-    expect(result.configs[0]?.name).toBe("config.toml")
-  })
 
   test("subscribeToLogs creates an EventSource and forwards messages", async () => {
     mockFetch = setupFetchMocks(globalThis, {

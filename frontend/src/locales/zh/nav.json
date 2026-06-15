@@ -3,7 +3,6 @@
   "chat": "聊天",
   "logging": "日志",
   "virtualModels": "虚拟模型",
-  "toolConfig": "工具配置",
   "accessTokens": "访问令牌",
   "about": "关于",
   "metering": "用量"

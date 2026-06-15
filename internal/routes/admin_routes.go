@@ -63,10 +63,4 @@ func SetupAdminRoutes(router *gin.RouterGroup, port int) {
 	// Access token management
 	SetupAccessTokenRoutes(router)
 
-	// Config file management
-	router.GET("/config", handleGetConfigFiles)
-	router.GET("/config/:name", handleGetConfig)
-	router.PUT("/config/:name", handleSaveConfig)
-	router.POST("/config/:name/import", handleImportConfig)
-	router.POST("/config/:name/backup", handleBackupConfig)
 }

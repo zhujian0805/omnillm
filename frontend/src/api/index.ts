@@ -956,45 +956,6 @@ export const renameVirtualModel = (oldId: string, newId: string) =>
     },
   )
 
-// ─── Config files ────────────────────────────────────────────────────────────
-
-export interface ConfigFileEntry {
-  name: string
-  label: string
-  description: string
-  language: string
-  exists: boolean
-}
-
-export interface ConfigFileContent {
-  name: string
-  label: string
-  content: string
-  exists: boolean
-  message?: string
-}
-
-export const listConfigFiles = () =>
-  apiFetch<{ configs: Array<ConfigFileEntry> }>("/api/admin/config")
-
-export const getConfigFile = (name: string) =>
-  apiFetch<ConfigFileContent>(`/api/admin/config/${encodeURIComponent(name)}`)
-
-export const saveConfigFile = (name: string, content: string) =>
-  apiFetch<{ success: boolean; message: string }>(
-    `/api/admin/config/${encodeURIComponent(name)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ content }),
-    },
-  )
-
-export const backupConfigFile = (name: string) =>
-  apiFetch<{ success: boolean; backup: string; message: string }>(
-    `/api/admin/config/${encodeURIComponent(name)}/backup`,
-    { method: "POST" },
-  )
-
 // ─── Access tokens ──────────────────────────────────────────────────────────
 
 export interface AccessToken {

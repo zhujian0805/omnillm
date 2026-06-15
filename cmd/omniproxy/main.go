@@ -51,13 +51,11 @@ func main() {
 	rootCmd.AddCommand(commands.VirtualModelCmd)
 
 	// Admin
-	commands.ConfigCmd.GroupID = "admin"
-	commands.SettingsCmd.GroupID = "admin"
+		commands.SettingsCmd.GroupID = "admin"
 	commands.StatusCmd.GroupID = "admin"
 	commands.LogsCmd.GroupID = "admin"
 	commands.UsageCmd.GroupID = "admin"
-	rootCmd.AddCommand(commands.ConfigCmd)
-	rootCmd.AddCommand(commands.SettingsCmd)
+		rootCmd.AddCommand(commands.SettingsCmd)
 	rootCmd.AddCommand(commands.StatusCmd)
 	rootCmd.AddCommand(commands.LogsCmd)
 	rootCmd.AddCommand(commands.UsageCmd)
