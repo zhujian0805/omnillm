@@ -51,6 +51,7 @@ type StartOptions struct {
 	Provider                     string
 	APIKey                       string
 	AllowLocalEndpoints          bool
+	EnableConfigEdit             bool
 	AllowedChromeExtensionIDs    []string
 }
 
@@ -74,7 +75,10 @@ func RunServer(options StartOptions) error {
 		return fmt.Errorf("failed to resolve api key: %w", err)
 	}
 	options.APIKey = apiKey
-	routes.ConfigureSecurityOptions(routes.SecurityOptions{\n\t\t\tShowToken: options.ShowToken,\n\t\t})
+	routes.ConfigureSecurityOptions(routes.SecurityOptions{
+		ShowToken:        options.ShowToken,
+		EnableConfigEdit: options.EnableConfigEdit,
+	})
 	configureAllowedOrigins(options.AllowedChromeExtensionIDs)
 
 	// Initialize provider registry

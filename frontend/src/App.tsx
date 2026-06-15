@@ -8,6 +8,7 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
+  SlidersHorizontal,
   Menu,
   KeyRound,
 } from "lucide-react"
@@ -23,6 +24,7 @@ import { ConfirmProvider } from "@/lib/useConfirm"
 import { useMediaQuery } from "@/lib/useMediaQuery"
 import { AccessTokensPage } from "@/pages/AccessTokensPage"
 import { ChatPage } from "@/pages/ChatPage"
+import { ConfigPage } from "@/pages/ConfigPage"
 import { LoggingPage } from "@/pages/LoggingPage"
 import { MeteringPage } from "@/pages/MeteringPage"
 import { ProvidersPage } from "@/pages/ProvidersPage"
@@ -37,6 +39,7 @@ type Tab =
   | "logging"
   | "metering"
   | "virtualmodel"
+  | "config"
   | "tokens"
   | "about"
 type Theme = "dark" | "light"
@@ -60,6 +63,7 @@ function isTab(value: string): value is Tab {
     || value === "logging"
     || value === "metering"
     || value === "virtualmodel"
+    || value === "config"
     || value === "tokens"
     || value === "about"
   )
@@ -135,6 +139,11 @@ export default function AppComponent() {
         id: "virtualmodel" as const,
         label: t("nav:virtualModels"),
         icon: Layers,
+      },
+      {
+        id: "config" as const,
+        label: t("nav:toolConfig"),
+        icon: SlidersHorizontal,
       },
       { id: "about" as const, label: t("nav:about"), icon: Settings },
     ],
@@ -608,6 +617,7 @@ export default function AppComponent() {
                   {tab === "virtualmodel" && (
                     <VirtualModelPage showToast={showToast} />
                   )}
+                  {tab === "config" && <ConfigPage showToast={showToast} />}
                   {tab === "tokens" && (
                     <AccessTokensPage showToast={showToast} />
                   )}

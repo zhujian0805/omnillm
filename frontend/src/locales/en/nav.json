@@ -3,6 +3,7 @@
   "chat": "Chat",
   "logging": "Logging",
   "virtualModels": "Virtual Models",
+  "toolConfig": "Tool Config",
   "accessTokens": "Access Tokens",
   "about": "About",
   "metering": "Usage"

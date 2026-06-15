@@ -34,7 +34,7 @@ OmniLLM 把这些能力集中到一个入口，提供：
 - Anthropic 兼容端点：`/v1/messages`、`/v1/messages/count_tokens`
 - 提供商优先级和自动故障转移
 - 支持轮询、随机、优先级、加权策略的虚拟模型
-- 管理后台，用于提供商、日志、聊天会话、计量、访问令牌和设置
+- 管理后台，用于提供商、日志、聊天会话、计量、访问令牌、设置和 ToolConfig
 
 ## 界面截图
 
@@ -44,6 +44,7 @@ OmniLLM 把这些能力集中到一个入口，提供：
 
 - Chat: ![聊天界面](docs/assets/chat.png)
 - 虚拟模型: ![虚拟模型](docs/assets/virtual-models.png)
+- ToolConfig: ![ToolConfig](docs/assets/toolconfig.png)
 
 ## 快速开始
 
@@ -194,9 +195,9 @@ make restart REBUILD=--rebuild
 - 访问令牌管理
 - 外部工具配置文件管理
 
-### 管理后台能力
+### ToolConfig 与编程工具接入
 
-OmniLLM 目前覆盖提供商、模型、日志、会话、计量、访问令牌和设置。
+OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工具的配置文件。出于安全考虑，编辑外部配置文件需要显式开启 `--enable-config-edit`。
 
 ## 支持的提供商
 
@@ -288,7 +289,9 @@ OmniLLM 目前覆盖提供商、模型、日志、会话、计量、访问令牌
 | `--manual` | `false` | 手工审批模式 |
 | `--rate-limit` | `0` | 请求最小间隔秒数 |
 | `--wait` | `false` | 限流时等待而不是报错 |
-| `--allow-local-endpoints` | `false` | 允许 localhost 和私网 OpenAI 兼容上游 || `--claude-code` | `false` | 输出 Claude Code 的引导配置 |
+| `--allow-local-endpoints` | `false` | 允许 localhost 和私网 OpenAI 兼容上游 |
+| `--enable-config-edit` | `false` | 允许通过管理 API 编辑外部配置文件 |
+| `--claude-code` | `false` | 输出 Claude Code 的引导配置 |
 
 ## 仓库结构速览
 
@@ -343,6 +346,8 @@ OmniLLM 目前覆盖提供商、模型、日志、会话、计量、访问令牌
 - 对 OpenAI-compatible 上游地址做 SSRF 检查
 - 面向浏览器的 localhost 风格 CORS 策略
 - 默认对 token 做脱敏显示，除非开启 `--show-token`
+- 编辑外部配置文件需要显式开启 `--enable-config-edit`
+
 如果不是纯本地或内网使用，建议把 OmniLLM 放在你自己的反向代理或网关之后，并限制管理后台的访问范围。
 
 ## 构建、检查与测试

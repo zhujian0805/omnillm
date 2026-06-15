@@ -4,6 +4,7 @@ import "sync"
 
 type SecurityOptions struct {
 	ShowToken        bool
+	EnableConfigEdit bool
 }
 
 var (

@@ -4,6 +4,7 @@ import { initReactI18next } from "react-i18next"
 import en_about from "./locales/en/about.json"
 import en_chat from "./locales/en/chat.json"
 import en_common from "./locales/en/common.json"
+import en_config from "./locales/en/config.json"
 import en_logging from "./locales/en/logging.json"
 import en_metering from "./locales/en/metering.json"
 import en_nav from "./locales/en/nav.json"
@@ -13,6 +14,7 @@ import en_virtualmodel from "./locales/en/virtualmodel.json"
 import zh_about from "./locales/zh/about.json"
 import zh_chat from "./locales/zh/chat.json"
 import zh_common from "./locales/zh/common.json"
+import zh_config from "./locales/zh/config.json"
 import zh_logging from "./locales/zh/logging.json"
 import zh_metering from "./locales/zh/metering.json"
 import zh_nav from "./locales/zh/nav.json"
@@ -51,6 +53,7 @@ const resources = {
     nav: en_nav,
     chat: en_chat,
     providers: en_providers,
+    config: en_config,
     virtualmodel: en_virtualmodel,
     logging: en_logging,
     about: en_about,
@@ -62,6 +65,7 @@ const resources = {
     nav: zh_nav,
     chat: zh_chat,
     providers: zh_providers,
+    config: zh_config,
     virtualmodel: zh_virtualmodel,
     logging: zh_logging,
     about: zh_about,
@@ -80,6 +84,7 @@ void i18n.use(initReactI18next).init({
     "nav",
     "chat",
     "providers",
+    "config",
     "virtualmodel",
     "logging",
     "about",
