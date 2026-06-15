@@ -10,7 +10,7 @@ Unified LLM gateway and control plane for OpenAI-compatible and Anthropic-compat
 
 OmniLLM sits between your apps, agents, coding tools, and upstream model providers. Requests are normalized into a Canonical Intermediate Format (CIF), routed to the right provider or virtual model, then serialized back into the API shape your client expects.
 
-The practical result is simple: point your client at OmniLLM once, then switch providers, add failover, expose a web admin console, and inspect usage without rewriting client code.
+The practical result is simple: point your client at OmniLLM once, then switch providers, add failover, expose a web admin console, manage tool configs, and inspect usage without rewriting client code.
 
 ## Binaries
 
@@ -18,7 +18,7 @@ This repo currently ships two user-facing entrypoints:
 
 | Binary | Entry point | Role |
 |---|---|---|
-| `omnillm` | `main.go` | Main server and admin CLI. Starts the gateway, manages providers, models, virtual models, chat, settings, settings, and logs. |
+| `omnillm` | `main.go` | Main server and admin CLI. Starts the gateway, manages providers, models, virtual models, chat, settings, config files, and logs. |
 | `omniproxy` | `cmd/omniproxy/main.go` | Proxy-oriented entrypoint that mirrors the OmniLLM command surface for running the gateway. |
 
 If you only need the gateway, start with `omnillm`. If your workflow expects the proxy-branded binary, use `omniproxy`. The coding-focused `omnicode` CLI now lives in its own dedicated repository.
@@ -38,7 +38,7 @@ OmniLLM centralizes that into one gateway with:
 - Anthropic-compatible endpoints: `/v1/messages`, `/v1/messages/count_tokens`
 - provider priority and automatic fallback
 - virtual models with round-robin, random, priority, and weighted strategies
-- an admin UI for providers, logs, chat sessions, metering, access tokens, settings
+- an admin UI for providers, logs, chat sessions, metering, access tokens, settings, and tool configs
 
 ## Screenshots
 
@@ -48,7 +48,8 @@ Additional views:
 
 - Chat: ![Chat Interface](docs/assets/chat.png)
 - Virtual Models: ![Virtual Models](docs/assets/virtual-models.png)
-- 
+- ToolConfig: ![ToolConfig](docs/assets/toolconfig.png)
+
 ## Quick Start
 
 ### Option 1: Run the published package
@@ -196,6 +197,11 @@ The admin API and UI cover:
 - metering and breakdowns by provider, model, and client
 - chat sessions for interactive testing
 - access token management
+- config-file management for external coding tools
+
+### ToolConfig and coding-tool integration
+
+OmniLLM can manage configuration files for tools such as Claude Code, Codex, Droid, OpenCode, and AMP. Editing external config files is intentionally guarded behind `--enable-config-edit`.
 
 ## Supported Providers
 
@@ -290,6 +296,7 @@ Selected `start` flags for the server binaries:
 | `--rate-limit` | `0` | Minimum seconds between requests |
 | `--wait` | `false` | Wait instead of erroring on rate limit |
 | `--allow-local-endpoints` | `false` | Allow localhost and private OpenAI-compatible upstreams |
+| `--enable-config-edit` | `false` | Enable editing external config files via admin API |
 | `--claude-code` | `false` | Print guided Claude Code launch configuration |
 
 ## Repository Map
@@ -345,6 +352,7 @@ Current built-in protections include:
 - SSRF checks for OpenAI-compatible upstream endpoints
 - localhost-only style CORS policy for browser use
 - masked token output unless `--show-token` is enabled
+- explicit opt-in for config-file editing via `--enable-config-edit`
 
 For anything beyond local or internal use, put OmniLLM behind your own reverse proxy or gateway and restrict operator access to the admin surface.
 

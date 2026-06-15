@@ -498,6 +498,399 @@ func TestVirtualModelCmdHasAlias(t *testing.T) {
 	t.Errorf("VirtualModelCmd missing 'virtual-model' alias; got %v", aliases)
 }
 
+// ─── config command ───────────────────────────────────────────────────────────
+
+func TestConfigCmdStructure(t *testing.T) {
+	expected := []string{"list", "get", "set", "import", "backup"}
+	subNames := make(map[string]bool)
+	for _, sub := range ConfigCmd.Commands() {
+		subNames[sub.Name()] = true
+	}
+	for _, name := range expected {
+		if !subNames[name] {
+			t.Errorf("config: missing subcommand %q", name)
+		}
+	}
+}
+
+func TestConfigSetFlags(t *testing.T) {
+	for _, sub := range ConfigCmd.Commands() {
+		if sub.Name() == "set" {
+			if sub.Flags().Lookup("file") == nil {
+				t.Error("config set: missing --file flag")
+			}
+			if sub.Flags().Lookup("stdin") == nil {
+				t.Error("config set: missing --stdin flag")
+			}
+			return
+		}
+	}
+	t.Error("config set: subcommand not found")
+}
+
+func TestConfigImportRequiresFileFlag(t *testing.T) {
+	for _, sub := range ConfigCmd.Commands() {
+		if sub.Name() == "import" {
+			f := sub.Flags().Lookup("file")
+			if f == nil {
+				t.Error("config import: missing --file flag")
+				return
+			}
+			return
+		}
+	}
+	t.Error("config import: subcommand not found")
+}
+
+// ─── settings command ─────────────────────────────────────────────────────────
+
+func TestSettingsCmdStructure(t *testing.T) {
+	subNames := make(map[string]bool)
+	for _, sub := range SettingsCmd.Commands() {
+		subNames[sub.Name()] = true
+	}
+	if !subNames["get"] {
+		t.Error("settings: missing subcommand 'get'")
+	}
+	if !subNames["set"] {
+		t.Error("settings: missing subcommand 'set'")
+	}
+}
+
+func TestSettingsGetHasLogLevelSubcommand(t *testing.T) {
+	for _, sub := range SettingsCmd.Commands() {
+		if sub.Name() == "get" {
+			for _, s := range sub.Commands() {
+				if s.Name() == "log-level" {
+					return // found
+				}
+			}
+			t.Error("settings get: missing subcommand 'log-level'")
+			return
+		}
+	}
+	t.Error("settings: 'get' subcommand not found")
+}
+
+func TestSettingsSetHasLogLevelSubcommand(t *testing.T) {
+	for _, sub := range SettingsCmd.Commands() {
+		if sub.Name() == "set" {
+			for _, s := range sub.Commands() {
+				if s.Name() == "log-level" {
+					return
+				}
+			}
+			t.Error("settings set: missing subcommand 'log-level'")
+			return
+		}
+	}
+	t.Error("settings: 'set' subcommand not found")
+}
+
+// ─── status command ───────────────────────────────────────────────────────────
+
+func TestStatusCmdHasAuthSubcommand(t *testing.T) {
+	subNames := make(map[string]bool)
+	for _, sub := range StatusCmd.Commands() {
+		subNames[sub.Name()] = true
+	}
+	if !subNames["auth"] {
+		t.Error("status: missing subcommand 'auth'")
+	}
+}
+
+// ─── logs command ─────────────────────────────────────────────────────────────
+
+func TestLogsCmdHasTailSubcommand(t *testing.T) {
+	subNames := make(map[string]bool)
+	for _, sub := range LogsCmd.Commands() {
+		subNames[sub.Name()] = true
+	}
+	if !subNames["tail"] {
+		t.Error("logs: missing subcommand 'tail'")
+	}
+}
+
+func TestLogsTailHasLevelFlag(t *testing.T) {
+	for _, sub := range LogsCmd.Commands() {
+		if sub.Name() == "tail" {
+			if sub.Flags().Lookup("level") == nil {
+				t.Error("logs tail: missing --level flag")
+			}
+			return
+		}
+	}
+	t.Error("logs tail: subcommand not found")
+}
+
+// ─── parseUpstreamArgs ────────────────────────────────────────────────────────
+
+func TestParseUpstreamArgsBasic(t *testing.T) {
+	result, err := parseUpstreamArgs([]string{"my-provider/my-model"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 upstream, got %d", len(result))
+	}
+	if result[0]["provider_id"] != "my-provider" {
+		t.Errorf("expected provider_id='my-provider', got %v", result[0]["provider_id"])
+	}
+	if result[0]["model_id"] != "my-model" {
+		t.Errorf("expected model_id='my-model', got %v", result[0]["model_id"])
+	}
+	if result[0]["weight"] != 1 {
+		t.Errorf("expected weight=1, got %v", result[0]["weight"])
+	}
+	if result[0]["priority"] != 0 {
+		t.Errorf("expected priority=0, got %v", result[0]["priority"])
+	}
+}
+
+func TestParseUpstreamArgsWithWeight(t *testing.T) {
+	result, err := parseUpstreamArgs([]string{"p1/m1:3"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result[0]["weight"] != 3 {
+		t.Errorf("expected weight=3, got %v", result[0]["weight"])
+	}
+	if result[0]["priority"] != 0 {
+		t.Errorf("expected priority=0, got %v", result[0]["priority"])
+	}
+}
+
+func TestParseUpstreamArgsWithWeightAndPriority(t *testing.T) {
+	result, err := parseUpstreamArgs([]string{"p1/m1:2:5"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result[0]["weight"] != 2 {
+		t.Errorf("expected weight=2, got %v", result[0]["weight"])
+	}
+	if result[0]["priority"] != 5 {
+		t.Errorf("expected priority=5, got %v", result[0]["priority"])
+	}
+}
+
+func TestParseUpstreamArgsMultiple(t *testing.T) {
+	result, err := parseUpstreamArgs([]string{"p1/m1", "p2/m2:10:1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 upstreams, got %d", len(result))
+	}
+	if result[1]["provider_id"] != "p2" {
+		t.Errorf("expected provider_id='p2', got %v", result[1]["provider_id"])
+	}
+	if result[1]["weight"] != 10 {
+		t.Errorf("expected weight=10, got %v", result[1]["weight"])
+	}
+}
+
+func TestParseUpstreamArgsMissingSlashReturnsError(t *testing.T) {
+	_, err := parseUpstreamArgs([]string{"no-slash-here"})
+	if err == nil {
+		t.Error("expected error for missing slash, got nil")
+	}
+}
+
+func TestParseUpstreamArgsInvalidWeightReturnsError(t *testing.T) {
+	_, err := parseUpstreamArgs([]string{"p1/m1:notanumber"})
+	if err == nil {
+		t.Error("expected error for non-numeric weight, got nil")
+	}
+}
+
+func TestParseUpstreamArgsInvalidPriorityReturnsError(t *testing.T) {
+	_, err := parseUpstreamArgs([]string{"p1/m1:1:bad"})
+	if err == nil {
+		t.Error("expected error for non-numeric priority, got nil")
+	}
+}
+
+func TestParseUpstreamArgsEmpty(t *testing.T) {
+	result, err := parseUpstreamArgs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error for nil input: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil result for empty input, got %v", result)
+	}
+}
+
+// ─── isLevelAtOrAbove ─────────────────────────────────────────────────────────
+
+func TestIsLevelAtOrAboveFiltering(t *testing.T) {
+	cases := []struct {
+		msg    string
+		filter string
+		want   bool
+	}{
+		{"error", "error", true},
+		{"error", "warn", true},   // error is more severe than warn
+		{"error", "info", true},   // error is more severe than info
+		{"debug", "info", false},  // debug is less severe than info
+		{"debug", "debug", true},  // same level passes
+		{"trace", "debug", false}, // trace is less severe than debug
+		{"info", "warn", false},   // info=3 is LESS severe than warn=2 — filtered out
+		{"warn", "info", true},    // warn=2 is MORE severe than info=3 — passes
+		{"unknown", "info", true}, // unknown levels pass through
+		{"info", "unknown", true}, // unknown filter passes through
+	}
+
+	for _, tc := range cases {
+		got := isLevelAtOrAbove(tc.msg, tc.filter)
+		if got != tc.want {
+			t.Errorf("isLevelAtOrAbove(%q, %q) = %v, want %v", tc.msg, tc.filter, got, tc.want)
+		}
+	}
+}
+
+// ─── resolveIDFromList ────────────────────────────────────────────────────────
+
+func TestResolveIDFromListPicksFirstWhenOnlyOne(t *testing.T) {
+	id, err := resolveIDFromList("Pick provider:", []string{"provider-one"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "provider-one" {
+		t.Errorf("expected 'provider-one', got %q", id)
+	}
+}
+
+func TestResolveIDFromListReturnsErrorOnEmpty(t *testing.T) {
+	_, err := resolveIDFromList("Pick provider:", []string{})
+	if err == nil {
+		t.Fatal("expected error for empty list")
+	}
+}
+
+// ─── NewClient defaults ───────────────────────────────────────────────────────
+
+func TestClientPrintJSONUsesCommandWriter(t *testing.T) {
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	c := NewClient(cmd)
+	c.PrintJSON([]byte(`{"ok":true}`))
+
+	if !strings.Contains(out.String(), `"ok"`) {
+		t.Fatalf("PrintJSON did not write to command output writer; got: %q", out.String())
+	}
+}
+
+func TestDoctorCmdExists(t *testing.T) {
+	if DoctorCmd == nil {
+		t.Fatal("DoctorCmd is nil")
+	}
+	if DoctorCmd.Use != "doctor" {
+		t.Errorf("DoctorCmd.Use = %q, want 'doctor'", DoctorCmd.Use)
+	}
+}
+
+func TestDoctorCmdWritesToCommandOutput(t *testing.T) {
+	cmd := DoctorCmd
+	if cmd.OutOrStdout() == nil {
+		t.Fatal("DoctorCmd OutOrStdout() is nil")
+	}
+}
+
+func TestDoctorCmdWritesHealthyStatusWithBorderedTables(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/api/admin/status":
+			_, _ = w.Write([]byte(`{"status":"healthy","uptime":"39s","modelCount":273}`))
+		case "/api/admin/providers":
+			_, _ = w.Write([]byte(`[]`))
+		case "/api/admin/virtualmodels":
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/api/admin/auth-status":
+			_, _ = w.Write([]byte(`{"status":"idle"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	t.Setenv("OMNILLM_SERVER", ts.URL)
+	t.Setenv("OMNILLM_API_KEY", "test-key")
+
+	cmd := &cobra.Command{}
+	cmd.SetErr(&bytes.Buffer{})
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := runDoctor(cmd, nil); err != nil {
+		t.Fatalf("runDoctor returned error: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{"Local configuration", "Server", "Server status", "Providers", "Status", "healthy", "┌", "│", "└"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected doctor output to contain %q, got output:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "  ✓  Status:") || strings.Contains(output, "  ✗  Status:") {
+		t.Fatalf("expected bordered table output instead of legacy success markers, got output:\n%s", output)
+	}
+}
+
+func TestDebugCmdWritesToCommandOutput(t *testing.T) {
+	cmd := DebugCmd
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	if cmd.OutOrStdout() == nil {
+		t.Fatal("DebugCmd OutOrStdout() is nil")
+	}
+}
+
+func TestNewClientDefaultServer(t *testing.T) {
+	t.Setenv("OMNILLM_SERVER", "")
+	t.Setenv("OMNILLM_API_KEY", "")
+
+	const expectedDefault = "http://127.0.0.1:5000"
+	_ = expectedDefault // guard against renaming without updating
+}
+
+// ─── Cobra-level flag validation ─────────────────────────────────────────────
+
+func TestModelToggleRequiresEnableOrDisable(t *testing.T) {
+	for _, sub := range ModelCmd.Commands() {
+		if sub.Name() == "toggle" {
+			ModelCmd.SetArgs([]string{"toggle", "some-provider", "some-model"})
+			var errBuf bytes.Buffer
+			ModelCmd.SetErr(&errBuf)
+			err := ModelCmd.Execute()
+			if err == nil {
+				t.Fatal("expected error when neither --enable nor --disable is set")
+			}
+			return
+		}
+	}
+	t.Error("model toggle subcommand not found")
+}
+
+func TestConfigSetRequiresFileOrStdin(t *testing.T) {
+	for _, sub := range ConfigCmd.Commands() {
+		if sub.Name() == "set" {
+			ConfigCmd.SetArgs([]string{"set", "myconfig"})
+			var errBuf bytes.Buffer
+			ConfigCmd.SetErr(&errBuf)
+			err := ConfigCmd.Execute()
+			if err == nil {
+				t.Fatal("expected error when neither --file nor --stdin is set")
+			}
+			return
+		}
+	}
+	t.Error("config set subcommand not found")
+}
 
 func TestVirtualModelUpdateEnabledDisabledMutuallyExclusive(t *testing.T) {
 	for _, sub := range VirtualModelCmd.Commands() {
