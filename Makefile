@@ -40,6 +40,7 @@ OMNIPROXY_BIN := $(INSTALL_DIR)/omniproxy$(EXE)
 # ── Phony targets ─────────────────────────────────────────────────────────────
 
 .PHONY: all install deps build build-go build-frontend build-all \
+        build-desktop-sidecar build-desktop desktop-dev \
         start stop restart restart-rebuild status logs logs-follow \
         dev dev-frontend \
         test test-frontend lint typecheck \
@@ -86,6 +87,30 @@ build-frontend: $(DEPS)
 
 ## build-all: Build all Go binaries and the frontend assets
 build-all: build-go build-frontend
+
+# ── Desktop (Tauri) ───────────────────────────────────────────────────────────
+
+## build-desktop-sidecar: Build omniproxy as the Tauri sidecar binary
+build-desktop-sidecar:
+	$(call MKDIR_TARGET,desktop/src-tauri/binaries)
+	@TARGET=$$($(GO) env GOOS)-$$($(GO) env GOARCH); \
+	HOST_TRIPLE=$$(rustc -vV 2>/dev/null | sed -n 's/^host: //p'); \
+	if [ -z "$$HOST_TRIPLE" ]; then \
+	  echo "rustc not found; cannot build desktop sidecar"; exit 1; \
+	fi; \
+	OUT="desktop/src-tauri/binaries/omniproxy-$$HOST_TRIPLE$(EXE)"; \
+	echo "Building $$OUT"; \
+	$(GO) build -o "$$OUT" ./cmd/omniproxy
+
+## build-desktop: Build the Tauri desktop app (sidecar + frontend + tauri build)
+build-desktop: build-desktop-sidecar
+	cd desktop && $(BUN) install
+	cd desktop && $(BUN) run tauri build
+
+## desktop-dev: Run the desktop app in development mode (hot reload)
+desktop-dev: build-desktop-sidecar
+	cd desktop && $(BUN) install
+	cd desktop && $(BUN) run tauri dev
 
 # ── Dev / Start ───────────────────────────────────────────────────────────────
 
@@ -207,6 +232,8 @@ help:
 	@echo   build-go             Compile all Go binaries: omnillm and omniproxy - install to ~/.local/bin
 	@echo   build-frontend       Build the frontend assets - outputs to pages/
 	@echo   build-all            Build all Go binaries and the frontend assets
+	@echo   build-desktop        Build Tauri desktop app: bundles omniproxy as sidecar
+	@echo   desktop-dev          Run Tauri desktop app in dev mode
 	$(PRINT_BLANK)
 	@echo DEVELOPMENT:
 	@echo   dev-frontend         Start only the Vite frontend dev server

@@ -1,4 +1,5 @@
 import { createLogger } from "@/lib/logger"
+import { getDesktopBackend, isDesktop } from "@/lib/runtime"
 
 const log = createLogger("api")
 
@@ -201,6 +202,13 @@ let cachedApiKey: string | null = null
 declare const __API_KEY__: string | undefined
 
 function getApiKey(): string {
+  // Desktop bridge wins — Tauri injects the per-install key.
+  const desktop = getDesktopBackend()
+  if (desktop && desktop.apiKey.length > 0) {
+    cachedApiKey = desktop.apiKey
+    return cachedApiKey
+  }
+
   if (cachedApiKey !== null) {
     return cachedApiKey
   }
@@ -210,6 +218,14 @@ function getApiKey(): string {
   cachedApiKey =
     content || (typeof __API_KEY__ !== "undefined" ? __API_KEY__ : "")
   return cachedApiKey
+}
+
+// Test-only hook: clears cached values so unit tests can flip the runtime
+// bridge between cases without leaking state across tests.
+export function __resetApiCachesForTests(): void {
+  cachedApiKey = null
+  detectedBackendPort = null
+  detectionPromise = null
 }
 
 async function detectBackendPort(): Promise<number> {
@@ -294,6 +310,12 @@ async function detectBackendPort(): Promise<number> {
 }
 
 async function getBackendBase(): Promise<string> {
+  // Desktop bridge wins — the Tauri sidecar tells us the exact baseUrl.
+  if (isDesktop()) {
+    const desktop = getDesktopBackend()
+    if (desktop) return desktop.baseUrl
+  }
+
   // If we're in development and running on localhost with a port, auto-detect
   if (
     globalThis.location.hostname === "localhost"

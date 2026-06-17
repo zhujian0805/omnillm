@@ -18,6 +18,8 @@
   "scripts": {
     "build": "vite build --config frontend/vite.config.ts",
     "build:go": "go build -o ~/.local/bin/omnillm main.go",
+    "desktop:build": "make build-desktop",
+    "desktop:dev": "make desktop-dev",
     "dev": "bun run dev.ts",
     "dev:frontend": "vite --config frontend/vite.config.ts",
     "knip": "knip-bun",
