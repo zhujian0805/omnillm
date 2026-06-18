@@ -4,6 +4,7 @@ version = "0.0.1"
 description = "Tauri desktop wrapper around the OmniLLM admin UI"
 edition = "2021"
 rust-version = "1.77"
+resolver = "2"
 
 [lib]
 name = "omnillm_desktop_lib"
