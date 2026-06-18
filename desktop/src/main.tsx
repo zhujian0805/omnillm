@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
+import { I18nextProvider } from "react-i18next"
 
 import AppComponent from "@/App"
+import i18n from "@/i18n"
 import { setDesktopBackend } from "@/lib/runtime"
 
 import "./desktop/desktop.css"
@@ -79,7 +81,9 @@ async function bootstrap(): Promise<void> {
   clear(root)
   createRoot(root).render(
     <StrictMode>
-      <AppComponent />
+      <I18nextProvider i18n={i18n}>
+        <AppComponent />
+      </I18nextProvider>
     </StrictMode>,
   )
 }
