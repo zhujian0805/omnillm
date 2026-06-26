@@ -81,7 +81,7 @@ function extractMessageContent(
 }
 
 function generateUUID(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+  return crypto.randomUUID()
 }
 
 function formatChatError(error: unknown): string {
