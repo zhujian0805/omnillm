@@ -27,8 +27,8 @@ type PrepareFunc func(provider types.Provider, request *cif.CanonicalRequest)
 type FallbackFunc func(request *cif.CanonicalRequest) bool
 
 type Executor struct {
-	PrepareRequest       PrepareFunc
-	DefaultUpstreamAPI   func(providerID, model string) string
+	PrepareRequest     PrepareFunc
+	DefaultUpstreamAPI func(providerID, model string) string
 }
 
 func NewExecutor(prepare PrepareFunc, defaultUpstreamAPI func(providerID, model string) string) *Executor {
@@ -109,9 +109,55 @@ func ApplyGitHubCopilotSingleUpstreamMode(provider types.Provider, request *cif.
 	}
 
 	trueValue := true
-	if !shared.IsGPT5Family(request.Model) {
+	if !shouldForceChatCompletions(provider, request) {
+		// Leave ForceChatCompletions unset so the Copilot adapter's
+		// selectShape can pick /responses for responses-only models
+		// (e.g. MAI-Code-1-Flash) and for inbound /v1/responses calls.
+	} else {
 		request.Extensions.ForceChatCompletions = &trueValue
 	}
 	request.Extensions.DisableAuthRetry = &trueValue
 	request.Extensions.DisableStreamingFallback = &trueValue
+}
+
+// copilotResponsesOnlyChecker is satisfied by *copilot.GitHubCopilotProvider.
+// Declared here (rather than imported) to avoid an import cycle:
+// providerdispatch is consumed by the copilot package's transitive deps.
+type copilotResponsesOnlyChecker interface {
+	IsResponsesOnlyModel(model string) bool
+}
+
+// shouldForceChatCompletions decides whether to set ForceChatCompletions=true
+// for a GitHub Copilot request. The historical behaviour was "true for every
+// non-GPT-5 model", which broke responses-only models like MAI-Code-1-Flash
+// and any inbound /v1/responses call routed through Copilot.
+//
+// Returns false when ANY of:
+//   - The inbound API shape is "responses" — caller explicitly asked for the
+//     Responses API, honour it.
+//   - The Copilot provider's model catalog marks the model responses-only
+//     (supported_endpoints contains /responses but not /chat/completions).
+//   - The model is in the GPT-5 family (existing behaviour: those models
+//     prefer /responses and have their own shape-selection logic).
+//
+// Returns true otherwise, preserving the legacy single-upstream-mode default
+// for chat-completions-friendly models.
+func shouldForceChatCompletions(provider types.Provider, request *cif.CanonicalRequest) bool {
+	if request.Extensions != nil && request.Extensions.InboundAPIShape != nil {
+		if strings.EqualFold(strings.TrimSpace(*request.Extensions.InboundAPIShape), "responses") {
+			return false
+		}
+	}
+
+	if checker, ok := provider.(copilotResponsesOnlyChecker); ok {
+		if checker.IsResponsesOnlyModel(request.Model) {
+			return false
+		}
+	}
+
+	if shared.IsGPT5Family(request.Model) {
+		return false
+	}
+
+	return true
 }
