@@ -481,24 +481,24 @@ function formatStructuredField(
 }
 
 function colorizeMessageArrows(text: string): string {
-  // Match patterns like:
+  // Colorize arrow patterns in log lines:
   //   --> POST /v1/chat/completions <-- 200
   //   --> REQUEST
   //   <-- RESPONSE
-  const arrowPattern = /^(?:-->|<--).*$/
+  const outArrow = "-->"
+  const inArrow = "<--"
 
-  if (arrowPattern.test(text)) {
+  if (text.startsWith(outArrow) || text.startsWith(inArrow)) {
     return text
-      .replaceAll(/(-->)/g, "\x1b[33m$1\x1b[0m") // yellow outgoing
-      .replaceAll(/(<--)/g, "\x1b[32m$1\x1b[0m") // green incoming
+      .replaceAll(outArrow, "\x1b[33m-->\x1b[0m") // yellow outgoing
+      .replaceAll(inArrow, "\x1b[32m<--\x1b[0m") // green incoming
   }
 
   // For messages like:
   //   --> GET /api/admin/info <-- 200
-  const fullPattern = /-->|<--/g
-  return text.replaceAll(fullPattern, (match) => {
-    return match === "-->" ? "\x1b[33m-->\x1b[0m" : "\x1b[32m<--\x1b[0m"
-  })
+  return text
+    .replaceAll(outArrow, "\x1b[33m-->\x1b[0m")
+    .replaceAll(inArrow, "\x1b[32m<--\x1b[0m")
 }
 
 function formatStructuredLogLine(

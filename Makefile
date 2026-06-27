@@ -23,14 +23,26 @@ ifeq ($(OS),Windows_NT)
   EXE         := .exe
   INSTALL_DIR := $(USERPROFILE)/.local/bin
   PRINT_BLANK := @powershell -NoProfile -Command "Write-Host ''"
-  define MKDIR_TARGET
-	if not exist "$(1)" mkdir "$(1)"
-  endef
+  TOUCH_TARGET = powershell -NoProfile -Command "New-Item -ItemType File -Force -Path '$(1)' | Out-Null"
+  MKDIR_TARGET = powershell -NoProfile -Command "if (-not (Test-Path '$(1)')) { New-Item -ItemType Directory -Path '$(1)' | Out-Null }"
+  BUILD_DESKTOP_SIDECAR = powershell -NoProfile -File scripts/build-desktop-sidecar.ps1
+  CLEAN_DESKTOP_SIDECAR = powershell -NoProfile -Command "Get-ChildItem 'desktop/src-tauri/target' -Recurse -Filter 'omniproxy-*$(EXE)' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue"
 else
   EXE         :=
   PRINT_BLANK := @printf '\n'
+  TOUCH_TARGET = touch "$(1)"
   define MKDIR_TARGET
 	mkdir -p "$(1)"
+  endef
+  define BUILD_DESKTOP_SIDECAR
+	@TARGET=$$($(GO) env GOOS)-$$($(GO) env GOARCH); \
+	HOST_TRIPLE=$$(rustc -vV 2>/dev/null | sed -n 's/^host: //p'); \
+	if [ -z "$$HOST_TRIPLE" ]; then \
+	  echo "rustc not found; cannot build desktop sidecar"; exit 1; \
+	fi; \
+	OUT="desktop/src-tauri/binaries/omniproxy-$$HOST_TRIPLE$(EXE)"; \
+	echo "Building $$OUT"; \
+	$(GO) build -o "$$OUT" ./cmd/omniproxy
   endef
 endif
 
@@ -40,6 +52,7 @@ OMNIPROXY_BIN := $(INSTALL_DIR)/omniproxy$(EXE)
 # ── Phony targets ─────────────────────────────────────────────────────────────
 
 .PHONY: all install deps build build-go build-frontend build-all \
+        build-desktop-sidecar build-desktop desktop-dev \
         start stop restart restart-rebuild status logs logs-follow \
         dev dev-frontend \
         test test-frontend lint typecheck \
@@ -67,7 +80,7 @@ deps: $(DEPS)
 $(DEPS): bun.lock package.json
 	$(call MKDIR_TARGET,$(BUILD_DIR))
 	$(BUN) install
-	@touch "$(DEPS)"
+	@$(call TOUCH_TARGET,$(DEPS))
 
 ## build: Build all Go binaries and install to ~/.local/bin
 build: build-go
@@ -87,14 +100,29 @@ build-frontend: $(DEPS)
 ## build-all: Build all Go binaries and the frontend assets
 build-all: build-go build-frontend
 
+# ── Desktop (Tauri) ───────────────────────────────────────────────────────────
+
+## build-desktop-sidecar: Build omniproxy as the Tauri sidecar binary
+build-desktop-sidecar:
+	$(call MKDIR_TARGET,desktop/src-tauri/binaries)
+	$(CLEAN_DESKTOP_SIDECAR)
+	$(BUILD_DESKTOP_SIDECAR)
+
+## build-desktop: Build the Tauri desktop app (sidecar + frontend + tauri build)
+build-desktop: build-desktop-sidecar
+	cd desktop && $(BUN) install
+	cd desktop && $(BUN) run tauri build
+
+## desktop-dev: Run the desktop app in development mode (hot reload)
+desktop-dev: build-desktop-sidecar
+	cd desktop && $(BUN) install
+	cd desktop && $(BUN) run tauri dev
+
 # ── Dev / Start ───────────────────────────────────────────────────────────────
 
 ## start: Build the Go backend and start all services in the background
 start: $(DEPS)
-	$(BUN) run omni start \
-	  --server-port $(SERVER_PORT) \
-	  --frontend-port $(FRONTEND_PORT) \
-	  --host $(HOST)
+	$(BUN) run omni start --server-port $(SERVER_PORT) --frontend-port $(FRONTEND_PORT) --host $(HOST)
 
 ## stop: Stop all background services
 stop: $(DEPS)
@@ -102,17 +130,11 @@ stop: $(DEPS)
 
 ## restart: Restart background services (no rebuild)
 restart: $(DEPS)
-	$(BUN) run omni restart $(REBUILD) \
-	  --server-port $(SERVER_PORT) \
-	  --frontend-port $(FRONTEND_PORT) \
-	  --host $(HOST)
+	$(BUN) run omni restart $(REBUILD) --server-port $(SERVER_PORT) --frontend-port $(FRONTEND_PORT) --host $(HOST)
 
 ## restart-rebuild: Rebuild everything and restart background services
 restart-rebuild: $(DEPS)
-	$(BUN) run omni restart --rebuild \
-	  --server-port $(SERVER_PORT) \
-	  --frontend-port $(FRONTEND_PORT) \
-	  --host $(HOST)
+	$(BUN) run omni restart --rebuild --server-port $(SERVER_PORT) --frontend-port $(FRONTEND_PORT) --host $(HOST)
 
 ## status: Show running service status and ports
 status: $(DEPS)
@@ -128,10 +150,7 @@ logs-follow: $(DEPS)
 
 ## dev: Start both backend and frontend in the foreground (Ctrl+C to stop)
 dev: $(DEPS)
-	$(BUN) run dev \
-	  --server-port $(SERVER_PORT) \
-	  --frontend-port $(FRONTEND_PORT) \
-	  --host $(HOST)
+	$(BUN) run dev --server-port $(SERVER_PORT) --frontend-port $(FRONTEND_PORT) --host $(HOST)
 
 ## dev-frontend: Start only the Vite frontend dev server
 dev-frontend: $(DEPS)
@@ -207,6 +226,8 @@ help:
 	@echo   build-go             Compile all Go binaries: omnillm and omniproxy - install to ~/.local/bin
 	@echo   build-frontend       Build the frontend assets - outputs to pages/
 	@echo   build-all            Build all Go binaries and the frontend assets
+	@echo   build-desktop        Build Tauri desktop app: bundles omniproxy as sidecar
+	@echo   desktop-dev          Run Tauri desktop app in dev mode
 	$(PRINT_BLANK)
 	@echo DEVELOPMENT:
 	@echo   dev-frontend         Start only the Vite frontend dev server

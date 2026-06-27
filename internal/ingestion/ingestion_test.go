@@ -427,6 +427,44 @@ func TestParseAnthropic_SystemPrompt(t *testing.T) {
 	}
 }
 
+// TestParseAnthropic_HoistsSystemRoleMessage covers the Claude Code v2.1.154+
+// regression where a role:"system" entry is emitted inside messages[] instead
+// of the top-level system field. We hoist it into the system prompt rather than
+// failing. See https://github.com/anthropics/claude-code/issues/63457
+func TestParseAnthropic_HoistsSystemRoleMessage(t *testing.T) {
+	payload := map[string]interface{}{
+		"model":  "claude-3-5-sonnet-20241022",
+		"system": "Top-level system.",
+		"messages": []interface{}{
+			map[string]interface{}{
+				"role": "system",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "Agent instructions."},
+				},
+			},
+			map[string]interface{}{
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{"type": "text", "text": "Hello"},
+				},
+			},
+		},
+	}
+	req, err := ParseAnthropicMessages(mustRaw(t, payload))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.SystemPrompt == nil || *req.SystemPrompt != "Top-level system.\n\nAgent instructions." {
+		t.Errorf("unexpected system prompt: %v", req.SystemPrompt)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("expected system message to be hoisted out, got %d messages", len(req.Messages))
+	}
+	if _, ok := req.Messages[0].(cif.CIFUserMessage); !ok {
+		t.Errorf("expected remaining message to be a user message, got %T", req.Messages[0])
+	}
+}
+
 func TestParseAnthropic_ToolUseBlock(t *testing.T) {
 	payload := map[string]interface{}{
 		"model": "claude-3-5-sonnet-20241022",

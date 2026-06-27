@@ -1,0 +1,9 @@
+# Build artifacts
+dist/
+src-tauri/target/
+src-tauri/binaries/omniproxy*
+
+# Tauri generated
+src-tauri/gen/
+src-tauri/Cargo.lock
+node_modules/
