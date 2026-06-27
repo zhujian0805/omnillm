@@ -15,6 +15,21 @@ interface BackendInfo {
   version: string
 }
 
+type DesktopInvoke = (
+  command: string,
+  args?: Record<string, unknown>,
+) => Promise<unknown>
+
+const desktopInvoke = invoke as DesktopInvoke
+
+async function restartBackend(): Promise<void> {
+  await desktopInvoke("restart_backend")
+}
+
+async function getBackendInfo(): Promise<BackendInfo> {
+  return (await desktopInvoke("desktop_backend_info")) as BackendInfo
+}
+
 function clear(node: HTMLElement): void {
   while (node.firstChild) node.firstChild.remove()
 }
@@ -52,7 +67,7 @@ function showError(root: HTMLElement, detail: string): void {
   const button = document.createElement("button")
   button.textContent = "Retry"
   button.addEventListener("click", () => {
-    void invoke("restart_backend").then(() => {
+    void restartBackend().then(() => {
       globalThis.location.reload()
     })
   })
@@ -69,7 +84,7 @@ async function bootstrap(): Promise<void> {
 
   let info: BackendInfo
   try {
-    info = await invoke<BackendInfo>("desktop_backend_info")
+    info = await getBackendInfo()
   } catch (err: unknown) {
     const detail = err instanceof Error ? err.message : String(err)
     showError(root, detail)
