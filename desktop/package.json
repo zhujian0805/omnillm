@@ -1,0 +1,27 @@
+{
+  "name": "omnillm-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Tauri desktop wrapper around the OmniLLM admin UI",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "tauri": "tauri",
+    "tauri:build": "tauri build",
+    "tauri:dev": "tauri dev"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.10"
+  }
+}
