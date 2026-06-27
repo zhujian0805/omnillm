@@ -2,6 +2,8 @@
 package copilot
 
 import (
+	"strings"
+
 	ghservice "omnillm/internal/services/github"
 )
 
@@ -30,3 +32,24 @@ func (p *GitHubCopilotProvider) SetInstanceID(newID string) { p.instanceID = new
 
 // GetBaseURL returns the configured upstream base URL for Copilot API calls.
 func (p *GitHubCopilotProvider) GetBaseURL() string { return p.baseURL }
+
+// IsResponsesOnlyModel reports whether the given Copilot model is known to
+// require the /responses endpoint and cannot be served via /chat/completions.
+//
+// Returns true only when the shape cache (populated by GetModels) explicitly
+// marks the model as responses-only. Returns false on cache miss, nil cache,
+// or empty model name — callers should fall back to their existing heuristics
+// (e.g. shared.IsGPT5Family) in that case.
+//
+// Provider-dispatch code uses this via an interface assertion to avoid the
+// import cycle that would arise from depending on the copilot package directly.
+func (p *GitHubCopilotProvider) IsResponsesOnlyModel(model string) bool {
+	if p == nil || p.shapeCache == nil {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	if normalized == "" {
+		return false
+	}
+	return p.shapeCache[normalized] == shapeResponses
+}
