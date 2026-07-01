@@ -126,6 +126,15 @@ func TestApplyGitHubCopilotSingleUpstreamMode_ResponsesOnlyModelNotForced(t *tes
 	}
 }
 
+func TestApplyGitHubCopilotSingleUpstreamMode_KnownMAIResponsesOnlyModelNotForcedWithoutCatalog(t *testing.T) {
+	req := &cif.CanonicalRequest{Model: "mai-code-1-flash-picker"}
+	ApplyGitHubCopilotSingleUpstreamMode(newCopilotProvider(), req)
+
+	if req.Extensions.ForceChatCompletions != nil {
+		t.Fatalf("expected ForceChatCompletions to stay unset for known MAI responses-only model without catalog metadata, got %v", *req.Extensions.ForceChatCompletions)
+	}
+}
+
 // DisableAuthRetry and DisableStreamingFallback must always be set for Copilot,
 // regardless of which shape branch we take.
 func TestApplyGitHubCopilotSingleUpstreamMode_AlwaysSetsDisableFlags(t *testing.T) {
