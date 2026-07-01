@@ -166,11 +166,12 @@ var providerListCmd = &cobra.Command{
 			return PrintEmpty(cmd.OutOrStdout(), "providers configured")
 		}
 
-		table := NewTable("ID", "TYPE", "NAME", "AUTH", "ACTIVE", "MODELS")
+		table := NewTable("ID", "TYPE", "NAME", "ALIAS", "AUTH", "ACTIVE", "MODELS")
 		for _, p := range providers {
 			id, _ := p["id"].(string)
 			pType, _ := p["type"].(string)
 			name, _ := p["name"].(string)
+			alias, _ := p["subtitle"].(string)
 			auth, _ := p["authStatus"].(string)
 			active := "no"
 			if v, ok := p["isActive"].(bool); ok && v {
@@ -179,7 +180,7 @@ var providerListCmd = &cobra.Command{
 			total, _ := p["totalModelCount"].(float64)
 			enabled, _ := p["enabledModelCount"].(float64)
 			models := fmt.Sprintf("%d/%d", int(enabled), int(total))
-			table.AddRow(id, pType, name, auth, active, models)
+			table.AddRow(id, pType, name, alias, auth, active, models)
 		}
 		return table.Render(cmd.OutOrStdout())
 	},

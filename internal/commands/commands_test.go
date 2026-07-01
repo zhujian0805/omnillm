@@ -253,6 +253,12 @@ func TestProviderCmdStructure(t *testing.T) {
 	}
 }
 
+func TestProviderListCommandHasNoAliases(t *testing.T) {
+	if len(providerListCmd.Aliases) != 0 {
+		t.Fatalf("provider list should not expose command aliases, got %v", providerListCmd.Aliases)
+	}
+}
+
 func TestProviderAddFlagDefaults(t *testing.T) {
 	for _, flagName := range []string{"api-key", "token", "endpoint", "region", "plan"} {
 		found := false
