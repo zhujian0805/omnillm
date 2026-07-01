@@ -155,9 +155,18 @@ func shouldForceChatCompletions(provider types.Provider, request *cif.CanonicalR
 		}
 	}
 
+	if isKnownCopilotResponsesOnlyModel(request.Model) {
+		return false
+	}
+
 	if shared.IsGPT5Family(request.Model) {
 		return false
 	}
 
 	return true
+}
+
+func isKnownCopilotResponsesOnlyModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "mai-code-1-flash")
 }
