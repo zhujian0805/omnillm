@@ -16,7 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const UserAgent = "KimiClient/1.0"
+const UserAgent = "KimiClient/1.0" // legacy; outbound headers now come from shared.UpstreamUserAgent
 
 // Base URL for Kimi API
 const BaseURL = "https://api.moonshot.cn/v1"
@@ -249,13 +249,10 @@ func Headers(token string, stream bool, config map[string]interface{}) map[strin
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 		"Accept":        "application/json",
+		"User-Agent":    shared.UpstreamUserAgent(),
 	}
 	if stream {
 		headers["Accept"] = "text/event-stream"
-	}
-
-	if authType, _ := shared.FirstString(config, "auth_type", "authType"); authType == "oauth" {
-		headers["User-Agent"] = UserAgent
 	}
 	return headers
 }

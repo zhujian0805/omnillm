@@ -16,7 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const UserAgent = "OmniLLM/1.0"
+const UserAgent = "OmniLLM/1.0" // legacy; outbound headers now come from shared.UpstreamUserAgent
 
 // API mode constant for OpenAI-compatible DashScope endpoints.
 const AlibabaAPIModeOpenAICompatible = "openai-compatible"
@@ -94,7 +94,7 @@ func newOpenAIClient(token, baseURL string) openai.Client {
 	opts := []option.RequestOption{
 		option.WithHTTPClient(alibabaHTTPClient),
 		option.WithBaseURL(EnsureBaseURL(baseURL)),
-		option.WithHeader("User-Agent", UserAgent),
+		option.WithHeader("User-Agent", shared.UpstreamUserAgent()),
 	}
 	if token != "" {
 		opts = append(opts, option.WithAPIKey(token))
@@ -288,7 +288,7 @@ func Headers(token string, stream bool, config map[string]interface{}) map[strin
 	h := map[string]string{
 		"Content-Type": "application/json",
 		"Accept":       "application/json",
-		"User-Agent":   UserAgent,
+		"User-Agent":   shared.UpstreamUserAgent(),
 	}
 	if token != "" {
 		h["Authorization"] = "Bearer " + token

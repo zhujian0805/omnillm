@@ -482,10 +482,14 @@ func responsesURL(baseURL string) string {
 
 // buildHeaders returns the HTTP headers for a request.
 // Authorization header is omitted when token is empty (open endpoints).
+// The User-Agent header pretends the client is VSCode so upstream
+// providers see a familiar editor-shaped client (see
+// shared.UpstreamUserAgent).
 func buildHeaders(token string, stream bool) map[string]string {
 	h := map[string]string{
 		"Content-Type": "application/json",
 		"Accept":       "application/json",
+		"User-Agent":   shared.UpstreamUserAgent(),
 	}
 	if stream {
 		h["Accept"] = "text/event-stream"

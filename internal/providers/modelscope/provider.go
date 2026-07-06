@@ -18,7 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const UserAgent = "OmniLLM/1.0"
+const UserAgent = "OmniLLM/1.0" // legacy; outbound headers now come from shared.UpstreamUserAgent
 
 // Default ModelScope inference endpoint.
 const BaseURL = "https://api-inference.modelscope.cn/v1"
@@ -218,6 +218,7 @@ func headers(token string) map[string]string {
 		"Authorization": "Bearer " + token,
 		"Content-Type":  "application/json",
 		"Accept":        "application/json",
+		"User-Agent":    shared.UpstreamUserAgent(),
 	}
 }
 

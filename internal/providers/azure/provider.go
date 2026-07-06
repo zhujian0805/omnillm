@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"omnillm/internal/database"
+	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"strings"
 
@@ -109,6 +110,7 @@ func Headers(apiKey string) map[string]string {
 	return map[string]string{
 		"api-key":      apiKey,
 		"Content-Type": "application/json",
+		"User-Agent":   shared.UpstreamUserAgent(),
 	}
 }
 

@@ -79,6 +79,7 @@ func Headers(apiKey string) map[string]string {
 	return map[string]string{
 		"x-goog-api-key": apiKey,
 		"Content-Type":   "application/json",
+		"User-Agent":     shared.UpstreamUserAgent(),
 	}
 }
 
