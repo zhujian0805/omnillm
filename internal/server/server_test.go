@@ -38,7 +38,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 		RateLimiter:    ratelimit.NewRateLimiter(0, false),
 		ManualApproval: false,
 	}
-	r := buildRouter(0, "test-api-key", chatOptions)
+	r := buildRouter(0, "test-api-key", chatOptions, 0)
 	return httptest.NewServer(r)
 }
 

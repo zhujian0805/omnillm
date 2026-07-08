@@ -67,6 +67,10 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 		if err != nil {
 			return fmt.Errorf("get wait flag: %w", err)
 		}
+		maxConcurrent, err := cmd.Flags().GetInt("max-concurrent")
+		if err != nil {
+			return fmt.Errorf("get max-concurrent flag: %w", err)
+		}
 		githubToken, err := cmd.Flags().GetString("github-token")
 		if err != nil {
 			return fmt.Errorf("get github-token flag: %w", err)
@@ -114,22 +118,23 @@ The inbound --api-key defaults to a generated key stored in ~/.config/omnillm/ap
 		}
 
 		options := server.StartOptions{
-			Port:                     port,
-			Host:                     host,
-			Verbose:                  verbose,
-			AccountType:              accountType,
-			Manual:                   manual,
-			RateLimit:                rateLimit,
-			RateLimitWait:            wait,
-			GithubToken:              githubToken,
-			ClaudeCode:               claudeCode,
-			Console:                  console,
-			ShowToken:                showToken,
-			ProxyEnv:                 proxyEnv,
-			Provider:                 provider,
-			APIKey:                   apiKey,
-			AllowLocalEndpoints:      allowLocalEndpoints,
-			EnableConfigEdit:         enableConfigEdit,
+			Port:                      port,
+			Host:                      host,
+			Verbose:                   verbose,
+			AccountType:               accountType,
+			Manual:                    manual,
+			RateLimit:                 rateLimit,
+			RateLimitWait:             wait,
+			MaxConcurrentRequests:     maxConcurrent,
+			GithubToken:               githubToken,
+			ClaudeCode:                claudeCode,
+			Console:                   console,
+			ShowToken:                 showToken,
+			ProxyEnv:                  proxyEnv,
+			Provider:                  provider,
+			APIKey:                    apiKey,
+			AllowLocalEndpoints:       allowLocalEndpoints,
+			EnableConfigEdit:          enableConfigEdit,
 			AllowedChromeExtensionIDs: allowedChromeExtensions,
 		}
 
@@ -145,6 +150,7 @@ func init() {
 	StartCmd.Flags().Bool("manual", false, "Enable manual request approval")
 	StartCmd.Flags().IntP("rate-limit", "r", 0, "Rate limit in seconds between requests")
 	StartCmd.Flags().BoolP("wait", "w", false, "Wait instead of error when rate limit is hit")
+	StartCmd.Flags().Int("max-concurrent", 0, "Max concurrent in-flight proxy requests (0 = unlimited); excess requests get HTTP 503")
 	StartCmd.Flags().StringP("github-token", "g", "", "Provide GitHub token directly")
 	StartCmd.Flags().BoolP("claude-code", "c", false, "Generate a command to launch Claude Code with proxy config")
 	StartCmd.Flags().Bool("console", false, "Automatically open the admin console in your default browser")

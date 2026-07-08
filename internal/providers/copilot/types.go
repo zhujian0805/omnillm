@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	ghservice "omnillm/internal/services/github"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Shared HTTP clients: one for normal requests with timeout, one for streaming.
@@ -41,6 +44,12 @@ var (
 )
 
 type GitHubCopilotProvider struct {
+	// mu guards the mutable auth fields (token, githubToken, expiresAt, name)
+	// which are read on every request via GetToken/GetHeaders and written by
+	// RefreshToken/LoadFromDB/SetupAuth. A single *GitHubCopilotProvider is
+	// shared across all concurrent requests by the registry, so these accesses
+	// must be synchronized.
+	mu           sync.RWMutex
 	id           string
 	instanceID   string
 	name         string
@@ -49,6 +58,10 @@ type GitHubCopilotProvider struct {
 	expiresAt    int64  // Copilot token expiry (unix timestamp)
 	baseURL      string
 	tokenFetcher func(string) (*ghservice.CopilotTokenResponse, error)
+	// refreshGroup collapses concurrent token refreshes into a single upstream
+	// call (thundering-herd protection): when many requests find the token
+	// expired at once, only one performs the exchange and the rest wait for it.
+	refreshGroup singleflight.Group
 	shapeCache   modelShapeCache // populated once by GetModels(); read-only after that — no mutex needed
 }
 

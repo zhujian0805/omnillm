@@ -18,16 +18,25 @@ type logSubscriber struct {
 }
 
 var (
-	logSubscribersMu sync.RWMutex
-	logSubscribers   = make(map[*logSubscriber]struct{})
-	currentLogLevel  atomic.Int32 // stores zerolog.Level (int32)
-	serverStartTime  = time.Now()
-	adminStatus      = newAdminStatus()
+	logSubscribersMu   sync.RWMutex
+	logSubscribers     = make(map[*logSubscriber]struct{})
+	logSubscriberCount atomic.Int32 // mirrors len(logSubscribers) for lock-free fast-path checks
+	currentLogLevel    atomic.Int32 // stores zerolog.Level (int32)
+	serverStartTime    = time.Now()
+	adminStatus        = newAdminStatus()
 
 	// Active OAuth device code flow state
 	activeAuthFlowMu sync.RWMutex
 	activeAuthFlow   *authFlowState
 )
+
+// HasLogSubscribers reports whether any SSE log subscriber is currently
+// connected. It is lock-free (atomic load) so hot-path callers can skip the
+// expensive log-line formatting and broadcast entirely when nobody is
+// listening — the common case when the admin UI is closed.
+func HasLogSubscribers() bool {
+	return logSubscriberCount.Load() > 0
+}
 
 type adminStatusState struct {
 	mu             sync.RWMutex
@@ -79,6 +88,11 @@ func BroadcastLog(level, message string) {
 
 // BroadcastLogLine sends a preformatted log line to all SSE subscribers.
 func BroadcastLogLine(line string) {
+	// Fast path: nobody is listening, so skip the SSE formatting and lock.
+	if logSubscriberCount.Load() == 0 {
+		return
+	}
+
 	logSubscribersMu.RLock()
 	defer logSubscribersMu.RUnlock()
 
