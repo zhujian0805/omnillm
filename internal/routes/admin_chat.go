@@ -272,11 +272,13 @@ func handleLogsStream(c *gin.Context) {
 
 	logSubscribersMu.Lock()
 	logSubscribers[sub] = struct{}{}
+	logSubscriberCount.Add(1)
 	logSubscribersMu.Unlock()
 
 	defer func() {
 		logSubscribersMu.Lock()
 		delete(logSubscribers, sub)
+		logSubscriberCount.Add(-1)
 		logSubscribersMu.Unlock()
 		close(sub.done)
 	}()

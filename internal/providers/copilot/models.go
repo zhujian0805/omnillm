@@ -231,7 +231,10 @@ func (p *GitHubCopilotProvider) CreateChatCompletions(payload map[string]interfa
 }
 
 func (p *GitHubCopilotProvider) CreateEmbeddings(payload map[string]interface{}) (map[string]interface{}, error) {
-	if p.token == "" {
+	p.mu.RLock()
+	hasToken := p.token != ""
+	p.mu.RUnlock()
+	if !hasToken {
 		return nil, fmt.Errorf("provider not authenticated")
 	}
 
@@ -271,10 +274,13 @@ func (p *GitHubCopilotProvider) CreateEmbeddings(payload map[string]interface{})
 }
 
 func (p *GitHubCopilotProvider) GetUsage() (map[string]interface{}, error) {
-	if p.githubToken == "" {
+	p.mu.RLock()
+	githubToken := p.githubToken
+	p.mu.RUnlock()
+	if githubToken == "" {
 		return nil, fmt.Errorf("GitHub token not available")
 	}
-	return ghservice.GetCopilotUsage(p.githubToken)
+	return ghservice.GetCopilotUsage(githubToken)
 }
 
 // shapeFromEndpoints returns the preferred copilotAPIShape for a model given

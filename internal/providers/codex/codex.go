@@ -16,11 +16,13 @@ import (
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"strings"
+	"sync"
 	"time"
 
 	ghservice "omnillm/internal/services/github"
 
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -56,6 +58,11 @@ var (
 // CodexProvider authenticates via an OpenAI API key (primary) or a legacy
 // GitHub OAuth token and routes requests to the Codex endpoint.
 type CodexProvider struct {
+	// mu guards the mutable auth/config fields below. A single *CodexProvider is
+	// shared across all concurrent requests by the registry; GetToken/GetHeaders
+	// read these on every request while RefreshToken/SetupAuth/LoadFromDB write
+	// them, so access must be synchronized.
+	mu          sync.RWMutex
 	id          string
 	instanceID  string
 	name        string
@@ -64,6 +71,8 @@ type CodexProvider struct {
 	githubToken string // long-lived GitHub OAuth token (legacy path)
 	expiresAt   int64
 	baseURL     string
+	// refreshGroup collapses concurrent token refreshes into one upstream call.
+	refreshGroup singleflight.Group
 }
 
 // CodexAdapter bridges the provider to the CIF execution layer.
@@ -85,8 +94,16 @@ func NewCodexProvider(instanceID string) *CodexProvider {
 
 func (p *CodexProvider) GetID() string         { return p.id }
 func (p *CodexProvider) GetInstanceID() string { return p.instanceID }
-func (p *CodexProvider) GetName() string       { return p.name }
-func (p *CodexProvider) SetName(name string)   { p.name = name }
+func (p *CodexProvider) GetName() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.name
+}
+func (p *CodexProvider) SetName(name string) {
+	p.mu.Lock()
+	p.name = name
+	p.mu.Unlock()
+}
 func (p *CodexProvider) SetInstanceID(id string) { p.instanceID = id }
 
 // SetupAuth configures the provider.  Pass an OpenAI API key via
@@ -99,9 +116,11 @@ func (p *CodexProvider) SetupAuth(options *types.AuthOptions) error {
 
 	// Primary: OpenAI API key.
 	if strings.TrimSpace(options.APIKey) != "" {
+		p.mu.Lock()
 		p.apiKey = strings.TrimSpace(options.APIKey)
 		p.baseURL = codexBaseURL
 		p.name = "Codex"
+		p.mu.Unlock()
 		log.Info().Str("provider", p.instanceID).Msg("Codex: configured with OpenAI API key")
 		return nil
 	}
@@ -114,15 +133,19 @@ func (p *CodexProvider) SetupAuth(options *types.AuthOptions) error {
 	if token == "" {
 		return fmt.Errorf("an OpenAI API key (apiKey) is required for Codex")
 	}
+	p.mu.Lock()
 	p.githubToken = token
 	p.baseURL = codexGitHubBaseURL
+	p.mu.Unlock()
 	if err := p.RefreshToken(); err != nil {
 		return fmt.Errorf("failed to exchange GitHub token for Codex token: %w", err)
 	}
-	user, err := ghservice.GetUser(p.githubToken)
+	user, err := ghservice.GetUser(token)
 	if err == nil {
 		if name := codexProviderName(user); name != "" {
+			p.mu.Lock()
 			p.name = name
+			p.mu.Unlock()
 		}
 	}
 	return nil
@@ -147,11 +170,15 @@ func (p *CodexProvider) PollAndCompleteDeviceCodeFlow(dc *ghservice.DeviceCodeRe
 	if err != nil {
 		return fmt.Errorf("codex: failed to poll access token: %w", err)
 	}
+	p.mu.Lock()
 	p.githubToken = accessToken
+	p.mu.Unlock()
 	user, err := ghservice.GetUser(accessToken)
 	if err == nil {
 		if name := codexProviderName(user); name != "" {
+			p.mu.Lock()
 			p.name = name
+			p.mu.Unlock()
 			log.Info().Str("name", name).Msg("Codex: authenticated via device code")
 		}
 	}
@@ -162,58 +189,101 @@ func (p *CodexProvider) PollAndCompleteDeviceCodeFlow(dc *ghservice.DeviceCodeRe
 }
 
 // RefreshToken exchanges the long-lived GitHub token for a short-lived
-// Copilot/Codex API token.
+// Copilot/Codex API token. Safe for concurrent use.
 func (p *CodexProvider) RefreshToken() error {
-	if p.githubToken == "" {
+	p.mu.RLock()
+	githubToken := p.githubToken
+	instanceID := p.instanceID
+	p.mu.RUnlock()
+
+	if githubToken == "" {
 		return nil
 	}
-	resp, err := ghservice.GetCopilotToken(p.githubToken)
+	resp, err := ghservice.GetCopilotToken(githubToken)
 	if err != nil {
 		return fmt.Errorf("codex: refresh failed: %w", err)
 	}
+	p.mu.Lock()
 	p.token = resp.Token
 	p.expiresAt = resp.ExpiresAt
-	log.Info().Str("provider", p.instanceID).Msg("Codex: token refreshed")
+	p.mu.Unlock()
+	log.Info().Str("provider", instanceID).Msg("Codex: token refreshed")
 	return nil
 }
 
 // GetToken returns a valid token for API requests.
 // For API-key auth this is the key itself; for GitHub OAuth it returns the
 // short-lived Copilot token, refreshing it when needed.
+//
+// The valid-token case takes only a read lock. When a refresh is required,
+// concurrent callers are collapsed through a singleflight group so exactly one
+// upstream token exchange runs under load.
 func (p *CodexProvider) GetToken() string {
-	if p.apiKey != "" {
-		return p.apiKey
+	p.mu.RLock()
+	apiKey := p.apiKey
+	token := p.token
+	expiresAt := p.expiresAt
+	hasGitHub := p.githubToken != ""
+	p.mu.RUnlock()
+
+	if apiKey != "" {
+		return apiKey
 	}
-	if p.githubToken != "" {
-		if p.token == "" || p.expiresAt == 0 || time.Now().Unix() > p.expiresAt-300 {
-			if err := p.RefreshToken(); err != nil {
-				log.Warn().Err(err).Msg("Codex: auto-refresh failed")
-			}
+	if !hasGitHub {
+		return token
+	}
+
+	needsRefresh := token == "" || expiresAt == 0 || time.Now().Unix() > expiresAt-300
+	if !needsRefresh {
+		return token
+	}
+
+	_, _, _ = p.refreshGroup.Do("refresh", func() (interface{}, error) {
+		p.mu.RLock()
+		fresh := p.token != "" && p.expiresAt != 0 && time.Now().Unix() <= p.expiresAt-300
+		p.mu.RUnlock()
+		if fresh {
+			return nil, nil
 		}
-	}
-	return p.token
+		if err := p.RefreshToken(); err != nil {
+			log.Warn().Err(err).Msg("Codex: auto-refresh failed")
+		}
+		return nil, nil
+	})
+
+	p.mu.RLock()
+	token = p.token
+	p.mu.RUnlock()
+	return token
 }
 
 // SaveToDB persists auth credentials to the database.
 func (p *CodexProvider) SaveToDB() error {
+	p.mu.RLock()
+	instanceID := p.instanceID
 	data := map[string]interface{}{
 		"name": p.name,
 	}
 	if p.apiKey != "" {
-		data["api_key"]     = p.apiKey
+		data["api_key"] = p.apiKey
 		data["auth_method"] = "api-key"
 	} else {
 		data["github_token"] = p.githubToken
-		data["codex_token"]  = p.token
-		data["expires_at"]   = p.expiresAt
-		data["auth_method"]  = "github"
+		data["codex_token"] = p.token
+		data["expires_at"] = p.expiresAt
+		data["auth_method"] = "github"
 	}
-	return database.NewTokenStore().Save(p.instanceID, data)
+	p.mu.RUnlock()
+	return database.NewTokenStore().Save(instanceID, data)
 }
 
 // LoadFromDB restores credentials from the database.
 func (p *CodexProvider) LoadFromDB() error {
-	record, err := database.NewTokenStore().Get(p.instanceID)
+	p.mu.RLock()
+	instanceID := p.instanceID
+	p.mu.RUnlock()
+
+	record, err := database.NewTokenStore().Get(instanceID)
 	if err != nil {
 		return fmt.Errorf("codex: load from DB failed: %w", err)
 	}
@@ -224,13 +294,16 @@ func (p *CodexProvider) LoadFromDB() error {
 	if err := json.Unmarshal([]byte(record.TokenData), &data); err != nil {
 		return fmt.Errorf("codex: failed to parse token data: %w", err)
 	}
+
+	p.mu.Lock()
 	if v, ok := data["name"].(string); ok && v != "" {
 		p.name = v
 	}
 	// API-key path.
 	if v, ok := data["api_key"].(string); ok && v != "" {
-		p.apiKey  = v
+		p.apiKey = v
 		p.baseURL = codexBaseURL
+		p.mu.Unlock()
 		return nil
 	}
 	// Legacy GitHub OAuth path.
@@ -243,18 +316,26 @@ func (p *CodexProvider) LoadFromDB() error {
 	if v, ok := data["expires_at"].(float64); ok {
 		p.expiresAt = int64(v)
 	}
+	needsRefresh := false
 	if p.githubToken != "" {
 		p.baseURL = codexGitHubBaseURL
-		if p.token == "" || time.Now().Unix() > p.expiresAt-300 {
-			if err := p.RefreshToken(); err != nil {
-				log.Warn().Err(err).Str("provider", p.instanceID).Msg("Codex: refresh on load failed")
-			}
+		needsRefresh = p.token == "" || time.Now().Unix() > p.expiresAt-300
+	}
+	p.mu.Unlock()
+
+	if needsRefresh {
+		if err := p.RefreshToken(); err != nil {
+			log.Warn().Err(err).Str("provider", instanceID).Msg("Codex: refresh on load failed")
 		}
 	}
 	return nil
 }
 
-func (p *CodexProvider) GetBaseURL() string { return p.baseURL }
+func (p *CodexProvider) GetBaseURL() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.baseURL
+}
 
 // GetHeaders returns the HTTP headers to use for Codex API requests.
 // For API-key auth only standard OpenAI headers are sent; GitHub-specific
@@ -265,12 +346,15 @@ func (p *CodexProvider) GetHeaders(_ bool) map[string]string {
 		"Content-Type":  "application/json",
 		"Accept":        "application/json",
 	}
+	p.mu.RLock()
+	legacyOAuth := p.githubToken != ""
+	p.mu.RUnlock()
 	// Add GitHub Copilot headers only for legacy OAuth path.
-	if p.githubToken != "" {
-		headers["Editor-Version"]         = ghservice.EditorVersion
-		headers["Editor-Plugin-Version"]  = ghservice.PluginVersion
-		headers["User-Agent"]             = ghservice.UserAgent
-		headers["X-Github-Api-Version"]   = ghservice.APIVersion
+	if legacyOAuth {
+		headers["Editor-Version"] = ghservice.EditorVersion
+		headers["Editor-Plugin-Version"] = ghservice.PluginVersion
+		headers["User-Agent"] = ghservice.UserAgent
+		headers["X-Github-Api-Version"] = ghservice.APIVersion
 		headers["copilot-integration-id"] = "vscode-chat"
 	}
 	return headers
@@ -283,7 +367,7 @@ func (p *CodexProvider) GetModels() (*types.ModelsResponse, error) {
 		return nil, fmt.Errorf("codex: provider not authenticated")
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/models", p.baseURL), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/models", p.GetBaseURL()), nil)
 	if err == nil {
 		for k, v := range p.GetHeaders(false) {
 			req.Header.Set(k, v)
@@ -356,7 +440,7 @@ func (p *CodexProvider) CreateChatCompletions(payload map[string]interface{}) (m
 	if err != nil {
 		return nil, fmt.Errorf("codex: marshal error: %w", err)
 	}
-	url := fmt.Sprintf("%s/chat/completions", p.baseURL)
+	url := fmt.Sprintf("%s/chat/completions", p.GetBaseURL())
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("codex: create request error: %w", err)

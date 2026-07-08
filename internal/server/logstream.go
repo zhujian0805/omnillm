@@ -15,6 +15,14 @@ type sseLogWriter struct {
 }
 
 func (w sseLogWriter) Write(p []byte) (int, error) {
+	// Fast path: when no SSE log subscriber is connected (the common case — the
+	// admin UI is closed), skip the JSON parse + reformat entirely. This runs on
+	// every log line via zerolog's MultiLevelWriter, including the per-request
+	// HTTP access log, so avoiding the work here matters under concurrent load.
+	if !routes.HasLogSubscribers() {
+		return len(p), nil
+	}
+
 	raw := strings.TrimSpace(string(p))
 	if raw == "" {
 		return len(p), nil

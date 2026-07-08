@@ -23,8 +23,16 @@ func NewGitHubCopilotProvider(instanceID, name string) *GitHubCopilotProvider {
 // Provider interface implementation
 func (p *GitHubCopilotProvider) GetID() string         { return p.id }
 func (p *GitHubCopilotProvider) GetInstanceID() string { return p.instanceID }
-func (p *GitHubCopilotProvider) GetName() string       { return p.name }
-func (p *GitHubCopilotProvider) SetName(name string)   { p.name = name }
+func (p *GitHubCopilotProvider) GetName() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.name
+}
+func (p *GitHubCopilotProvider) SetName(name string) {
+	p.mu.Lock()
+	p.name = name
+	p.mu.Unlock()
+}
 
 // SetInstanceID updates the provider's in-memory instance ID.
 // Used by auth-and-create flow to assign the canonical ID after successful auth.

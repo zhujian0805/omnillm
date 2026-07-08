@@ -36,23 +36,24 @@ import (
 )
 
 type StartOptions struct {
-	Port                         int
-	Host                         string
-	Verbose                      bool
-	AccountType                  string
-	Manual                       bool
-	RateLimit                    *int
-	RateLimitWait                bool
-	GithubToken                  string
-	ClaudeCode                   bool
-	Console                      bool
-	ShowToken                    bool
-	ProxyEnv                     bool
-	Provider                     string
-	APIKey                       string
-	AllowLocalEndpoints          bool
-	EnableConfigEdit             bool
-	AllowedChromeExtensionIDs    []string
+	Port                      int
+	Host                      string
+	Verbose                   bool
+	AccountType               string
+	Manual                    bool
+	RateLimit                 *int
+	RateLimitWait             bool
+	MaxConcurrentRequests     int
+	GithubToken               string
+	ClaudeCode                bool
+	Console                   bool
+	ShowToken                 bool
+	ProxyEnv                  bool
+	Provider                  string
+	APIKey                    string
+	AllowLocalEndpoints       bool
+	EnableConfigEdit          bool
+	AllowedChromeExtensionIDs []string
 }
 
 func RunServer(options StartOptions) error {
@@ -107,7 +108,7 @@ func RunServer(options StartOptions) error {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := buildRouter(options.Port, options.APIKey, chatOptions)
+	r := buildRouter(options.Port, options.APIKey, chatOptions, options.MaxConcurrentRequests)
 
 	bindHost := options.Host
 	if bindHost == "" {
@@ -134,6 +135,16 @@ func RunServer(options StartOptions) error {
 	srv := &http.Server{
 		Addr:    bindAddr,
 		Handler: r.Handler(),
+		// ReadHeaderTimeout bounds how long a client may take to send request
+		// headers, mitigating slow-loris style connection exhaustion under many
+		// concurrent clients. IdleTimeout caps how long idle keep-alive
+		// connections linger so they cannot accumulate unbounded.
+		//
+		// ReadTimeout and WriteTimeout are intentionally left at 0: this proxy
+		// serves long-lived SSE streams whose total duration is unbounded, and a
+		// WriteTimeout would sever in-flight streaming responses.
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	serverErr := make(chan error, 1)
@@ -171,11 +182,18 @@ func RunServer(options StartOptions) error {
 	return nil
 }
 
-func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptions) *gin.Engine {
+func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptions, maxConcurrent int) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
 	auth := newAuthConfig(apiKey)
+
+	// Concurrency limiter for the expensive proxy routes. Disabled (pass-through)
+	// when maxConcurrent <= 0, preserving the default unbounded behavior.
+	proxyLimiter := routes.NewConcurrencyLimiter(maxConcurrent)
+	if proxyLimiter.Limit() > 0 {
+		log.Info().Int("max_concurrent_requests", proxyLimiter.Limit()).Msg("In-flight request concurrency cap enabled")
+	}
 
 	// Structured logging middleware with request ID
 	r.Use(func(c *gin.Context) {
@@ -243,7 +261,9 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 	})
 
 	// API routes
-	api := r.Group("/", auth.middleware())
+	// The concurrency limiter runs after auth so unauthenticated/rejected
+	// requests never consume a slot, and only guards the expensive proxy routes.
+	api := r.Group("/", auth.middleware(), proxyLimiter.Middleware())
 	routes.SetupChatCompletionRoutes(api, chatOptions)
 	routes.SetupModelRoutes(api)
 	routes.SetupEmbeddingRoutes(api)
@@ -251,7 +271,7 @@ func buildRouter(port int, apiKey string, chatOptions routes.ChatCompletionOptio
 	routes.SetupTokenRoutes(api)
 
 	// v1 compatibility routes
-	v1 := r.Group("/v1", auth.middleware())
+	v1 := r.Group("/v1", auth.middleware(), proxyLimiter.Middleware())
 	routes.SetupChatCompletionRoutes(v1, chatOptions)
 	routes.SetupModelRoutes(v1)
 	routes.SetupEmbeddingRoutes(v1)

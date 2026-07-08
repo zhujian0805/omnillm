@@ -14,7 +14,9 @@ import (
 func (p *GitHubCopilotProvider) SetupAuth(options *types.AuthOptions) error {
 	// If a GitHub token is provided directly, use it
 	if options != nil && options.GithubToken != "" {
+		p.mu.Lock()
 		p.githubToken = options.GithubToken
+		p.mu.Unlock()
 		// Exchange GitHub OAuth token for Copilot token
 		if err := p.RefreshToken(); err != nil {
 			log.Warn().Err(err).Str("provider", p.instanceID).Msg("Failed to get initial Copilot token from GitHub OAuth")
@@ -22,10 +24,13 @@ func (p *GitHubCopilotProvider) SetupAuth(options *types.AuthOptions) error {
 		}
 
 		// Fetch user info to get the login
-		user, err := ghservice.GetUser(p.githubToken)
+		user, err := ghservice.GetUser(options.GithubToken)
 		if err == nil {
-			p.name = ghservice.CopilotProviderName(user)
-			log.Info().Str("provider", p.instanceID).Str("name", p.name).Msg("GitHub Copilot authenticated")
+			name := ghservice.CopilotProviderName(user)
+			p.mu.Lock()
+			p.name = name
+			p.mu.Unlock()
+			log.Info().Str("provider", p.instanceID).Str("name", name).Msg("GitHub Copilot authenticated")
 		}
 
 		return nil
@@ -62,7 +67,9 @@ func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlow(deviceCode *ghserv
 		return fmt.Errorf("failed to poll access token: %w", err)
 	}
 
+	p.mu.Lock()
 	p.githubToken = accessToken
+	p.mu.Unlock()
 	log.Info().Str("provider", p.instanceID).Msg("GitHub access token received")
 
 	// Get user info to update the provider name
@@ -70,10 +77,13 @@ func (p *GitHubCopilotProvider) PollAndCompleteDeviceCodeFlow(deviceCode *ghserv
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to get user info after OAuth")
 	} else {
-		p.name = ghservice.CopilotProviderName(user)
+		name := ghservice.CopilotProviderName(user)
+		p.mu.Lock()
+		p.name = name
+		p.mu.Unlock()
 		log.Info().
 			Str("instance_id", p.instanceID).
-			Str("name", p.name).
+			Str("name", name).
 			Msg("GitHub Copilot authenticated via device code")
 	}
 
