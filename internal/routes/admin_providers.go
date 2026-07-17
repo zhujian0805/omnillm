@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
@@ -30,10 +31,14 @@ func handleGetProviders(c *gin.Context) {
 	providerRegistry := registry.GetProviderRegistry()
 	providers := providerRegistry.ListProviders()
 
-	providerList := make([]map[string]interface{}, 0, len(providers))
+	providerList := make([]map[string]interface{}, len(providers))
 	instanceStore := database.NewProviderInstanceStore()
-	for _, provider := range providers {
-		config, configErr := loadProviderConfig(provider.GetInstanceID())
+	var wg sync.WaitGroup
+	for i, provider := range providers {
+		wg.Add(1)
+		go func(i int, provider types.Provider) {
+			defer wg.Done()
+			config, configErr := loadProviderConfig(provider.GetInstanceID())
 		if configErr != nil {
 			log.Warn().Err(configErr).Str("provider", provider.GetInstanceID()).Msg("Failed to load provider config")
 		}
@@ -80,8 +85,10 @@ func handleGetProviders(c *gin.Context) {
 			providerInfo["enabledModelCount"] = 0
 		}
 
-		providerList = append(providerList, providerInfo)
+			providerList[i] = providerInfo
+		}(i, provider)
 	}
+	wg.Wait()
 
 	c.JSON(http.StatusOK, providerList)
 }
