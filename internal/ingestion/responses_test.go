@@ -439,6 +439,63 @@ func TestParseResponsesPayload_IgnoresReasoningItems(t *testing.T) {
 	}
 }
 
+func TestParseResponsesPayload_IgnoresAdditionalToolsItems(t *testing.T) {
+	// Codex >=0.144 prepends an "additional_tools" input item; it must be
+	// skipped as a message (like "reasoning") AND its tool defs extracted into
+	// the CIF tool set. Regression for the "unknown input item type:
+	// additional_tools" 400 and the "tools:0" empty-toolset bug on translated
+	// backends (e.g. gpt-5.6-sol).
+	req, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
+		"model": "gpt-5.4-mini",
+		"input": []interface{}{
+			map[string]interface{}{
+				"type": "additional_tools",
+				"role": "developer",
+				"id":   "at_123",
+				"tools": []interface{}{
+					map[string]interface{}{
+						"name":        "shell",
+						"description": "Run a shell command",
+						"parameters":  map[string]interface{}{"type": "object"},
+					},
+					map[string]interface{}{
+						"type": "namespace",
+						"name": "fs",
+						"tools": []interface{}{
+							map[string]interface{}{
+								"name":        "read",
+								"description": "Read a file",
+								"parameters":  map[string]interface{}{"type": "object"},
+							},
+						},
+					},
+				},
+			},
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "user",
+				"content": []interface{}{map[string]interface{}{"type": "input_text", "text": "hi"}},
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("expected only the user message, got %d messages", len(req.Messages))
+	}
+	if len(req.Tools) != 2 {
+		t.Fatalf("expected 2 extracted tools, got %d: %#v", len(req.Tools), req.Tools)
+	}
+	names := map[string]bool{}
+	for _, tl := range req.Tools {
+		names[tl.Name] = true
+	}
+	if !names["shell"] || !names["fs__read"] {
+		t.Fatalf("expected tools shell + fs__read, got %#v", names)
+	}
+}
+
 func TestParseResponsesPayload_RejectsMalformedInputItem(t *testing.T) {
 	_, err := ParseResponsesPayload(mustRawR(t, map[string]interface{}{
 		"model": "gpt-5.4-mini",

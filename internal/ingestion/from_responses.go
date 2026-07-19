@@ -100,6 +100,12 @@ func ParseResponsesPayload(raw json.RawMessage) (*cif.CanonicalRequest, error) {
 	canonical.Messages = messages
 
 	canonical.Tools = translateResponsesTools(req.Tools)
+	// Codex responses-lite (>=0.144) omits top-level "tools" and instead ships
+	// an "additional_tools" input item carrying the tool definitions. Extract
+	// those so translated backends still receive the tool set.
+	if len(canonical.Tools) == 0 {
+		canonical.Tools = extractAdditionalTools(req.Input)
+	}
 	canonical.ToolChoice = translateResponsesToolChoice(req.ToolChoice)
 
 	log.Debug().
@@ -200,7 +206,7 @@ func translateResponsesInput(input interface{}) ([]cif.CIFMessage, error) {
 					},
 				})
 
-			case "reasoning":
+			case "reasoning", "additional_tools":
 				continue
 
 			default:
@@ -285,6 +291,69 @@ func parseToolArguments(argumentsStr string) map[string]interface{} {
 		return parsed
 	}
 	return map[string]interface{}{"_unparsable_arguments": argumentsStr}
+}
+
+// extractAdditionalTools pulls tool definitions out of a Codex responses-lite
+// "additional_tools" input item. Codex nests tools either as flat function
+// tools ({name, description, parameters}) or as namespaced groups
+// ({type:"namespace", name, tools:[...]}). Namespaced tool names are flattened
+// to "<namespace>__<tool>" to keep them unique across groups.
+func extractAdditionalTools(input any) []cif.CIFTool {
+	items, ok := input.([]interface{})
+	if !ok {
+		return nil
+	}
+	var cifTools []cif.CIFTool
+	appendTool := func(prefix string, tm map[string]interface{}) {
+		name, _ := tm["name"].(string)
+		if name == "" {
+			return
+		}
+		if prefix != "" {
+			name = prefix + "__" + name
+		}
+		desc, _ := tm["description"].(string)
+		params, _ := tm["parameters"].(map[string]interface{})
+		cifTools = append(cifTools, cif.CIFTool{
+			Name:             name,
+			Description:      &desc,
+			ParametersSchema: params,
+		})
+	}
+	for _, item := range items {
+		im, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if t, _ := im["type"].(string); t != "additional_tools" {
+			continue
+		}
+		toolList, ok := im["tools"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, raw := range toolList {
+			tm, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if tt, _ := tm["type"].(string); tt == "namespace" {
+				ns, _ := tm["name"].(string)
+				nested, _ := tm["tools"].([]interface{})
+				for _, nraw := range nested {
+					if ntm, ok := nraw.(map[string]interface{}); ok {
+						appendTool(ns, ntm)
+					}
+				}
+				continue
+			}
+			appendTool("", tm)
+		}
+	}
+	if len(cifTools) == 0 {
+		return nil
+	}
+	return cifTools
 }
 
 func translateResponsesTools(tools []ResponsesTool) []cif.CIFTool {
