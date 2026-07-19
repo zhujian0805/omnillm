@@ -49,6 +49,17 @@ type CopilotTokenResponse struct {
 	Token     string `json:"token"`
 	ExpiresAt int64  `json:"expires_at"`
 	RefreshIn int    `json:"refresh_in"`
+	// Endpoints carries the per-account API hosts returned by the token
+	// exchange. Enterprise Copilot seats return a non-public api host here
+	// (e.g. https://api.enterprise.githubcopilot.com); personal seats return
+	// the public https://api.githubcopilot.com. Empty on older/edge responses.
+	Endpoints CopilotEndpoints `json:"endpoints"`
+}
+
+// CopilotEndpoints holds the account-specific upstream hosts from the Copilot
+// token exchange. Only the chat/completions API host matters for routing.
+type CopilotEndpoints struct {
+	API string `json:"api"`
 }
 
 // GetDeviceCode initiates the GitHub OAuth device code flow
