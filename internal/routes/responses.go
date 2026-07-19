@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/ingestion"
+	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
@@ -137,6 +138,9 @@ func handleResponses(c *gin.Context) {
 					Str("provider", providerID).
 					Str("upstream_model", candidate.UpstreamModel).
 					Msg("Provider failed for Responses API request, trying next")
+			}
+			if err == nil {
+				affinity.Get().Record(canonicalRequest, candidate.CanonicalModel, providerID)
 			}
 			return err
 		},

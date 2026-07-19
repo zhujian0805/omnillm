@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/ingestion"
+	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/approval"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/ratelimit"
@@ -145,6 +146,8 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 					Str("provider", providerID).
 					Str("upstream_model", candidate.UpstreamModel).
 					Msg("Provider failed, trying next")
+			} else {
+				affinity.Get().Record(canonicalRequest, candidate.CanonicalModel, providerID)
 			}
 			return err
 		},

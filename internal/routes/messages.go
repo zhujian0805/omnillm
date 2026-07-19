@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"omnillm/internal/cif"
 	"omnillm/internal/ingestion"
+	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
@@ -139,6 +140,7 @@ func handleMessages(c *gin.Context) {
 					Msg("Provider failed for Anthropic request, trying next")
 				return err
 			}
+			affinity.Get().Record(canonicalRequest, candidate.CanonicalModel, providerID)
 			logLatencyProbe(requestIDStr, "anthropic_candidate_complete", candidateStart)
 			return nil
 		},
