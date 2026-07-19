@@ -3,6 +3,7 @@ package copilot
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"omnillm/internal/database"
@@ -57,6 +58,20 @@ func (p *GitHubCopilotProvider) RefreshToken() error {
 
 	p.token = copilotToken.Token
 	p.expiresAt = copilotToken.ExpiresAt
+
+	// Enterprise Copilot seats serve from an account-specific API host
+	// (e.g. https://api.enterprise.githubcopilot.com) advertised in the token
+	// exchange's endpoints.api field. Personal seats return the public host.
+	// Adopt whatever the exchange reports so enterprise seats route correctly
+	// instead of hitting the hardcoded public host and failing every request.
+	if api := strings.TrimSpace(copilotToken.Endpoints.API); api != "" && api != p.baseURL {
+		log.Info().
+			Str("provider", p.instanceID).
+			Str("old_base_url", p.baseURL).
+			Str("new_base_url", api).
+			Msg("Copilot upstream API host updated from token exchange")
+		p.baseURL = api
+	}
 
 	log.Info().Str("provider", p.instanceID).Msg("Copilot token refreshed")
 	return nil
