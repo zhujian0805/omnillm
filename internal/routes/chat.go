@@ -10,6 +10,7 @@ import (
 	"omnillm/internal/lib/approval"
 	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/lib/ratelimit"
+	"omnillm/internal/lib/responsecache"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
@@ -107,6 +108,36 @@ func (h *chatCompletionHandler) handleChatCompletions(c *gin.Context) {
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "openai")
 
+	// Exact-match response cache (opt-in, deterministic requests).
+	cacheCfg := responsecache.LoadConfig()
+	bypass := responsecache.ParseBypass(c.GetHeader(responsecache.BypassHeader))
+	var cacheKey string
+	cacheEligible := cacheCfg.Enabled && bypass != responsecache.BypassAll && responsecache.Cacheable(canonicalRequest)
+	if cacheEligible {
+		cacheKey = responsecache.Key(canonicalRequest)
+		if bypass != responsecache.BypassRead {
+			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+				if canonicalRequest.Stream {
+					replayOpenAIStreamFromCache(c, hit)
+					logCompletedResponse("openai", requestIDStr, originalModel, hit.Model, "cache", true, hit.StopReason, hit.Usage, startTime)
+					return
+				}
+				openaiResp, err := serialization.SerializeToOpenAI(hit)
+				if err == nil {
+					c.Header("X-OmniLLM-Cache", "hit")
+					logCompletedResponse("openai", requestIDStr, originalModel, hit.Model, "cache", false, hit.StopReason, hit.Usage, startTime)
+					c.JSON(http.StatusOK, openaiResp)
+					return
+				}
+				log.Warn().Err(err).Str("request_id", requestIDStr).Msg("Cache hit failed to serialize; falling through to upstream")
+			}
+		}
+	}
+
+	if cacheEligible {
+		c.Set("responsecache_key", cacheKey)
+	}
+
 	// Resolve providers for the requested model
 	attempts := resolveRequestedModels(requestIDStr, canonicalRequest.Model)
 	executor := providerdispatch.NewExecutor(providerdispatch.ApplyGitHubCopilotSingleUpstreamMode, providerdispatch.DefaultUpstreamAPI)
@@ -179,6 +210,14 @@ func handleNonStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, c
 	logCompletedResponse("openai", requestID, originalModel, response.Model, providerID, false, response.StopReason, response.Usage, startTime)
 	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "openai", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
+	// Populate the exact-match response cache if this request was eligible.
+	if key, ok := c.Get("responsecache_key"); ok {
+		if keyStr, _ := key.(string); keyStr != "" {
+			responsecache.Put(responsecache.LoadConfig(), canonicalRequest, keyStr, response)
+			c.Header("X-OmniLLM-Cache", "miss")
+		}
+	}
+
 	c.JSON(http.StatusOK, openaiResp)
 	return nil
 }
@@ -196,6 +235,18 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 
 	setSSEHeaders(c, true)
 
+	// If this request is cache-eligible, accumulate the stream into a
+	// CanonicalResponse so it can be stored and replayed on a future hit.
+	var acc *responsecache.StreamAccumulator
+	var cacheKey string
+	if key, ok := c.Get("responsecache_key"); ok {
+		if ks, _ := key.(string); ks != "" {
+			cacheKey = ks
+			acc = responsecache.NewStreamAccumulator()
+			c.Header("X-OmniLLM-Cache", "miss")
+		}
+	}
+
 	state := serialization.CreateOpenAIStreamState()
 	flusher, _ := c.Writer.(http.Flusher)
 	modelUsed := canonicalRequest.Model
@@ -208,6 +259,10 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 		case event, ok := <-eventCh:
 			if !ok {
 				return false
+			}
+
+			if acc != nil {
+				acc.Observe(event)
 			}
 
 			sseData, err := serialization.ConvertCIFEventToOpenAISSE(event, state)
@@ -241,6 +296,12 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 					Int64("latency_ms", time.Since(startTime).Milliseconds()).
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
 				recordUsage(requestID, originalModel, modelUsed, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "openai", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
+
+				if acc != nil {
+					if assembled := acc.Response(); assembled != nil {
+						responsecache.Put(responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
+					}
+				}
 				return false
 			}
 
@@ -253,4 +314,27 @@ func handleStreamingResponse(c *gin.Context, adapter types.ProviderAdapter, cano
 	})
 
 	return nil
+}
+
+// replayOpenAIStreamFromCache re-emits a cached CanonicalResponse as an OpenAI
+// SSE stream, so a streaming client gets a cache hit as a normal (if instant)
+// stream. It reuses the production event serializer via synthesized CIF events.
+func replayOpenAIStreamFromCache(c *gin.Context, resp *cif.CanonicalResponse) {
+	c.Header("X-OmniLLM-Cache", "hit")
+	setSSEHeaders(c, true)
+	state := serialization.CreateOpenAIStreamState()
+	flusher, _ := c.Writer.(http.Flusher)
+	events := responsecache.SynthesizeStream(resp)
+	c.Stream(func(w io.Writer) bool {
+		for _, ev := range events {
+			sseData, err := serialization.ConvertCIFEventToOpenAISSE(ev, state)
+			if err != nil {
+				return false
+			}
+			if sseData != "" {
+				flushStreamWriter(w, flusher, sseData)
+			}
+		}
+		return false
+	})
 }

@@ -9,6 +9,7 @@ import (
 	"omnillm/internal/ingestion"
 	"omnillm/internal/lib/affinity"
 	"omnillm/internal/lib/modelrouting"
+	"omnillm/internal/lib/responsecache"
 	"omnillm/internal/providerdispatch"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/serialization"
@@ -86,6 +87,31 @@ func handleMessages(c *gin.Context) {
 
 	originalModel := prepareCanonicalRequest(c, canonicalRequest, "anthropic")
 	logAnthropicToolLoopRequest(requestIDStr, canonicalRequest)
+
+	// Exact-match response cache (opt-in, deterministic requests).
+	// Shape-agnostic: a CanonicalResponse cached via the OpenAI route can satisfy
+	// this Anthropic request and vice versa.
+	cacheCfg := responsecache.LoadConfig()
+	bypass := responsecache.ParseBypass(c.GetHeader(responsecache.BypassHeader))
+	cacheEligible := cacheCfg.Enabled && bypass != responsecache.BypassAll && responsecache.Cacheable(canonicalRequest)
+	if cacheEligible {
+		cacheKey := responsecache.Key(canonicalRequest)
+		if bypass != responsecache.BypassRead {
+			if hit := responsecache.Get(cacheCfg, canonicalRequest, cacheKey); hit != nil {
+				suppressThinking := !strings.Contains(c.GetHeader("anthropic-beta"), "interleaved-thinking")
+				if canonicalRequest.Stream {
+					replayAnthropicStreamFromCache(c, hit, suppressThinking)
+					return
+				}
+				if anthropicResp, err := serialization.SerializeToAnthropicWithSuppression(hit, suppressThinking); err == nil {
+					c.Header("X-OmniLLM-Cache", "hit")
+					c.JSON(http.StatusOK, anthropicResp)
+					return
+				}
+			}
+		}
+		c.Set("responsecache_key", cacheKey)
+	}
 
 	var resolveStart time.Time
 	if log.Logger.GetLevel() <= zerolog.DebugLevel {
@@ -192,6 +218,13 @@ func handleAnthropicNonStreamingResponse(c *gin.Context, adapter types.ProviderA
 		Msg("\x1b[32m<--\x1b[0m RESPONSE")
 	recordUsage(requestID, originalModel, response.Model, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", response.Usage, time.Since(startTime).Milliseconds(), false, http.StatusOK, "")
 
+	if key, ok := c.Get("responsecache_key"); ok {
+		if keyStr, _ := key.(string); keyStr != "" {
+			responsecache.Put(responsecache.LoadConfig(), canonicalRequest, keyStr, response)
+			c.Header("X-OmniLLM-Cache", "miss")
+		}
+	}
+
 	c.JSON(http.StatusOK, anthropicResp)
 	return nil
 }
@@ -226,6 +259,16 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 	modelUsed := canonicalRequest.Model
 	toolCallTracker := newToolLoopCallTracker()
 
+	var acc *responsecache.StreamAccumulator
+	var cacheKey string
+	if key, ok := c.Get("responsecache_key"); ok {
+		if ks, _ := key.(string); ks != "" {
+			cacheKey = ks
+			acc = responsecache.NewStreamAccumulator()
+			c.Header("X-OmniLLM-Cache", "miss")
+		}
+	}
+
 	c.Stream(func(w io.Writer) bool {
 		select {
 		case <-ctx.Done():
@@ -235,6 +278,9 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 				return false
 			}
 			toolCallTracker.Observe(event)
+			if acc != nil {
+				acc.Observe(event)
+			}
 
 			sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(event, state)
 			if err != nil {
@@ -281,6 +327,12 @@ func handleAnthropicStreamingResponse(c *gin.Context, adapter types.ProviderAdap
 					Int64("latency_ms", time.Since(startTime).Milliseconds()).
 					Msg("\x1b[32m<--\x1b[0m RESPONSE stream")
 				recordUsage(requestID, originalModel, modelUsed, providerID, normalizeMeteringClient(c.GetHeader("User-Agent")), "anthropic", endEvt.Usage, time.Since(startTime).Milliseconds(), true, http.StatusOK, "")
+
+				if acc != nil {
+					if assembled := acc.Response(); assembled != nil {
+						responsecache.Put(responsecache.LoadConfig(), canonicalRequest, cacheKey, assembled)
+					}
+				}
 				return false
 			}
 
@@ -386,4 +438,40 @@ func estimateStringTokens(s string) int {
 		tokens = 1
 	}
 	return tokens
+}
+
+// replayAnthropicStreamFromCache re-emits a cached CanonicalResponse as an
+// Anthropic SSE stream, reusing the production event serializer via synthesized
+// CIF events so a streaming Claude Code client sees a normal (instant) stream.
+func replayAnthropicStreamFromCache(c *gin.Context, resp *cif.CanonicalResponse, suppressThinking bool) {
+	c.Header("X-OmniLLM-Cache", "hit")
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	state := serialization.CreateAnthropicStreamState()
+	state.SuppressThinkingBlocks = suppressThinking
+	flusher, _ := c.Writer.(http.Flusher)
+	events := responsecache.SynthesizeStream(resp)
+
+	c.Stream(func(w io.Writer) bool {
+		for _, ev := range events {
+			sseEvents, err := serialization.ConvertCIFEventToAnthropicSSE(ev, state)
+			if err != nil {
+				return false
+			}
+			for _, sseEvent := range sseEvents {
+				eventType, _ := sseEvent["type"].(string)
+				formatted, err := serialization.FormatAnthropicSSEData(eventType, sseEvent)
+				if err != nil {
+					return false
+				}
+				fmt.Fprint(w, formatted)
+			}
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return false
+	})
 }
