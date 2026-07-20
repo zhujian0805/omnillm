@@ -11,6 +11,7 @@ require (
 	github.com/openai/openai-go/v3 v3.35.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.8.1
+	golang.org/x/sync v0.20.0
 	modernc.org/sqlite v1.28.0
 )
 
@@ -53,7 +54,6 @@ require (
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect

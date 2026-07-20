@@ -18,63 +18,95 @@ func (p *GitHubCopilotProvider) SetGitHubToken(token string) {
 }
 
 func (p *GitHubCopilotProvider) GetToken() string {
-	if p.githubToken != "" {
-		needsRefresh := p.token == "" || p.expiresAt == 0 || time.Now().Unix() > p.expiresAt-300
-		if needsRefresh {
-			var refreshStart time.Time
-			if debugEnabled() {
-				refreshStart = time.Now()
-			}
-			if err := p.RefreshToken(); err != nil {
-				log.Warn().Err(err).Msg("Failed to auto-refresh Copilot token")
-			}
-			if debugEnabled() {
-				log.Debug().
-					Str("provider", p.instanceID).
-					Bool("needs_refresh", needsRefresh).
-					Int64("elapsed_ms", time.Since(refreshStart).Milliseconds()).
-					Msg("Copilot GetToken refresh path")
-			}
-		}
+	p.mu.RLock()
+	githubToken := p.githubToken
+	token := p.token
+	expiresAt := p.expiresAt
+	p.mu.RUnlock()
+
+	if githubToken == "" {
+		return token
 	}
-	return p.token
+
+	needsRefresh := token == "" || expiresAt == 0 || time.Now().Unix() > expiresAt-300
+	if !needsRefresh {
+		return token
+	}
+
+	var refreshStart time.Time
+	if debugEnabled() {
+		refreshStart = time.Now()
+	}
+	if err := p.RefreshToken(); err != nil {
+		log.Warn().Err(err).Msg("Failed to auto-refresh Copilot token")
+	}
+	if debugEnabled() {
+		log.Debug().
+			Str("provider", p.instanceID).
+			Bool("needs_refresh", needsRefresh).
+			Int64("elapsed_ms", time.Since(refreshStart).Milliseconds()).
+			Msg("Copilot GetToken refresh path")
+	}
+
+	p.mu.RLock()
+	token = p.token
+	p.mu.RUnlock()
+	return token
 }
 
 func (p *GitHubCopilotProvider) RefreshToken() error {
-	if p.githubToken == "" {
-		log.Debug().Str("provider", p.instanceID).Msg("No GitHub token available for refresh")
+	p.mu.RLock()
+	githubToken := p.githubToken
+	fetcher := p.tokenFetcher
+	instanceID := p.instanceID
+	p.mu.RUnlock()
+
+	if githubToken == "" {
+		log.Debug().Str("provider", instanceID).Msg("No GitHub token available for refresh")
 		return nil
 	}
-
-	fetcher := p.tokenFetcher
 	if fetcher == nil {
 		fetcher = ghservice.GetCopilotToken
 	}
 
-	copilotToken, err := fetcher(p.githubToken)
-	if err != nil {
-		return fmt.Errorf("failed to refresh Copilot token: %w", err)
-	}
+	// Collapse concurrent refreshes into a single upstream exchange
+	// (thundering-herd protection): when many requests find the token expired
+	// at once, only one performs the exchange and the rest wait for its result.
+	_, err, _ := p.refreshGroup.Do(instanceID, func() (interface{}, error) {
+		copilotToken, err := fetcher(githubToken)
+		if err != nil {
+			return nil, fmt.Errorf("failed to refresh Copilot token: %w", err)
+		}
 
-	p.token = copilotToken.Token
-	p.expiresAt = copilotToken.ExpiresAt
+		// Enterprise Copilot seats serve from an account-specific API host
+		// (e.g. https://api.enterprise.githubcopilot.com) advertised in the
+		// token exchange's endpoints.api field. Personal seats return the
+		// public host. Adopt whatever the exchange reports so enterprise seats
+		// route correctly instead of hitting the hardcoded public host and
+		// failing every request.
+		p.mu.Lock()
+		p.token = copilotToken.Token
+		p.expiresAt = copilotToken.ExpiresAt
+		oldBaseURL := p.baseURL
+		newBaseURL := oldBaseURL
+		if api := strings.TrimSpace(copilotToken.Endpoints.API); api != "" && api != oldBaseURL {
+			p.baseURL = api
+			newBaseURL = api
+		}
+		p.mu.Unlock()
 
-	// Enterprise Copilot seats serve from an account-specific API host
-	// (e.g. https://api.enterprise.githubcopilot.com) advertised in the token
-	// exchange's endpoints.api field. Personal seats return the public host.
-	// Adopt whatever the exchange reports so enterprise seats route correctly
-	// instead of hitting the hardcoded public host and failing every request.
-	if api := strings.TrimSpace(copilotToken.Endpoints.API); api != "" && api != p.baseURL {
-		log.Info().
-			Str("provider", p.instanceID).
-			Str("old_base_url", p.baseURL).
-			Str("new_base_url", api).
-			Msg("Copilot upstream API host updated from token exchange")
-		p.baseURL = api
-	}
+		if newBaseURL != oldBaseURL {
+			log.Info().
+				Str("provider", instanceID).
+				Str("old_base_url", oldBaseURL).
+				Str("new_base_url", newBaseURL).
+				Msg("Copilot upstream API host updated from token exchange")
+		}
 
-	log.Info().Str("provider", p.instanceID).Msg("Copilot token refreshed")
-	return nil
+		log.Info().Str("provider", instanceID).Msg("Copilot token refreshed")
+		return nil, nil
+	})
+	return err
 }
 
 // LoadFromDB loads saved tokens from the database
