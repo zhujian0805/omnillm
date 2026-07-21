@@ -179,6 +179,25 @@ Existing OpenAI-style and Anthropic-style clients can target OmniLLM instead of 
 
 Incoming requests are converted into CIF before dispatch. That avoids pairwise format translation between every provider and every client shape. Adding a provider usually means implementing CIF adapters to and from that provider rather than building a matrix of conversions.
 
+### Response cache
+
+An optional exact-match cache for deterministic, non-streaming and streaming responses, keyed at the CIF layer so a response produced for one client shape (OpenAI) can satisfy another (Anthropic). It is strictly opt-in and conservative:
+
+- **Only deterministic requests are cached** — an explicit `temperature: 0` and `top_p` unset or `>= 1`. Any `temperature > 0`, any tool call, or a pinned `top_p < 1` is a hard skip.
+- The cache key is a SHA-256 over the salient request fields (`model`, `system`, `messages`, `tools`, sampling params, `max_tokens`, `stop`, `response_format`). Two requests hit the same entry only if they would deterministically produce the same generation — change one byte of the prompt and you get a fresh call.
+- A hit replays the **exact** stored model output, so accuracy is never affected; the cache never approximates or degrades a response.
+
+Configuration lives in the runtime config store (SQLite), read live per request so it can be toggled without a restart:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `response_cache.enabled` | `false` (opt-in) | Enable the cache |
+| `response_cache.ttl_seconds` | `3600` (1h) | Entry lifetime |
+
+Per-request override via the `X-OmniLLM-Cache` header: `bypass` skips the read and forces a refresh (still writes), `off` skips both read and write.
+
+> Note: for gpt-5 / gpt-6 / o-series reasoning models, OmniLLM strips `temperature`/`top_p` before dispatch (the upstream rejects them), so those models are not sampling-deterministic on their own — the response cache is what makes repeated identical requests reproducible within the TTL.
+
 ### Provider routing and failover
 
 Model resolution supports direct provider selection, provider-prefixed model names, and automatic fallback across candidate providers when one fails.
