@@ -1,0 +1,117 @@
+{
+  "clients": {
+    "port": 39622,
+    "clients": [
+      {
+        "client": "codex",
+        "calls": 5,
+        "results": 5,
+        "sequential": true,
+        "ordered_ids_match": true,
+        "exit_code": 0,
+        "terminal": "CATALOG_LIVE_OK"
+      },
+      {
+        "client": "claude",
+        "calls": 5,
+        "results": 5,
+        "sequential": true,
+        "ordered_ids_match": true,
+        "exit_code": 0,
+        "terminal": "CATALOG_LIVE_OK"
+      },
+      {
+        "client": "droid",
+        "calls": 5,
+        "results": 5,
+        "sequential": true,
+        "ordered_ids_match": true,
+        "exit_code": 0,
+        "terminal": "CATALOG_LIVE_OK"
+      },
+      {
+        "client": "copilot",
+        "calls": 5,
+        "results": 5,
+        "sequential": true,
+        "ordered_ids_match": true,
+        "exit_code": 0,
+        "terminal": "CATALOG_LIVE_OK"
+      }
+    ],
+    "astra_responses": 27,
+    "all_astra_models_preserved": true,
+    "response_cache_hits": 0
+  },
+  "outage": {
+    "initial_status": 400,
+    "backoff_status": 400,
+    "recovered_status": 200,
+    "gateway_pid": 88114,
+    "gateway_port": 39622,
+    "restart_required": false,
+    "generation_calls": 1,
+    "catalog_calls": 2,
+    "exact_model": "catalog-recovery-probe"
+  },
+  "shapes": [
+    {
+      "shape": "refresh",
+      "status": 200,
+      "model": null,
+      "marker": false,
+      "cache": null,
+      "seconds": 0.4
+    },
+    {
+      "shape": "responses",
+      "status": 200,
+      "model": "gpt-6-astra",
+      "marker": true,
+      "cache": null,
+      "seconds": 1.4
+    },
+    {
+      "shape": "chat",
+      "status": 200,
+      "model": "gpt-6-astra",
+      "marker": true,
+      "cache": null,
+      "seconds": 1.7
+    },
+    {
+      "shape": "messages",
+      "status": 200,
+      "model": "gpt-6-astra",
+      "marker": true,
+      "cache": null,
+      "seconds": 1.3
+    }
+  ],
+  "timings": [
+    {
+      "client": "codex",
+      "exit_code": 0,
+      "seconds": 15.6,
+      "terminal_marker": true
+    },
+    {
+      "client": "claude",
+      "exit_code": 0,
+      "seconds": 15.2,
+      "terminal_marker": true
+    },
+    {
+      "client": "droid",
+      "exit_code": 0,
+      "seconds": 21.1,
+      "terminal_marker": true
+    },
+    {
+      "client": "copilot",
+      "exit_code": 0,
+      "seconds": 20.4,
+      "terminal_marker": true
+    }
+  ]
+}

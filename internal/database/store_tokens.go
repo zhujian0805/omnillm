@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
+	"omnillm/internal/lib/catalogstate"
 )
 
 // Token operations
@@ -47,6 +48,9 @@ func (ts *TokenStore) Save(instanceID string, tokenData interface{}) error {
 			token_data = excluded.token_data,
 			updated_at = datetime('now')
 	`, instanceID, string(tokenJSON))
+	if err == nil {
+		catalogstate.Invalidate(instanceID)
+	}
 	return err
 }
 
@@ -72,6 +76,9 @@ func (ts *TokenStore) ClearRefreshTokenIfMatches(instanceID, rejected string) (b
 
 func (ts *TokenStore) Delete(instanceID string) error {
 	_, err := ts.db.db.Exec("DELETE FROM tokens WHERE instance_id = ?", instanceID)
+	if err == nil {
+		catalogstate.Invalidate(instanceID)
+	}
 	return err
 }
 

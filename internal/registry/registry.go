@@ -4,6 +4,7 @@ package registry
 import (
 	"fmt"
 	"omnillm/internal/database"
+	"omnillm/internal/lib/catalogstate"
 	"omnillm/internal/providers/types"
 	"sync"
 
@@ -56,6 +57,7 @@ func GetProviderRegistry() *ProviderRegistry {
 
 func (pr *ProviderRegistry) Register(provider types.Provider, saveConfig bool) error {
 	pr.mu.Lock()
+	catalogstate.Invalidate(provider.GetInstanceID())
 	pr.providers[provider.GetInstanceID()] = provider
 	shouldSave := saveConfig
 	pr.mu.Unlock()
@@ -216,6 +218,8 @@ func (pr *ProviderRegistry) Rename(oldInstanceID, newInstanceID string) error {
 		return fmt.Errorf("cannot rename %s to %s: target already exists", oldInstanceID, newInstanceID)
 	}
 
+	catalogstate.Invalidate(oldInstanceID)
+	catalogstate.Invalidate(newInstanceID)
 	delete(pr.providers, oldInstanceID)
 	pr.providers[newInstanceID] = provider
 
@@ -238,6 +242,7 @@ func (pr *ProviderRegistry) Remove(instanceID string) error {
 		return fmt.Errorf("provider '%s' not found", instanceID)
 	}
 
+	catalogstate.Invalidate(instanceID)
 	delete(pr.providers, instanceID)
 	delete(pr.activeProviders, instanceID)
 	if pr.activeProvider != nil && pr.activeProvider.GetInstanceID() == instanceID {

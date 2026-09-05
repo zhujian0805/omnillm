@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"encoding/json"
+	"omnillm/internal/lib/catalogstate"
 )
 
 // Provider config operations
@@ -46,10 +47,16 @@ func (pcs *ProviderConfigStore) Save(instanceID string, configData map[string]in
 			config_data = excluded.config_data,
 			updated_at = datetime('now')
 	`, instanceID, string(configJSON))
+	if err == nil {
+		catalogstate.Invalidate(instanceID)
+	}
 	return err
 }
 
 func (pcs *ProviderConfigStore) Delete(instanceID string) error {
 	_, err := pcs.db.db.Exec("DELETE FROM provider_configs WHERE instance_id = ?", instanceID)
+	if err == nil {
+		catalogstate.Invalidate(instanceID)
+	}
 	return err
 }

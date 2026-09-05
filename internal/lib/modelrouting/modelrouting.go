@@ -2,17 +2,14 @@
 package modelrouting
 
 import (
-	"errors"
 	"fmt"
 	"omnillm/internal/database"
-	alibaba "omnillm/internal/providers/alibaba"
+	"omnillm/internal/lib/catalogcache"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/registry"
 	"sort"
 	"strings"
-	"sync"
-
-	"github.com/rs/zerolog/log"
+	"time"
 )
 
 type ResolvedModelRoute struct {
@@ -21,47 +18,29 @@ type ResolvedModelRoute struct {
 	AvailableModels    []types.Model    `json:"availableModels"`
 }
 
-type ModelCache struct {
-	mu     sync.RWMutex
-	models map[string]*types.ModelsResponse
-}
+type ModelCache struct{ catalog *catalogcache.Cache }
 
 func NewModelCache() *ModelCache {
-	return &ModelCache{models: make(map[string]*types.ModelsResponse)}
+	return &ModelCache{catalog: catalogcache.New(5*time.Minute, 0)}
 }
 
 func GetCachedOrFetchModels(provider types.Provider, cache *ModelCache) (*types.ModelsResponse, error) {
-	instanceID := provider.GetInstanceID()
-
-	// Check cache first (read lock)
-	cache.mu.RLock()
-	cached, exists := cache.models[instanceID]
-	cache.mu.RUnlock()
-	if exists {
-		return cached, nil
+	// Providers owning freshness must not be wrapped in another TTL.
+	if managed, ok := provider.(interface{ ManagesModelCache() bool }); ok && managed.ManagesModelCache() {
+		return provider.GetModels()
 	}
-
-	// Fetch from provider
-	models, err := provider.GetModels()
-	if err != nil {
-		if errors.Is(err, alibaba.ErrHardcodedFallback) {
-			// Return the degraded hardcoded list for this request but do not
-			// cache it — the next request should retry the live API.
-			log.Debug().Str("provider", instanceID).Msg("Skipping model cache due to hardcoded fallback")
-			return models, nil
+	return cache.catalog.Get(provider.GetInstanceID(), provider.GetID(), func() (*types.ModelsResponse, error) {
+		models, err := provider.GetModels()
+		if models != nil && models.Degraded {
+			copy := *models
+			copy.Degraded = true
+			if copy.Source == "" {
+				copy.Source = "fallback"
+			}
+			return &copy, nil
 		}
-		log.Warn().
-			Str("provider", provider.GetName()).
-			Err(err).
-			Msg("Failed to get models from provider")
-		return nil, err
-	}
-
-	// Cache the result (write lock)
-	cache.mu.Lock()
-	cache.models[instanceID] = models
-	cache.mu.Unlock()
-	return models, nil
+		return models, err
+	})
 }
 
 func GetEnabledModelsByProvider(providers []types.Provider, cache *ModelCache) (map[string][]types.Model, error) {
