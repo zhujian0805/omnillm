@@ -111,6 +111,9 @@ type Model struct {
 type ModelsResponse struct {
 	Data   []Model `json:"data"`
 	Object string  `json:"object"`
+	// Degraded catalogs remain usable but must not advance successful discovery freshness.
+	Degraded bool   `json:"-"`
+	Source   string `json:"-"`
 }
 
 type ProviderAdapter interface {

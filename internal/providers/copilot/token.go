@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"omnillm/internal/database"
+	"omnillm/internal/lib/catalogstate"
 	ghservice "omnillm/internal/services/github"
 
 	"github.com/rs/zerolog/log"
@@ -14,7 +15,10 @@ import (
 
 // SetGitHubToken sets the long-lived GitHub OAuth token (used for Copilot token refresh)
 func (p *GitHubCopilotProvider) SetGitHubToken(token string) {
+	p.mu.Lock()
 	p.githubToken = token
+	catalogstate.Invalidate(p.instanceID)
+	p.mu.Unlock()
 }
 
 func (p *GitHubCopilotProvider) GetToken() string {
@@ -111,6 +115,7 @@ func (p *GitHubCopilotProvider) RefreshToken() error {
 
 // LoadFromDB loads saved tokens from the database
 func (p *GitHubCopilotProvider) LoadFromDB() error {
+	defer catalogstate.Invalidate(p.instanceID)
 	tokenStore := database.NewTokenStore()
 	record, err := tokenStore.Get(p.instanceID)
 	if err != nil {

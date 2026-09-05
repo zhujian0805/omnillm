@@ -9,11 +9,12 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
+	"omnillm/internal/lib/catalogcache"
+	"omnillm/internal/lib/catalogstate"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 	"omnillm/internal/services/modelsmeta"
@@ -39,76 +40,33 @@ var modelsHTTPClient = &http.Client{
 	Transport: shared.DefaultHTTPTransport(),
 }
 
-// modelsCache memoizes the last successful live fetch per provider instance.
-var modelsCache struct {
-	sync.Mutex
-	entries map[string]modelsCacheEntry
-}
+// The provider owns freshness so routing and remapping see the same snapshot.
+var modelCatalogCache = catalogcache.New(modelsCacheTTL, time.Hour)
 
-type modelsCacheEntry struct {
-	models    []types.Model
-	fetchedAt time.Time
-}
-
-// FetchModels queries the upstream catalog for a provider instance, falling
-// back to the built-in list when the backend has no /models endpoint, the
-// request fails, or the response is unusable.
-//
-// The Codex backend served to ChatGPT accounts historically had no /models
-// route; that is precisely why the hand-maintained list below exists. Probing
-// first means the catalog tracks upstream automatically wherever the endpoint
-// is available, without regressing accounts where it is not.
 func FetchModels(p *Provider) *types.ModelsResponse {
 	if p == nil {
 		return GetModels("")
 	}
-	instanceID := p.GetInstanceID()
-
-	if cached, ok := cachedModels(instanceID); ok {
-		return &types.ModelsResponse{Data: cached, Object: "list"}
+	// Complete token rotation before capturing the catalog lifecycle version.
+	p.GetToken()
+	response, err := modelCatalogCache.Get(p.GetInstanceID(), p.GetID(), func() (*types.ModelsResponse, error) {
+		models, err := fetchModelsLive(p)
+		if err != nil {
+			return nil, err
+		}
+		return &types.ModelsResponse{Data: models, Object: "list", Source: "live"}, nil
+	})
+	if err == nil && response != nil {
+		return response
 	}
-
-	models, err := fetchModelsLive(p)
-	if err != nil {
-		log.Debug().Err(err).Str("provider", instanceID).
-			Msg("OpenAI: live model fetch unavailable, using built-in catalog")
-		return GetModels(instanceID)
-	}
-
-	storeModels(instanceID, models)
-	return &types.ModelsResponse{Data: models, Object: "list"}
+	log.Debug().Str("provider", p.GetInstanceID()).Msg("OpenAI model discovery unavailable; using degraded built-in catalog")
+	response = GetModels(p.GetInstanceID())
+	response.Degraded = true
+	response.Source = "built-in"
+	return response
 }
 
-func cachedModels(instanceID string) ([]types.Model, bool) {
-	modelsCache.Lock()
-	defer modelsCache.Unlock()
-	entry, ok := modelsCache.entries[instanceID]
-	if !ok || time.Since(entry.fetchedAt) > modelsCacheTTL {
-		return nil, false
-	}
-	out := make([]types.Model, len(entry.models))
-	copy(out, entry.models)
-	return out, true
-}
-
-func storeModels(instanceID string, models []types.Model) {
-	modelsCache.Lock()
-	defer modelsCache.Unlock()
-	if modelsCache.entries == nil {
-		modelsCache.entries = map[string]modelsCacheEntry{}
-	}
-	stored := make([]types.Model, len(models))
-	copy(stored, models)
-	modelsCache.entries[instanceID] = modelsCacheEntry{models: stored, fetchedAt: time.Now()}
-}
-
-// InvalidateModelsCache drops any memoized catalog for an instance. Used after
-// re-authentication, where the account (and therefore the catalog) may change.
-func InvalidateModelsCache(instanceID string) {
-	modelsCache.Lock()
-	defer modelsCache.Unlock()
-	delete(modelsCache.entries, instanceID)
-}
+func InvalidateModelsCache(instanceID string) { catalogstate.Invalidate(instanceID) }
 
 func fetchModelsLive(p *Provider) ([]types.Model, error) {
 	headers := p.GetHeaders(false)
@@ -128,13 +86,15 @@ func fetchModelsLive(p *Provider) ([]types.Model, error) {
 
 	resp, err := modelsHTTPClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &catalogcache.TransientError{}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("openai: models request returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return nil, &catalogcache.TransientError{Status: resp.StatusCode}
+		}
+		return nil, fmt.Errorf("openai: models request returned %d", resp.StatusCode)
 	}
 
 	return parseModelsResponse(io.LimitReader(resp.Body, 1<<20), p.GetInstanceID())

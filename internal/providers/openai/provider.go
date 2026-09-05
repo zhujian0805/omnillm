@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -73,10 +72,11 @@ func remapAgainst(model string, catalog []types.Model) string {
 			return model
 		}
 	}
-	// Codex-suffixed and platform model IDs are rejected upstream for ChatGPT
-	// accounts; steer them to the default model rather than 400-ing.
-	if strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "o1") || strings.HasPrefix(model, "o3") {
-		return catalog[0].ID
+	// Retain explicit historical aliases; missing catalog entries alone are not
+	// evidence that an arbitrary newer GPT model should be substituted.
+	switch model {
+	case "gpt-5-codex", "gpt-5.1-codex", "gpt-5", "gpt-4o", "o3-mini":
+		return "gpt-5.6-sol"
 	}
 	return model
 }
@@ -318,6 +318,8 @@ func (p *Provider) GetHeaders(_ bool) map[string]string {
 	return headers
 }
 
+func (p *Provider) ManagesModelCache() bool { return true }
+
 func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 	return FetchModels(p), nil
 }
@@ -379,6 +381,7 @@ func (p *Provider) LoadFromDB() error {
 		return fmt.Errorf("openai: failed to parse token data: %w", err)
 	}
 
+	InvalidateModelsCache(p.instanceID)
 	p.mu.Lock()
 	if v, ok := data["access_token"].(string); ok {
 		p.accessToken = v
