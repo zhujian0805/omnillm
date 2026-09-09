@@ -2,10 +2,13 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/rs/zerolog/log"
 
 	"omnillm/internal/database"
+	"omnillm/internal/lib/catalogstate"
+	"omnillm/internal/lib/modelrouting"
 	"omnillm/internal/providers/shared"
 	"omnillm/internal/providers/types"
 )
@@ -213,10 +216,21 @@ func loadProviderModels(provider types.Provider, forceRefresh bool) ([]providerM
 		}
 	}
 
-	// Cache miss or force refresh — call external API
-	modelsResp, err := provider.GetModels()
+	// Explicit refresh expires both routing and provider-owned freshness.
+	if forceRefresh {
+		catalogstate.Refresh(instanceID)
+	}
+	version := catalogstate.Current(instanceID)
+	modelsResp, err := modelrouting.GetCachedOrFetchModels(provider, modelCache)
+	degraded := modelsResp != nil && modelsResp.Degraded
+	if degraded && len(modelsResp.Data) > 0 {
+		err = nil
+	}
+	if err == nil && modelsResp == nil {
+		return nil, fmt.Errorf("provider returned no model catalog")
+	}
 	if err != nil {
-		if len(states) == 0 {
+		if forceRefresh || len(states) == 0 {
 			return nil, err
 		}
 
@@ -289,7 +303,16 @@ func loadProviderModels(provider types.Provider, forceRefresh bool) ([]providerM
 		})
 	}
 
-	// Save to cache
+	// Publish only successful data from the current provider lifecycle.
+	if degraded {
+		if forceRefresh {
+			return nil, fmt.Errorf("provider model discovery is degraded; previous successful catalog retained")
+		}
+		return models, nil
+	}
+	if catalogstate.Current(instanceID) != version {
+		return nil, fmt.Errorf("provider catalog changed during discovery")
+	}
 	if modelsJSON, err := json.Marshal(models); err == nil {
 		if err := cacheStore.Save(instanceID, provider.GetID(), string(modelsJSON)); err != nil {
 			log.Warn().Err(err).Str("provider", instanceID).Msg("Failed to cache provider models")

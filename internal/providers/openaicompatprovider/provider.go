@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"omnillm/internal/cif"
 	"omnillm/internal/database"
+	"omnillm/internal/lib/catalogstate"
 	"omnillm/internal/providers/openaicompat"
 	"omnillm/internal/providers/providermodels"
 	"omnillm/internal/providers/shared"
@@ -121,6 +122,7 @@ func (p *Provider) ensureConfig() {
 }
 
 func (p *Provider) ApplyConfig(config map[string]interface{}) {
+	defer catalogstate.Invalidate(p.instanceID)
 	p.applyConfig(config)
 	p.configLoaded = true
 }
@@ -151,7 +153,7 @@ func (p *Provider) applyConfig(cfg map[string]interface{}) {
 func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 	p.ensureConfig()
 	if p.baseURL == "" {
-		return &types.ModelsResponse{Data: []types.Model{}, Object: "list"}, nil
+		return &types.ModelsResponse{Data: []types.Model{}, Object: "list", Degraded: true, Source: "unavailable"}, nil
 	}
 	resp, err := fetchModels(p.baseURL, p.token, p.allowLocal)
 	if err != nil {
@@ -159,7 +161,7 @@ func (p *Provider) GetModels() (*types.ModelsResponse, error) {
 			return &types.ModelsResponse{Data: configured, Object: "list"}, nil
 		}
 		log.Warn().Err(err).Str("provider", p.instanceID).Msg("openai-compatible: /models fetch failed; returning empty list")
-		return &types.ModelsResponse{Data: []types.Model{}, Object: "list"}, nil
+		return &types.ModelsResponse{Data: []types.Model{}, Object: "list", Degraded: true, Source: "unavailable"}, nil
 	}
 	// Tag each model with this provider's instance ID.
 	for i := range resp.Data {

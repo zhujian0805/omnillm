@@ -46,7 +46,10 @@ func getModels(instanceID, token, baseURL string, lookup modelMetadataLookup) (*
 		return resp, nil
 	}
 	log.Warn().Err(err).Str("provider", instanceID).Msg("alibaba: falling back to models.dev catalog")
-	return GetModelsHardcoded(instanceID), ErrHardcodedFallback
+	fallback := GetModelsHardcoded(instanceID)
+	fallback.Degraded = true
+	fallback.Source = "built-in"
+	return fallback, ErrHardcodedFallback
 }
 
 // GetModelsHardcoded returns a fallback catalog of Qwen models sourced from

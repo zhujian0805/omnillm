@@ -187,8 +187,10 @@ func (p *GitHubCopilotProvider) GetModels() (*types.ModelsResponse, error) {
 	}
 
 	return &types.ModelsResponse{
-		Data:   models,
-		Object: "list",
+		Data:     models,
+		Object:   "list",
+		Degraded: true,
+		Source:   "built-in",
 	}, nil
 }
 
