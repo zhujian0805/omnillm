@@ -356,6 +356,10 @@ Without `--new`, `provider login <type-or-provider>` re-authenticates the refere
 
 Provider arguments use the same deterministic lookup as model routing: exact instance ID first, then unique case-insensitive alias, then unique case-insensitive display name. Ambiguous aliases or names fail and identify the matching instance IDs. The former root `auth`, root `model`, and `provider add` forms remain accepted as hidden deprecated compatibility commands for existing automation.
 
+New provider instances receive a fixed-length UUID; existing IDs remain unchanged. In the Providers page, select **Edit ID** to change an instance ID. IDs may contain 1–64 ASCII letters, digits, periods, underscores, and hyphens, and must start with a letter or digit. The authenticated API also accepts `PATCH /api/admin/providers/<current-id>/identity` with `{"new_id":"custom-id"}`. If the provider is in use, retry after its requests or authentication finish.
+
+Changing an ID preserves provider credentials, settings, activation, and existing virtual-model upstream references. Update external clients, tool configurations, and saved model selections that explicitly use the old ID; historical metering retains the ID originally recorded.
+
 Selected `start` flags for the server binary:
 
 | Flag | Default | Purpose |

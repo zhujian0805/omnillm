@@ -35,10 +35,11 @@ func NewProvider(instanceID, name string) *Provider {
 	}
 }
 
-func (p *Provider) GetID() string         { return string(types.ProviderAntigravity) }
-func (p *Provider) GetInstanceID() string { return p.instanceID }
-func (p *Provider) GetName() string       { return p.name }
-func (p *Provider) SetName(name string)   { p.name = name }
+func (p *Provider) GetID() string           { return string(types.ProviderAntigravity) }
+func (p *Provider) GetInstanceID() string   { return p.instanceID }
+func (p *Provider) SetInstanceID(id string) { p.instanceID = id }
+func (p *Provider) GetName() string         { return p.name }
+func (p *Provider) SetName(name string)     { p.name = name }
 
 func (p *Provider) SetupAuth(options *types.AuthOptions) error {
 	clientID := options.ClientID
@@ -59,7 +60,7 @@ func (p *Provider) SetupAuth(options *types.AuthOptions) error {
 	return nil
 }
 
-func (p *Provider) GetToken() string { return p.token }
+func (p *Provider) GetToken() string    { return p.token }
 func (p *Provider) RefreshToken() error { return nil }
 
 func (p *Provider) GetBaseURL() string {
@@ -130,7 +131,7 @@ func (p *Provider) ApplyTokenFromDB() {
 	_ = p.LoadFromDB()
 }
 
-func (a *Adapter) GetProvider() types.Provider { return a.provider }
+func (a *Adapter) GetProvider() types.Provider    { return a.provider }
 func (a *Adapter) RemapModel(model string) string { return RemapModel(model) }
 func (a *Adapter) Execute(ctx context.Context, request *cif.CanonicalRequest) (*cif.CanonicalResponse, error) {
 	a.provider.LoadFromDB()

@@ -288,6 +288,10 @@ OmniLLM 可以统一管理 Claude Code、Codex、Droid、OpenCode、AMP 等工�
 - `/api/admin/settings/log-level`
 - `/api/admin/logs/stream`
 
+新建提供商实例默认使用固定长度的 UUID，已有实例 ID 不会自动改变。可在管理后台的提供商页面选择 **编辑 ID**；新 ID 可使用 1–64 位 ASCII 字母、数字、句点、下划线和连字符，并须以字母或数字开头。已认证的管理 API 也支持 `PATCH /api/admin/providers/<当前ID>/identity`，请求体为 `{"new_id":"custom-id"}`。如果提供商正在使用或认证中，请稍后重试。
+
+更改 ID 会保留提供商凭据、设置、启用状态及现有虚拟模型上游引用。使用旧 ID 的外部客户端、工具配置和已保存模型选择需要手动更新；历史计量记录保留原始 ID。
+
 ## CLI 概览
 
 主二进制 `omnillm` 当前包含：
