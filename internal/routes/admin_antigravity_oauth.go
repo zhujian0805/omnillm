@@ -292,6 +292,9 @@ func handleAntigravityOAuthCallback(c *gin.Context) {
 		"client_secret": state.ClientSecret,
 		"project_id":    projectID,
 	}
+	if tokenResp.ExpiresIn > 0 {
+		tokenData["expires_at"] = time.Now().Unix() + tokenResp.ExpiresIn
+	}
 	if email != "" {
 		tokenData["email"] = email
 	}

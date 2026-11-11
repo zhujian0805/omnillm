@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -138,7 +139,7 @@ func TestAntigravityOAuthKeepsUUIDThroughCompletionAndRename(t *testing.T) {
 	resetAntigravityOAuthTestState(t)
 	t.Cleanup(func() { resetAdminTestState(t) })
 	exchangeAntigravityOAuthCode = func(string, string, string, string) (*antigravitypkg.OAuthTokenResponse, error) {
-		return &antigravitypkg.OAuthTokenResponse{AccessToken: "oauth-access", RefreshToken: "oauth-refresh"}, nil
+		return &antigravitypkg.OAuthTokenResponse{AccessToken: "oauth-access", RefreshToken: "oauth-refresh", ExpiresIn: 3600}, nil
 	}
 	discoverAntigravityProject = func(string) string { return "project" }
 	fetchAntigravityEmail = func(string) string { return "test@example.test" }
@@ -161,6 +162,18 @@ func TestAntigravityOAuthKeepsUUIDThroughCompletionAndRename(t *testing.T) {
 	handleAntigravityOAuthCallback(ctx)
 	if !strings.Contains(callback.Body.String(), "Authenticated successfully") {
 		t.Fatalf("callback failed: %s", callback.Body.String())
+	}
+	rec, err := database.NewTokenStore().Get(result.ProviderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved map[string]interface{}
+	if err := json.Unmarshal([]byte(rec.TokenData), &saved); err != nil {
+		t.Fatal(err)
+	}
+	expiry, _ := saved["expires_at"].(float64)
+	if expiry < float64(time.Now().Unix()+3500) {
+		t.Fatal("OAuth expiry not persisted")
 	}
 	reg := registry.GetProviderRegistry()
 	reg.WaitForPendingSaves()
