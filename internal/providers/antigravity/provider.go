@@ -93,8 +93,13 @@ func Stream(ctx context.Context, token, baseURL, projectID string, request *cif.
 			decl := map[string]interface{}{
 				"name": tool.Name,
 			}
-			if params := shared.SanitizeGeminiSchema(tool.ParametersSchema); params != nil {
-				decl["parameters"] = params
+			if tool.ParametersSchema != nil {
+				if strings.HasPrefix(model, "claude-") {
+					// The restricted OpenAPI field cannot preserve Claude's nested JSON Schema unions.
+					decl["parametersJsonSchema"] = tool.ParametersSchema
+				} else {
+					decl["parameters"] = shared.SanitizeGeminiSchema(tool.ParametersSchema)
+				}
 			}
 			if tool.Description != nil {
 				decl["description"] = *tool.Description
@@ -184,4 +189,8 @@ type upstreamHTTPError struct {
 
 func (e *upstreamHTTPError) Error() string {
 	return fmt.Sprintf("antigravity API failed with status %d: %s", e.status, e.body)
+}
+
+func (e *upstreamHTTPError) NonStreamingFallbackAllowed() bool {
+	return e.status < http.StatusBadRequest || e.status >= http.StatusInternalServerError
 }

@@ -120,6 +120,9 @@ func TestStreamBuildsConservativeGeminiPayload(t *testing.T) {
 	if _, ok := decl["parameters"]; ok {
 		t.Fatal("expected nil tool schema to omit parameters field")
 	}
+	if _, ok := decl["parametersJsonSchema"]; ok {
+		t.Fatal("expected nil tool schema to omit parametersJsonSchema field")
+	}
 	if decl["name"] != "Read" {
 		t.Fatalf("unexpected tool name: %#v", decl["name"])
 	}
